@@ -2,23 +2,22 @@
 Keep talking, but some anonymous >_&lt;
 
 Структура файлов(актуальна для расширения):
-
+```
 echos/
-· Models/                            # Данные и сущности
-  · Message.swift                 # Модель сообщения + Codable для Multipeer
-  · Peer.swift                    # Модель пира (устройства)
-· ViewModels/                        # Бизнес-логика и состояние
-  ·ChatViewModel.swift           # @Observable + async/await + Multipeer логика
-· Views/                             # UI-компоненты
-  · ChatViewController.swift      # Основной экран чата (UIKit)
-  · MessageCell.swift             # Кастомная ячейка для бабблов
-· Services/                          # todo:
-  ·
-· Extensions/                        # Удобные расширения
-· Resources/                         # Ассеты, цвета, локализация
-· Assets.xcassets/
-
-
+}- Models/                 # Данные и сущности
+    Message.swift          # Модель сообщения + Codable для Multipeer
+    Peer.swift             # Модель пира (устройства)
+}- ViewModels/             # Бизнес-логика и состояние
+    ChatViewModel.swift    # @Observable + async/await + Multipeer логика
+}- Views/                  # UI-компоненты
+    ChatViewController.swift   # Основной экран чата (UIKit)
+    MessageCell.swift          # Кастомная ячейка для бабблов
+}- Services/                   # todo:
+...
+}- Extensions/                 # Удобные расширения
+}- Resources/                  # Ассеты, цвета, локализация
+}- Assets.xcassets/
+```
 # echos 
 
 **Оффлайн-чат на iOS без интернета** — общайтесь в радиусе ~100 м через Bluetooth / Wi-Fi (P2P).  
