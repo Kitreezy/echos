@@ -215,13 +215,13 @@ final class ChatViewController: UIViewController {
     
     @objc
     private func sendTapped() {
-        guard var text = textField.text, !text.isEmpty else {
+        guard let text = textField.text, !text.isEmpty else {
             return
         }
-        text = ""
         Task {
             await viewModel.sendMessage(text)
         }
+        textField.text = ""
     }
     
     private func scrollToBottom() {
