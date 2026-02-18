@@ -74,7 +74,7 @@ final class ChatViewController: UIViewController {
     
     private let sendButton: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.image = UIImage(systemName: "arrow.up.circle")
+        config.image = UIImage(systemName: "arrow.uturn.up")
         config.cornerStyle = .capsule
         config.baseBackgroundColor = .systemBlue
         let button = UIButton(configuration: config)

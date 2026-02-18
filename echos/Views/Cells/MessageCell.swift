@@ -50,10 +50,9 @@ final class MessageCell: UITableViewCell {
         return imageView
     }()
     
-    // TODO: - заменить force крит!
     // Dynamic constraints (меняются в configure)
-    private var bubbleLeading: NSLayoutConstraint!
-    private var bubbleTrailing: NSLayoutConstraint!
+    private var bubbleLeading: NSLayoutConstraint?
+    private var bubbleTrailing: NSLayoutConstraint?
     
     // MARK: - Init
     
@@ -95,7 +94,7 @@ final class MessageCell: UITableViewCell {
         selectionStyle = .none
         
         contentView.addSubview(bubbleView)
-        contentView.addSubview(messageLabel)
+        bubbleView.addSubview(messageLabel)
         contentView.addSubview(timeLabel)
         contentView.addSubview(statusIcon)
         
@@ -119,8 +118,8 @@ final class MessageCell: UITableViewCell {
             bubbleView.backgroundColor = .systemBlue
             messageLabel.textColor = .white
             
-            bubbleLeading.isActive = false
-            bubbleTrailing.isActive = true
+            bubbleLeading?.isActive = false
+            bubbleTrailing?.isActive = true
             
             timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16).isActive = true
             
@@ -142,8 +141,8 @@ final class MessageCell: UITableViewCell {
             bubbleView.backgroundColor = .secondarySystemBackground
             messageLabel.textColor = .label
             
-            bubbleTrailing.isActive = false
-            bubbleLeading.isActive = true
+            bubbleTrailing?.isActive = false
+            bubbleLeading?.isActive = true
             timeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16).isActive = true
             
             statusIcon.isHidden = true
