@@ -136,4 +136,7 @@ Combine помечен как «legacy preferred alternative» в новых п�
 - [WWDC23: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)  
 - [AsyncStream (Swift Evolution #0314)](https://github.com/apple/swift-evolution/blob/main/proposals/0314-async-stream.md)  
 - [@MainActor](https://developer.apple.com/documentation/swift/mainactor)
+- [UITableView Self-Sizing Cells](https://developer.apple.com/documentation/uikit/uitableview/rowheight)
+- [UIGestureRecognizer Guide](https://developer.apple.com/documentation/uikit/touches-presses-and-gestures)
+- [UITextField Return Key Types](https://developer.apple.com/documentation/uikit/uireturnkeytype/)
 - (актуальны для расширения)
