@@ -22,6 +22,8 @@ final class ChatViewController: UIViewController {
         table.keyboardDismissMode = .interactive
         table.allowsSelection = false
         table.translatesAutoresizingMaskIntoConstraints = false
+        table.estimatedRowHeight = 80
+        table.rowHeight = UITableView.automaticDimension
         
         return table
     }()
@@ -46,6 +48,41 @@ final class ChatViewController: UIViewController {
         return label
     }()
     
+    private let emptyStateView: UIView = {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        
+        let icon = UIImageView(image: UIImage(systemName: "bubble.left.and.bubble.right"))
+        icon.tintColor = .tertiaryLabel
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        
+        let label = UILabel()
+        label.text = "Нет сообщений\nНачни общаться!"
+        label.textColor = .secondaryLabel
+        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        
+        container.addSubview(icon)
+        container.addSubview(label)
+        
+        NSLayoutConstraint.activate([
+            icon.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: -30),
+            icon.widthAnchor.constraint(equalToConstant: 60),
+            icon.heightAnchor.constraint(equalToConstant: 60),
+            
+            label.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 16),
+            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 40),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40),
+        ])
+        
+        return container
+    }()
+    
     private let inputContainer: UIView = {
         let view = UIView()
         view.backgroundColor = .systemBackground
@@ -68,6 +105,7 @@ final class ChatViewController: UIViewController {
         textField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 0))
         textField.rightViewMode = .always
         textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.returnKeyType = .send
         
         return textField
     }()
@@ -92,6 +130,7 @@ final class ChatViewController: UIViewController {
         view.backgroundColor = .systemBackground
         setupLayout()
         setupTableView()
+        setupGestures()
         bindViewModel()
         startApp()
     }
@@ -114,6 +153,10 @@ final class ChatViewController: UIViewController {
             tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 4),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            
+            emptyStateView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            emptyStateView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            emptyStateView.widthAnchor.constraint(equalTo: tableView.widthAnchor),
             
             // Typing
             typingLabel.topAnchor.constraint(equalTo: tableView.bottomAnchor, constant: 4),
@@ -144,6 +187,7 @@ final class ChatViewController: UIViewController {
     private func setupLayout() {
         view.addSubview(statusLabel)
         view.addSubview(tableView)
+        view.addSubview(emptyStateView)
         view.addSubview(typingLabel)
         view.addSubview(inputContainer)
         inputContainer.addSubview(textField)
@@ -152,11 +196,23 @@ final class ChatViewController: UIViewController {
         NSLayoutConstraint.activate(layoutConstraints)
         
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
+        textField.delegate = self
     }
     
     private func setupTableView() {
         tableView.dataSource = self
         tableView.register(MessageCell.self, forCellReuseIdentifier: MessageCell.reuseID)
+    }
+    
+    private func setupGestures() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tapGesture.cancelsTouchesInView = false
+        tableView.addGestureRecognizer(tapGesture)
+    }
+    
+    @objc
+    private func dismissKeyboard() {
+        view.endEditing(true)
     }
     
     // MARK: - Binding
@@ -182,8 +238,11 @@ final class ChatViewController: UIViewController {
     
     private func updateUI() {
         statusLabel.text = viewModel.connectionStatus
+        
+        emptyStateView.isHidden = !viewModel.messages.isEmpty
+        
         tableView.reloadData()
-        scrollToBottom()
+        scrollToBottom(animated: true)
         
         if let peerName = viewModel.typingPeerName {
             typingLabel.text = "\(peerName) печатает..."
@@ -224,12 +283,12 @@ final class ChatViewController: UIViewController {
         textField.text = ""
     }
     
-    private func scrollToBottom() {
+    private func scrollToBottom(animated: Bool) {
         guard !viewModel.messages.isEmpty else {
             return
         }
         let idx = IndexPath(row: viewModel.messages.count - 1, section: 0)
-        tableView.scrollToRow(at: idx, at: .bottom, animated: true)
+        tableView.scrollToRow(at: idx, at: .bottom, animated: animated)
     }
 }
 
@@ -252,5 +311,15 @@ extension ChatViewController: UITableViewDataSource {
         }
         cell.configure(with: viewModel.messages[indexPath.row])
         return cell
+    }
+}
+
+// MARK: - UITextFieldDelegate
+
+extension ChatViewController: UITextFieldDelegate {
+    
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        sendTapped()
+        return true
     }
 }
