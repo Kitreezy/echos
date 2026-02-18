@@ -16,9 +16,13 @@ final class ChatViewModel {
     
     var messages: [Message] = []
     var peers: [Peer] = []
-    var connectionStatus: String = "Поиск устройства..."
+    var connectionStatus: String = "Не подлючён"
     var isDiscovering: Bool = false
     var typingPeerName: String? = nil  // nil - никто не печатает
+    
+    // MARK: - Services
+    
+    private let multipeerService = MultipeerService()
     
     /// Поток входящих сообщений (заглушка до step 4 - замена на Multipeer)
     private var messageStream: AsyncStream<Message>?
@@ -56,21 +60,35 @@ final class ChatViewModel {
         isDiscovering = true
         connectionStatus = "Ищем устройства..."
         
-        // Заглушка: имитация нахождение устройств через 1.5 ceк
-        // TODO step 3: замена на MultipeerConnectivity
-        try? await Task.sleep(for: .seconds(1.5))
+        multipeerService.startDeviceDiscovery()
         
-        let mockPeers: [Peer] = [
-            Peer(displayName: "iPhone Артем", status: .connected),
-            Peer(displayName: "iPhone Борис", status: .notConnected),
-        ]
-        peers = mockPeers
-        connectionStatus = "\(mockPeers.filter(\.isActive).count) устройств рядом"
+        Task {
+            for await discoveredPeers in multipeerService.peerStream {
+                self.peers = discoveredPeers
+                updateConnectionStatus()
+            }
+        }
     }
     
     func stopDeviceDiscovery() {
         isDiscovering = false
+        multipeerService.stopDeviceDiscovery()
         connectionStatus = "Поиск остановлен"
+    }
+    
+    private func updateConnectionStatus() {
+        let count = peers.count
+        
+        switch count {
+        case 0:
+            connectionStatus = "Нет устройств рядом"
+            
+        case 1:
+            connectionStatus = "1 устройство рядом"
+            
+        default:
+            connectionStatus = "\(count) устройств рядом"
+        }
     }
     
     // MARK: - Messaging
