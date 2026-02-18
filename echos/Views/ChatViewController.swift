@@ -256,19 +256,6 @@ final class ChatViewController: UIViewController {
     private func startApp() {
         Task {
             await viewModel.startDeviceDiscovery()
-            
-            // Запуск прослушивания входящих сообщений параллельно
-            async let _ = viewModel.startListeningForMessages()
-            
-            // DEMO: Через 4 секунды имитируем входящее сообщение
-            try? await Task.sleep(for: .seconds(4))
-            viewModel.injectIncomingMessage(
-                Message(text: "Привет! Денис Колбасенко", isFromMe: false, status: .sent)
-            )
-            
-            // DEMO: typing индикатор
-            try? await Task.sleep(for: .seconds(1))
-            await viewModel.simulateIncomingTyping(from: "iPhone Артем")
         }
     }
     
