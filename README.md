@@ -144,4 +144,7 @@ Combine помечен как «legacy preferred alternative» в новых п�
 - [MCNearbyServiceAdvertiser](https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyserviceadvertiser)
 - [MCNearbyServiceBrowser](https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyservicebrowser)
 - [AsyncStream Guide](https://developer.apple.com/documentation/swift/asyncstream)
+- [Apple Docs: MCSession](https://developer.apple.com/documentation/multipeerconnectivity/mcsession)
+- [MCSessionDelegate](https://developer.apple.com/documentation/multipeerconnectivity/mcsessiondelegate)
+- [Data Reliability](https://developer.apple.com/documentation/multipeerconnectivity/mcsessionsenddatamode/)
 - (актуальны для расширения)
