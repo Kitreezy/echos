@@ -13,10 +13,11 @@ echos/
     ChatViewController.swift   # Основной экран чата (UIKit)
     MessageCell.swift          # Кастомная ячейка для бабблов
 }- Services/                   # todo:
-...
+    MultipeerService.swift
 }- Extensions/                 # Удобные расширения
 }- Resources/                  # Ассеты, цвета, локализация
 }- Assets.xcassets/
+}- Info.plist
 ```
 # echos 
 
