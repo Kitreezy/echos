@@ -16,7 +16,7 @@ final class ChatViewModel {
     
     var messages: [Message] = []
     var peers: [Peer] = []
-    var connectionStatus: String = "Не подлючён"
+    var connectionStatus: String = "Не подключён"
     var isDiscovering: Bool = false
     var typingPeerName: String? = nil  // nil - никто не печатает
     
@@ -31,24 +31,18 @@ final class ChatViewModel {
     // MARK: - Init
     
     init() {
-        setupMessageStream()
-    }
-    
-    // MARK: - Stream messages
-    
-    private func setupMessageStream() {
-        var (stream, continuation) = AsyncStream.makeStream(of: Message.self)
-        
-        self.messageStream = stream
-        self.streamContinuation = continuation
-    }
-    
-    func startListeningForMessages() async {
-        guard let stream = messageStream else {
-            return
+        Task {
+            await startListeningForMessages()
         }
-        for await message in stream {
+    }
+    
+    // MARK: - Listening
+
+    private func startListeningForMessages() async {
+        for await playLoad in multipeerService.messageStream {
+            let message = playLoad.toMessage()
             messages.append(message)
+            print("[ChatViewModel] Received message: \(message.text)")
             // TODO step 7: сохранить в Core Data
         }
     }
@@ -77,17 +71,15 @@ final class ChatViewModel {
     }
     
     private func updateConnectionStatus() {
-        let count = peers.count
+        let connectedCount = peers.filter { $0.status == .connected }.count
+        let discoveredCount = peers.count
         
-        switch count {
-        case 0:
+        if connectedCount > 0 {
+            connectionStatus = "Подключено: \(connectedCount) из \(discoveredCount)"
+        } else if discoveredCount > 0 {
+            connectionStatus = "Найдено: \(discoveredCount), подключение..."
+        } else {
             connectionStatus = "Нет устройств рядом"
-            
-        case 1:
-            connectionStatus = "1 устройство рядом"
-            
-        default:
-            connectionStatus = "\(count) устройств рядом"
         }
     }
     
@@ -99,21 +91,29 @@ final class ChatViewModel {
         guard !trimmed.isEmpty else {
             return
         }
-        var message = Message(text: trimmed, isFromMe: true)
+        var message = Message(text: trimmed, isFromMe: true, status: .sending)
         messages.append(message)
         
-        // TODO step 4: serialise → MCSession.send
-        try? await Task.sleep(for: .milliseconds(300))
+        let playLoad = MessagePayload(from: message)
         
-        // Обновление статуса после отправки
-        if let idx = messages.firstIndex(where: { $0.id == message.id }) {
-            messages[idx].status = .sent
+        do {
+            try await multipeerService.sendMessage(playLoad)
+            
+            if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                messages[idx].status = .sent
+            }
+            print("[ChatViewModel] Message sent successfully")
+        } catch {
+            if let idx = messages.firstIndex(where: { $0.id == message.id }) {
+                messages[idx].status = .failed
+            }
+            print("[ChatViewModel] Failed to send message: \(error)")
         }
     }
     
     // MARK: - Typing indication
     
-    /// Имитация входящего typing (заглушка).
+    /// Имитация входящего typing..
     /// TODO step  5: получать из Multipeer data-пакета с type=typing.
     func simulateIncomingTyping(from peerName: String) async {
         typingPeerName = peerName
