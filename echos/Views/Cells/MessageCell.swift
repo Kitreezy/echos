@@ -51,8 +51,11 @@ final class MessageCell: UITableViewCell {
     }()
     
     // Dynamic constraints (меняются в configure)
-    private var bubbleLeading: NSLayoutConstraint?
-    private var bubbleTrailing: NSLayoutConstraint?
+    private var bubbleLeadingConstraint: NSLayoutConstraint?
+    private var bubbleTrailingConstraint: NSLayoutConstraint?
+    private var timeLabelLeadingConstraint: NSLayoutConstraint?
+    private var timeLabelTrailingConstraint: NSLayoutConstraint?
+    private var statusIconTrailingConstraint: NSLayoutConstraint?
     
     // MARK: - Init
     
@@ -98,8 +101,16 @@ final class MessageCell: UITableViewCell {
         contentView.addSubview(timeLabel)
         contentView.addSubview(statusIcon)
         
-        bubbleLeading = bubbleView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12)
-        bubbleTrailing = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12)
+        bubbleLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
+                                                                      constant: 12)
+        bubbleTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
+                                                                        constant: -12)
+        timeLabelLeadingConstraint = timeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
+                                                                        constant: 16)
+        timeLabelTrailingConstraint = timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
+                                                                          constant: -16)
+        statusIconTrailingConstraint = statusIcon.trailingAnchor.constraint(equalTo: timeLabel.leadingAnchor,
+                                                                            constant: -4)
         
         NSLayoutConstraint.activate(layoutConstraints)
     }
@@ -118,13 +129,15 @@ final class MessageCell: UITableViewCell {
             bubbleView.backgroundColor = .systemBlue
             messageLabel.textColor = .white
             
-            bubbleLeading?.isActive = false
-            bubbleTrailing?.isActive = true
+            bubbleLeadingConstraint?.isActive = false
+            bubbleTrailingConstraint?.isActive = true
             
-            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16).isActive = true
+            timeLabelLeadingConstraint?.isActive = false
+            timeLabelTrailingConstraint?.isActive = true
             
             statusIcon.isHidden = false
-            statusIcon.trailingAnchor.constraint(equalTo: timeLabel.leadingAnchor, constant: -4).isActive = true
+            statusIconTrailingConstraint?.isActive = true
+            
             switch message.status {
             case .sending:
                 statusIcon.image = UIImage(systemName: "arrow.triangle.2.circlepath")
@@ -133,7 +146,7 @@ final class MessageCell: UITableViewCell {
                 statusIcon.image = UIImage(systemName: "checkmark")
                 
             case .failed:
-                statusIcon.image = UIImage(systemName: "xmark")
+                statusIcon.image = UIImage(systemName: "exclamationmark.circle")
                 statusIcon.tintColor = .systemRed
             }
         } else {
@@ -141,11 +154,14 @@ final class MessageCell: UITableViewCell {
             bubbleView.backgroundColor = .secondarySystemBackground
             messageLabel.textColor = .label
             
-            bubbleTrailing?.isActive = false
-            bubbleLeading?.isActive = true
-            timeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16).isActive = true
+            bubbleTrailingConstraint?.isActive = false
+            bubbleLeadingConstraint?.isActive = true
+            
+            timeLabelTrailingConstraint?.isActive = false
+            timeLabelLeadingConstraint?.isActive = true
             
             statusIcon.isHidden = true
+            statusIconTrailingConstraint?.isActive = false
         }
     }
     
