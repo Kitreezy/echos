@@ -140,4 +140,8 @@ Combine помечен как «legacy preferred alternative» в новых п�
 - [UITableView Self-Sizing Cells](https://developer.apple.com/documentation/uikit/uitableview/rowheight)
 - [UIGestureRecognizer Guide](https://developer.apple.com/documentation/uikit/touches-presses-and-gestures)
 - [UITextField Return Key Types](https://developer.apple.com/documentation/uikit/uireturnkeytype/)
+- [Apple Docs: MultipeerConnectivity](https://developer.apple.com/documentation/multipeerconnectivity)
+- [MCNearbyServiceAdvertiser](https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyserviceadvertiser)
+- [MCNearbyServiceBrowser](https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyservicebrowser)
+- [AsyncStream Guide](https://developer.apple.com/documentation/swift/asyncstream)
 - (актуальны для расширения)
