@@ -67,7 +67,8 @@ final class ChatViewController: UIViewController {
         textField.leftViewMode = .always
         textField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 0))
         textField.rightViewMode = .always
-                                     
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        
         return textField
     }()
     
@@ -82,9 +83,6 @@ final class ChatViewController: UIViewController {
         return button
     }()
     
-    // TODO: - убрать force / посмотреть в сторону keyboardLayoutGuide для отступа от клавиатуры
-    private var inputBottomConstraint: NSLayoutConstraint!
-    
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
@@ -94,7 +92,6 @@ final class ChatViewController: UIViewController {
         view.backgroundColor = .systemBackground
         setupLayout()
         setupTableView()
-        setupKeyboardHandling()
         bindViewModel()
         startApp()
     }
@@ -128,7 +125,7 @@ final class ChatViewController: UIViewController {
             inputContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             inputContainer.heightAnchor.constraint(equalToConstant: 64),
-            inputBottomConstraint,
+            inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
             
             // TextField
             textField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
@@ -152,10 +149,6 @@ final class ChatViewController: UIViewController {
         inputContainer.addSubview(textField)
         inputContainer.addSubview(sendButton)
         
-        inputBottomConstraint = inputContainer.bottomAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.bottomAnchor
-        )
-        
         NSLayoutConstraint.activate(layoutConstraints)
         
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
@@ -164,31 +157,6 @@ final class ChatViewController: UIViewController {
     private func setupTableView() {
         tableView.dataSource = self
         tableView.register(MessageCell.self, forCellReuseIdentifier: MessageCell.reuseID)
-    }
-    
-    // MARK: - Keyboard
-    
-    private func setupKeyboardHandling() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillChange(_:)),
-            name: UIResponder.keyboardWillChangeFrameNotification,
-            object: nil
-        )
-    }
-    
-    @objc
-    private func keyboardWillChange(_ notification: Notification) {
-        guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-              let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
-        else {
-            return
-        }
-        let keyboardHeight = max(0, view.frame.maxY - view.frame.minY)
-        inputBottomConstraint.constant = -keyboardHeight
-        UIView.animate(withDuration: duration) {
-            self.view.layoutIfNeeded()
-        }
     }
     
     // MARK: - Binding
