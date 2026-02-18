@@ -19,5 +19,14 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>echos использует Bluetooth для поиска устройств рядом.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>echos использует локальную сеть для обмена сообщениями.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_echos-chat._tcp</string>
+		<string>_echos-chat._udp</string>
+	</array>
 </dict>
 </plist>
