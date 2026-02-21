@@ -18,6 +18,12 @@ final class MultipeerService: NSObject {
     /// Уникальное имя устройства в сети (дефолт из Settings берем)
     private let myPeerID: MCPeerID
     
+    // MARK: — Public API для получения имени
+    
+    var displayName: String {
+        myPeerID.displayName
+    }
+    
     // MARK: - Multipeer Components
     
     private var advertiser: MCNearbyServiceAdvertiser?
@@ -44,25 +50,31 @@ final class MultipeerService: NSObject {
     private var messageStreamContinuation: AsyncStream<MessagePayload>.Continuation?
     let messageStream: AsyncStream<MessagePayload>
     
+    /// Для typing-событий
+    private var  typingStreamContinuation: AsyncStream<TypingEvent>.Continuation?
+    let typingStream: AsyncStream<TypingEvent>
+    
     // MARK: - Init
     
     override init() {
-        // Используем имя устройства как peerID
         let deviceName = UIDevice.current.name
         self.myPeerID = MCPeerID(displayName: deviceName)
-        
-        var peerCont: AsyncStream<[Peer]>.Continuation?
-        self.peerStream = AsyncStream { cont in
-            peerCont = cont
-        }
+
+        // Peer stream
+        let (peerStream, peerCont) = AsyncStream.makeStream(of: [Peer].self)
+        self.peerStream = peerStream
         self.peerStreamContinuation = peerCont
-        
-        var msgCong: AsyncStream<MessagePayload>.Continuation?
-        self.messageStream = AsyncStream { cont in
-            msgCong = cont
-        }
-        self.messageStreamContinuation = msgCong
-        
+
+        // Message stream
+        let (msgStream, msgCont) = AsyncStream.makeStream(of: MessagePayload.self)
+        self.messageStream = msgStream
+        self.messageStreamContinuation = msgCont
+
+        // Typing stream
+        let (typingStream, typingCont) = AsyncStream.makeStream(of: TypingEvent.self)
+        self.typingStream = typingStream
+        self.typingStreamContinuation = typingCont
+
         super.init()
     }
     
@@ -121,13 +133,32 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noPeers
         }
         
-        let encoder = JSONEncoder()
-        let data = try encoder.encode(payload)
+        let packet = try MultipeerPacket(message: payload)
+        let data = try JSONEncoder().encode(packet)
         
         // Отправляем всем подключённым peers
         try session.send(data, toPeers: Array(connectedPeers), with: .reliable)
         
         print("[Session] Sent message to \(connectedPeers.count) peer(s)")
+    }
+    
+    // MARK: - Typing
+    
+    func sendTypingEvent(_ event: TypingEvent) async throws {
+        guard let session = session else {
+            throw MultipeerError.noSession
+        }
+        
+        let connectedPeers = await getConnectedPeers()
+        guard !connectedPeers.isEmpty else {
+            throw MultipeerError.noPeers
+        }
+        
+        let packet = try MultipeerPacket(typingEvent: event)
+        let data = try JSONEncoder().encode(packet)
+        
+        try session.send(data, toPeers: Array(connectedPeers), with: .unreliable)
+        print("[Session] Sent typing event: \(event.type)")
     }
     
     @MainActor
@@ -265,12 +296,23 @@ extension MultipeerService: MCSessionDelegate {
                  didReceive data: Data,
                  fromPeer peerID: MCPeerID) {
         Task { @MainActor in
-            print("[Session] Received data from '\(peerID.displayName)'")
-            
             let decoder = JSONDecoder()
+            
             do {
-                let playLoad = try decoder.decode(MessagePayload.self, from: data)
-                messageStreamContinuation?.yield(playLoad)
+                let packet = try decoder.decode(MultipeerPacket.self, from: data)
+                
+                switch packet.type {
+                case .message:
+                    print("[Session] Recived message from '\(peerID.displayName)")
+                    let payload = try packet.decodeMessage()
+                    messageStreamContinuation?.yield(payload)
+                    
+                case .typing:
+                    print("[Session] Recived typing event from '\(peerID.displayName)")
+                    let event = try packet.decodeTypingEvent()
+                    typingStreamContinuation?.yield(event)
+                }
+                
             } catch {
                 print("[Session] Failed to decode message: \(error)")
             }
