@@ -121,6 +121,9 @@ final class ChatViewController: UIViewController {
         return button
     }()
     
+    private var typingAnimationTimer: Timer?
+    private var typingDots = 0
+    private var currentTypingPeer: String?
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
@@ -138,6 +141,7 @@ final class ChatViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         viewModel.stopDeviceDiscovery()
+        stopTypingAnimation()
     }
 
     // MARK: - Layout
@@ -197,6 +201,7 @@ final class ChatViewController: UIViewController {
         
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         textField.delegate = self
+        textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
     }
     
     private func setupTableView() {
@@ -245,9 +250,13 @@ final class ChatViewController: UIViewController {
         scrollToBottom(animated: true)
         
         if let peerName = viewModel.typingPeerName {
-            typingLabel.text = "\(peerName) печатает..."
+            if currentTypingPeer != peerName {
+                currentTypingPeer = peerName
+                startTypingAnimation(peerName: peerName)
+            }
         } else {
-            typingLabel.isHidden = true
+            currentTypingPeer = nil
+            stopTypingAnimation()
         }
     }
     
@@ -256,19 +265,6 @@ final class ChatViewController: UIViewController {
     private func startApp() {
         Task {
             await viewModel.startDeviceDiscovery()
-            
-            // Запуск прослушивания входящих сообщений параллельно
-            async let _ = viewModel.startListeningForMessages()
-            
-            // DEMO: Через 4 секунды имитируем входящее сообщение
-            try? await Task.sleep(for: .seconds(4))
-            viewModel.injectIncomingMessage(
-                Message(text: "Привет! Денис Колбасенко", isFromMe: false, status: .sent)
-            )
-            
-            // DEMO: typing индикатор
-            try? await Task.sleep(for: .seconds(1))
-            await viewModel.simulateIncomingTyping(from: "iPhone Артем")
         }
     }
     
@@ -283,12 +279,50 @@ final class ChatViewController: UIViewController {
         textField.text = ""
     }
     
+    @objc
+    private func textFieldDidChange() {
+        guard let text = textField.text, !text.isEmpty else {
+            viewModel.stopTyping()
+            return
+        }
+        
+        viewModel.startTyping()
+    }
+    
     private func scrollToBottom(animated: Bool) {
         guard !viewModel.messages.isEmpty else {
             return
         }
         let idx = IndexPath(row: viewModel.messages.count - 1, section: 0)
         tableView.scrollToRow(at: idx, at: .bottom, animated: animated)
+    }
+    
+    // MARK: - Typing Animation
+    
+    private func startTypingAnimation(peerName: String) {
+        stopTypingAnimation()
+        
+        typingLabel.isHidden = false
+        typingDots = 0
+        
+        typingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.5,
+                                                    repeats: true) { [weak self] _ in
+            guard let self = self else {
+                return
+            }
+            
+            self.typingDots = (self.typingDots % 3) + 1
+            let dots = String(repeating: ".", count: self.typingDots)
+            self.typingLabel.text = "\(peerName) печатает\(dots)"
+        }
+        
+        typingLabel.text = "\(peerName) печатает."
+    }
+    
+    private func stopTypingAnimation() {
+        typingAnimationTimer?.invalidate()
+        typingAnimationTimer = nil
+        typingLabel.isHidden = true
     }
 }
 

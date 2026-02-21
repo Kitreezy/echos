@@ -7,6 +7,7 @@ echos/
 }- Models/                 # Данные и сущности
     Message.swift          # Модель сообщения + Codable для Multipeer
     Peer.swift             # Модель пира (устройства)
+    TypingEvent.swift      # Модель typing-событий
 }- ViewModels/             # Бизнес-логика и состояние
     ChatViewModel.swift    # @Observable + async/await + Multipeer логика
 }- Views/                  # UI-компоненты
@@ -16,6 +17,7 @@ echos/
     MultipeerService.swift
 }- Extensions/                 # Удобные расширения
 }- Resources/                  # Ассеты, цвета, локализация
+}- Utilites/                   # Вспомогательные свойства
 }- Assets.xcassets/
 }- Info.plist
 ```
@@ -144,4 +146,10 @@ Combine помечен как «legacy preferred alternative» в новых п�
 - [MCNearbyServiceAdvertiser](https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyserviceadvertiser)
 - [MCNearbyServiceBrowser](https://developer.apple.com/documentation/multipeerconnectivity/mcnearbyservicebrowser)
 - [AsyncStream Guide](https://developer.apple.com/documentation/swift/asyncstream)
+- [Apple Docs: MCSession](https://developer.apple.com/documentation/multipeerconnectivity/mcsession)
+- [MCSessionDelegate](https://developer.apple.com/documentation/multipeerconnectivity/mcsessiondelegate)
+- [Data Reliability](https://developer.apple.com/documentation/multipeerconnectivity/mcsessionsenddatamode/)
+- [UITextField Editing Events](https://developer.apple.com/documentation/uikit/uitextfield)
+- [Task sleep](https://developer.apple.com/documentation/swift/task/sleep(for:tolerance:clock:))
+- [Timer в Swift](https://developer.apple.com/documentation/foundation/timer)
 - (актуальны для расширения)
