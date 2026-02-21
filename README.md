@@ -38,7 +38,7 @@ echos/
 </p>
 
 <p align="center">
-  <strong>Статус MVP:</strong> в разработке · step 1 / 25+
+  <strong>Статус MVP:</strong> в разработке · step 5 / 25+
 </p>
 
 ## ✨ О проекте
