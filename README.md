@@ -17,6 +17,7 @@ echos/
     MultipeerService.swift
 }- Extensions/                 # Удобные расширения
 }- Resources/                  # Ассеты, цвета, локализация
+}- Utilites/                   # Вспомогательные свойства
 }- Assets.xcassets/
 }- Info.plist
 ```
