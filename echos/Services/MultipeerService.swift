@@ -20,7 +20,7 @@ final class MultipeerService: NSObject {
     
     // MARK: — Public API для получения имени
     
-    var displayName: String {
+    var myDisplayName: String {
         myPeerID.displayName
     }
     
@@ -57,8 +57,8 @@ final class MultipeerService: NSObject {
     // MARK: - Init
     
     override init() {
-        let deviceName = UIDevice.current.name
-        self.myPeerID = MCPeerID(displayName: deviceName)
+        let displayName = UserSettings.displayName
+        self.myPeerID = MCPeerID(displayName: displayName)
 
         // Peer stream
         let (peerStream, peerCont) = AsyncStream.makeStream(of: [Peer].self)
