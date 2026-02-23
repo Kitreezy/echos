@@ -5,7 +5,8 @@
 //  Created by Artem Rodionov on 17.02.2026.
 //
 
-import Foundation
+import UIKit
+import SwiftUICore
 
 /// Статус подключения соседнего устройства
 enum PeerStatus: Equatable {
@@ -29,6 +30,32 @@ struct Peer: Identifiable, Equatable {
         self.displayName = displayName
         self.status = status
         self.lastSeen = lastSeen
+    }
+    
+    var statusIcon: String {
+        switch status {
+        case .notConnected:
+            return "circle"
+            
+        case .connecting:
+            return "circle.dotted"
+            
+        case .connected:
+            return "circle.fill"
+        }
+    }
+    
+    var statusColor: Color {
+        switch status {
+        case .notConnected:
+            return .gray
+            
+        case .connecting:
+            return .orange
+            
+        case .connected:
+            return .green
+        }
     }
     
     var statusLabel: String {
