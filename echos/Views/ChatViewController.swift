@@ -127,6 +127,22 @@ final class ChatViewController: UIViewController {
     private var currentTypingPeer: String?
     // MARK: - Lifecycle
     
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        title = "echos"
+        view.backgroundColor = .systemBackground
+        
+        viewModel.multipeerService.invitationDelegate = self
+        
+        setupNavigationBar()
+        setupLayout()
+        setupTableView()
+        setupGestures()
+        bindViewModel()
+        startApp()
+    }
+    
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
@@ -134,28 +150,22 @@ final class ChatViewController: UIViewController {
             showOnboardingAlert()
         }
     }
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        
-        title = "echos"
-        view.backgroundColor = .systemBackground
-        setupLayout()
-        setupTableView()
-        setupGestures()
-        bindViewModel()
-        startApp()
-        
-        navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "person.2"),
-                                                            style: .plain,
-                                                            target: self,
-                                                            action: #selector(showPeersList))
-    }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         viewModel.stopDeviceDiscovery()
         stopTypingAnimation()
+    }
+    
+    // MARK: - Navigation Bar
+    
+    private func setupNavigationBar() {
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "person.2.fill"),
+            style: .plain,
+            target: self,
+            action: #selector(showPeersList)
+        )
     }
 
     // MARK: - Layout
@@ -234,26 +244,34 @@ final class ChatViewController: UIViewController {
         view.endEditing(true)
     }
     
+    // MARK: - Onboarding
+    
     private func showOnboardingAlert() {
         let alert = UIAlertController(title: "Добро пожаловать в echos!",
-                                     message: "Как вас зовут? Это имя увидят другие устройства.",
+                                     message: "Как вас зовут? Это имя увидят другие устройства поблизости.",
                                      preferredStyle: .alert)
         
         alert.addTextField { textField in
             textField.placeholder = "Ваше имя"
             textField.autocapitalizationType = .words
+            textField.returnKeyType = .done
         }
         
-        alert.addAction(UIAlertAction(title: "Продолжить", style: .default) { _ in
-            if let name = alert.textFields?.first?.text, !name.isEmpty {
-                UserSettings.userName = name
-                
-                Task {
-                    await self.viewModel.restartDiscovery()
-                }
+        let contunieAction = UIAlertAction(title: "Продолжить", style: .default) { [weak self] _ in
+            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                self?.showOnboardingAlert()
+                return
             }
-        })
-        
+            UserSettings.userName = name
+            
+            Task {
+                await self?.viewModel.restartDiscovery()
+                
+                self?.viewModel.multipeerService.invitationDelegate = self
+            }
+        }
+        alert.addAction(contunieAction)
+        alert.preferredAction = contunieAction
         present(alert, animated: true)
     }
     
@@ -340,6 +358,7 @@ final class ChatViewController: UIViewController {
     private func showPeersList() {
         let peersView = PeersListView(viewModel: viewModel)
         let hostingVC = UIHostingController(rootView: peersView)
+        hostingVC.title = "Устройства"
         navigationController?.pushViewController(hostingVC, animated: true)
     }
     
@@ -401,5 +420,39 @@ extension ChatViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         sendTapped()
         return true
+    }
+}
+
+// MARK: - MultipeerInvitationDelegate
+
+extension ChatViewController: MultipeerInvitationDelegate {
+   
+    func shouldAcceptInvitation(from peerName: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                
+                let alert = UIAlertController(title: "Новое подключение",
+                                              message: "\(peerName) хочет подключиться к вам. Разрешить?",
+                                              preferredStyle: .alert)
+                
+                let acceptAction = UIAlertAction(title: "Принять", style: .default) { _ in
+                    continuation.resume(returning: true)
+                }
+                
+                let declineAction = UIAlertAction(title: "Отклонить", style: .default) { _ in
+                    continuation.resume(returning: false)
+                }
+                
+                alert.addAction(acceptAction)
+                alert.addAction(declineAction)
+                alert.preferredAction = acceptAction
+                
+                self.present(alert, animated: true)
+            }
+        }
     }
 }
