@@ -8,6 +8,13 @@
 import Foundation
 import MultipeerConnectivity
 
+@MainActor
+protocol MultipeerInvitationDelegate: AnyObject {
+    /// Показать UI для подтверждения подключения.
+    /// - Returns: true если пользователь принял, false если отклонил
+    func shouldAcceptInvitation(from peerName: String) -> Bool
+}
+
 final class MultipeerService: NSObject {
     
     // MARK: - Configuration
@@ -23,6 +30,10 @@ final class MultipeerService: NSObject {
     var myDisplayName: String {
         myPeerID.displayName
     }
+    
+    // MARK: - Delegation
+    
+    weak var invitationDelegate: MultipeerInvitationDelegate?
     
     // MARK: - Multipeer Components
     
@@ -200,15 +211,25 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
                                 invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         Task { @MainActor in
             print("[Advertiser] Received invite from '\(peerID.displayName)'")
-            // Пока автоматически принимаем все приглашения
-            // TODO step 6: показать UI-алерт для подтверждения
             guard let session = session else {
                 invitationHandler(false, nil)
                 return
             }
             
-            invitationHandler(true, session)
-            print("[Advertiser] Accepted invite from '\(peerID.displayName)'")
+            if let delegate = invitationDelegate {
+                let shouldAccept = await delegate.shouldAcceptInvitation(from: peerID.displayName)
+                
+                if shouldAccept {
+                    invitationHandler(true, session)
+                    print("[Advertiser] Accepted invite from '\(peerID.displayName)'")
+                } else {
+                    invitationHandler(false, session)
+                    print("[Advertiser] Declined invite from '\(peerID.displayName)'")
+                }
+            } else {
+                invitationHandler(true, session)
+                print("[Advertiser] Auto-accepted invite from '\(peerID.displayName)'")
+            }
         }
     }
     
