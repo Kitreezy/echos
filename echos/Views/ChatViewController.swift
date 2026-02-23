@@ -140,7 +140,6 @@ final class ChatViewController: UIViewController {
         setupTableView()
         setupGestures()
         bindViewModel()
-        startApp()
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -148,6 +147,8 @@ final class ChatViewController: UIViewController {
         
         if !UserSettings.hasCompletedOnboarding {
             showOnboardingAlert()
+        } else {
+            startApp()
         }
     }
 
@@ -358,7 +359,6 @@ final class ChatViewController: UIViewController {
     private func showPeersList() {
         let peersView = PeersListView(viewModel: viewModel)
         let hostingVC = UIHostingController(rootView: peersView)
-        hostingVC.title = "..."
         navigationController?.pushViewController(hostingVC, animated: true)
     }
     
