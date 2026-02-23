@@ -126,6 +126,14 @@ final class ChatViewController: UIViewController {
     private var currentTypingPeer: String?
     // MARK: - Lifecycle
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        if UserSettings.hasCompletedOnboarding {
+            showOnboardingAlert()
+        }
+    }
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -218,6 +226,29 @@ final class ChatViewController: UIViewController {
     @objc
     private func dismissKeyboard() {
         view.endEditing(true)
+    }
+    
+    private func showOnboardingAlert() {
+        let alert = UIAlertController(title: "Добро пожаловать в echos!",
+                                     message: "Как вас зовут? Это имя увидят другие устройства.",
+                                     preferredStyle: .alert)
+        
+        alert.addTextField { textField in
+            textField.placeholder = "Ваше имя"
+            textField.autocapitalizationType = .words
+        }
+        
+        alert.addAction(UIAlertAction(title: "Продолжить", style: .default) { _ in
+            if let name = alert.textFields?.first?.text, !name.isEmpty {
+                UserSettings.userName = name
+                
+                Task {
+                    await self.viewModel.restartDiscovery()
+                }
+            }
+        })
+        
+        present(alert, animated: true)
     }
     
     // MARK: - Binding
