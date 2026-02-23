@@ -12,7 +12,7 @@ import MultipeerConnectivity
 protocol MultipeerInvitationDelegate: AnyObject {
     /// Показать UI для подтверждения подключения.
     /// - Returns: true если пользователь принял, false если отклонил
-    func shouldAcceptInvitation(from peerName: String) -> Bool
+    func shouldAcceptInvitation(from peerName: String) async -> Bool
 }
 
 final class MultipeerService: NSObject {
