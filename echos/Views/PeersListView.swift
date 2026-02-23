@@ -9,7 +9,7 @@ import SwiftUI
 
 struct PeersListView: View {
     
-    @Binding var viewModel: ChatViewModel
+    @Bindable var viewModel: ChatViewModel
     
     var body: some View {
         List(viewModel.peers) { peer in

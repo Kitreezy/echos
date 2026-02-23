@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import SwiftUI
 
 final class ChatViewController: UIViewController {
     
@@ -144,6 +145,11 @@ final class ChatViewController: UIViewController {
         setupGestures()
         bindViewModel()
         startApp()
+        
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "person.2"),
+                                                            style: .plain,
+                                                            target: self,
+                                                            action: #selector(showPeersList))
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -326,6 +332,15 @@ final class ChatViewController: UIViewController {
         }
         let idx = IndexPath(row: viewModel.messages.count - 1, section: 0)
         tableView.scrollToRow(at: idx, at: .bottom, animated: animated)
+    }
+    
+    // MARK: - Routing
+    
+    @objc
+    private func showPeersList() {
+        let peersView = PeersListView(viewModel: viewModel)
+        let hostingVC = UIHostingController(rootView: peersView)
+        navigationController?.pushViewController(hostingVC, animated: true)
     }
     
     // MARK: - Typing Animation
