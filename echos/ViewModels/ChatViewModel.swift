@@ -22,7 +22,7 @@ final class ChatViewModel {
     
     // MARK: - Services
     
-    private let multipeerService = MultipeerService()
+    private var multipeerService = MultipeerService()
     
     // MARK: - Typing State
     
@@ -102,6 +102,15 @@ final class ChatViewModel {
         stopTyping()
     }
     
+    func restartDiscovery() async {
+        print("[ChatViewModal] Restarting discovery with new name")
+        
+        multipeerService.stopDeviceDiscovery()
+        multipeerService = MultipeerService()
+        
+        await startDeviceDiscovery()
+    }
+    
     private func updateConnectionStatus() {
         let connectedCount = peers.filter { $0.status == .connected }.count
         let discoveredCount = peers.count
@@ -171,9 +180,10 @@ final class ChatViewModel {
             
             isCurrentlyTyping = true
             
-            let event = TypingEvent(type: .start, peerName: multipeerService.displayName)
+            let event = TypingEvent(type: .start,
+                                    peerName: multipeerService.myDisplayName)
             try? await multipeerService.sendTypingEvent(event)
-            print("[ChatViewModel] Sent typing start from '\(multipeerService.displayName)'")
+            print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
         }
         
         typingTimer = Task {
@@ -198,9 +208,10 @@ final class ChatViewModel {
         isCurrentlyTyping = false
         
         Task {
-            let event = TypingEvent(type: .stop, peerName: multipeerService.displayName)
+            let event = TypingEvent(type: .stop,
+                                    peerName: multipeerService.myDisplayName)
             try? await multipeerService.sendTypingEvent(event)
-            print("[ChatViewModel] Sent typing stop from '\(multipeerService.displayName)'")
+            print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
         }
     }
 }
