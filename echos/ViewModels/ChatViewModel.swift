@@ -22,7 +22,7 @@ final class ChatViewModel {
     
     // MARK: - Services
     
-    private var multipeerService = MultipeerService()
+    var multipeerService: MultipeerService
     
     // MARK: - Typing State
     
@@ -36,6 +36,7 @@ final class ChatViewModel {
     // MARK: - Init
     
     init() {
+        self.multipeerService = MultipeerService()
         
         Task {
             await startListeningForMessages()
