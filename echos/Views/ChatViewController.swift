@@ -125,6 +125,7 @@ final class ChatViewController: UIViewController {
     private var typingAnimationTimer: Timer?
     private var typingDots = 0
     private var currentTypingPeer: String?
+    
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
@@ -133,13 +134,12 @@ final class ChatViewController: UIViewController {
         title = "echos"
         view.backgroundColor = .systemBackground
         
-        viewModel.multipeerService.invitationDelegate = self
-        
         setupNavigationBar()
         setupLayout()
         setupTableView()
         setupGestures()
         bindViewModel()
+        setupAppLifecycleObservers()
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -147,22 +147,43 @@ final class ChatViewController: UIViewController {
         
         if !UserSettings.hasCompletedOnboarding {
             showOnboardingAlert()
-        } else {
-            startApp()
+        } else if viewModel.multipeerService == nil {
+            Task {
+                await viewModel.initialize()
+                viewModel.multipeerService?.invitationDelegate = self
+                await viewModel.startDeviceDiscovery()
+            }
         }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        viewModel.stopDeviceDiscovery()
+    
         stopTypingAnimation()
+    }
+    
+    // MARK: - App Lifecycle
+    
+    private func setupAppLifecycleObservers() {
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil
+        )
+        
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appWillEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil
+        )
     }
     
     // MARK: - Navigation Bar
     
     private func setupNavigationBar() {
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "person.2.fill"),
+            title: "Устройства",
+//            image: UIImage(systemName: "iphone.radiowaves.left.and.right"),
             style: .plain,
             target: self,
             action: #selector(showPeersList)
@@ -266,9 +287,9 @@ final class ChatViewController: UIViewController {
             UserSettings.userName = name
             
             Task {
-                await self?.viewModel.restartDiscovery()
-                
-                self?.viewModel.multipeerService.invitationDelegate = self
+                await self?.viewModel.initialize()
+                self?.viewModel.multipeerService?.invitationDelegate = self
+                await self?.viewModel.startDeviceDiscovery()
             }
         }
         alert.addAction(contunieAction)
@@ -345,6 +366,16 @@ final class ChatViewController: UIViewController {
         viewModel.startTyping()
     }
     
+    @objc
+    private func appDidEnterBackground() {
+        stopTypingAnimation()
+    }
+    
+    @objc
+    private func appWillEnterForeground() {
+
+    }
+    
     private func scrollToBottom(animated: Bool) {
         guard !viewModel.messages.isEmpty else {
             return
@@ -389,6 +420,10 @@ final class ChatViewController: UIViewController {
         typingAnimationTimer = nil
         typingLabel.isHidden = true
     }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 }
 
 // MARK: - UITableViewDataSource
@@ -432,6 +467,12 @@ extension ChatViewController: MultipeerInvitationDelegate {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else {
                     continuation.resume(returning: false)
+                    return
+                }
+                
+                guard self.isViewLoaded && self.view.window != nil else {
+                    print("[ChatViewController] Not in hierarchy, auto-accepting")
+                    continuation.resume(returning: true)
                     return
                 }
                 
