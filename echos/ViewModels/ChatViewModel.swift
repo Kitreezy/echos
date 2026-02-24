@@ -22,7 +22,7 @@ final class ChatViewModel {
     
     // MARK: - Services
     
-    private let multipeerService = MultipeerService()
+    var multipeerService: MultipeerService?
     
     // MARK: - Typing State
     
@@ -35,7 +35,12 @@ final class ChatViewModel {
     
     // MARK: - Init
     
-    init() {
+    init() {}
+    
+    // MARK: - Setup
+    
+    func initialize() {
+        multipeerService = MultipeerService()
         
         Task {
             await startListeningForMessages()
@@ -49,6 +54,9 @@ final class ChatViewModel {
     // MARK: - Listening
     
     private func startListeningForMessages() async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
         for await playLoad in multipeerService.messageStream {
             let message = playLoad.toMessage()
             messages.append(message)
@@ -58,6 +66,9 @@ final class ChatViewModel {
     }
     
     private func startListenForTyping() async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
         for await event in multipeerService.typingStream {
             handleTypingEvent(event)
         }
@@ -81,6 +92,9 @@ final class ChatViewModel {
     
     /// Запуск обнаружения устройств
     func startDeviceDiscovery() async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
         isDiscovering = true
         connectionStatus = "Ищем устройства..."
         
@@ -95,6 +109,9 @@ final class ChatViewModel {
     }
     
     func stopDeviceDiscovery() {
+        guard let multipeerService = multipeerService else {
+            return
+        }
         isDiscovering = false
         multipeerService.stopDeviceDiscovery()
         connectionStatus = "Поиск остановлен"
@@ -103,13 +120,15 @@ final class ChatViewModel {
     }
     
     private func updateConnectionStatus() {
-        let connectedCount = peers.filter { $0.status == .connected }.count
+        let connectedPeers = peers.filter { $0.status == .connected }
+        let connectedCount = connectedPeers.count
         let discoveredCount = peers.count
         
         if connectedCount > 0 {
-            connectionStatus = "Подключено: \(connectedCount) из \(discoveredCount)"
+            let names = connectedPeers.map { $0.displayName }.joined(separator: ", ")
+              connectionStatus = ">_< \(names)"
         } else if discoveredCount > 0 {
-            connectionStatus = "Найдено: \(discoveredCount), подключение..."
+            connectionStatus = "Найдено: \(discoveredCount) устройства."
         } else {
             connectionStatus = "Нет устройств рядом"
         }
@@ -119,6 +138,9 @@ final class ChatViewModel {
     
     /// Отправка сообщения
     func sendMessage(_ text: String) async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
@@ -149,6 +171,9 @@ final class ChatViewModel {
     
     
     func startTyping() {
+        guard let multipeerService = multipeerService else {
+            return
+        }
         typingDebounceTimer?.cancel()
         
         if isCurrentlyTyping {
@@ -171,9 +196,10 @@ final class ChatViewModel {
             
             isCurrentlyTyping = true
             
-            let event = TypingEvent(type: .start, peerName: multipeerService.displayName)
+            let event = TypingEvent(type: .start,
+                                    peerName: multipeerService.myDisplayName)
             try? await multipeerService.sendTypingEvent(event)
-            print("[ChatViewModel] Sent typing start from '\(multipeerService.displayName)'")
+            print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
         }
         
         typingTimer = Task {
@@ -186,6 +212,10 @@ final class ChatViewModel {
     }
     
     func stopTyping() {
+        guard let multipeerService = multipeerService else {
+            return
+        }
+        
         typingDebounceTimer?.cancel()
         typingTimer?.cancel()
         typingDebounceTimer = nil
@@ -198,9 +228,10 @@ final class ChatViewModel {
         isCurrentlyTyping = false
         
         Task {
-            let event = TypingEvent(type: .stop, peerName: multipeerService.displayName)
+            let event = TypingEvent(type: .stop,
+                                    peerName: multipeerService.myDisplayName)
             try? await multipeerService.sendTypingEvent(event)
-            print("[ChatViewModel] Sent typing stop from '\(multipeerService.displayName)'")
+            print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
         }
     }
 }

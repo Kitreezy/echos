@@ -1,5 +1,5 @@
 # echos
-Keep talking, but some anonymous >_&lt;
+Let's talk, but a little quieter >_<
 
 Структура файлов(актуальна для расширения):
 ```
@@ -13,11 +13,14 @@ echos/
 }- Views/                  # UI-компоненты
     ChatViewController.swift   # Основной экран чата (UIKit)
     MessageCell.swift          # Кастомная ячейка для бабблов
+    PeersListView.swift        # SwiftUI список устройств
 }- Services/                   # todo:
     MultipeerService.swift
 }- Extensions/                 # Удобные расширения
 }- Resources/                  # Ассеты, цвета, локализация
 }- Utilites/                   # Вспомогательные свойства
+    DeviceInfo.swift           # Место хранения информации об устройстве 
+    UserSettings.swift         # Хранение имени пользователя
 }- Assets.xcassets/
 }- Info.plist
 ```
@@ -152,4 +155,8 @@ Combine помечен как «legacy preferred alternative» в новых п�
 - [UITextField Editing Events](https://developer.apple.com/documentation/uikit/uitextfield)
 - [Task sleep](https://developer.apple.com/documentation/swift/task/sleep(for:tolerance:clock:))
 - [Timer в Swift](https://developer.apple.com/documentation/foundation/timer)
+- [UserDefaults Guide](https://developer.apple.com/documentation/foundation/userdefaults)
+- [UIAlertController](https://developer.apple.com/documentation/uikit/uialertcontroller)
+- [UIHostingController](https://developer.apple.com/documentation/swiftui/uihostingcontroller)
+- [SwiftUI List](https://developer.apple.com/documentation/swiftui/list)
 - (актуальны для расширения)
