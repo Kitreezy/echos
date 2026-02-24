@@ -53,6 +53,9 @@ final class MultipeerService: NSObject {
     private var discoveredPeerIDs: [String: MCPeerID] = [:]
     
     @MainActor
+    private var connectingPeers: Set<MCPeerID> = []
+    
+    @MainActor
     private var connectedPeers: Set<MCPeerID> = []
     
     // MARK: - Streams
@@ -147,6 +150,11 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
+        await MainActor.run {
+            connectingPeers.insert(peerID)
+            emitPeers()
+        }
+        
         print("[Browser] Manually connecting to '\(displayName)'")
         browser.invitePeer(peerID,
                            to: session,
@@ -205,12 +213,19 @@ final class MultipeerService: NSObject {
     @MainActor
     private func emitPeers() {
         let peers = discoveredPeers.map { peerID, displayName in
-            let status: PeerStatus = connectedPeers.contains(peerID) ? .connected : .notConnected
+            let status: PeerStatus
+            
+            if connectedPeers.contains(peerID) {
+                status = .connected
+            } else if connectingPeers.contains(peerID) {
+                status = .connecting
+            } else {
+                status = .notConnected
+            }
             return Peer(id: UUID(),
                         displayName: displayName,
                         status: status,
-                        lastSeen: Date()
-            )
+                        lastSeen: Date())
         }
         peerStreamContinuation?.yield(peers)
     }
@@ -239,10 +254,17 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
                 return
             }
             
+            if discoveredPeers[peerID] == nil {
+                discoveredPeers[peerID] = peerID.displayName
+                discoveredPeerIDs[peerID.displayName] = peerID
+            }
+            
             if let delegate = invitationDelegate {
                 let shouldAccept = await delegate.shouldAcceptInvitation(from: peerID.displayName)
                 
                 if shouldAccept {
+                    connectingPeers.insert(peerID)
+                    emitPeers()
                     invitationHandler(true, session)
                     print("[Advertiser] Accepted invite from '\(peerID.displayName)'")
                 } else {
@@ -250,6 +272,8 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
                     print("[Advertiser] Declined invite from '\(peerID.displayName)'")
                 }
             } else {
+                connectingPeers.insert(peerID)
+                emitPeers()
                 invitationHandler(true, session)
                 print("[Advertiser] Auto-accepted invite from '\(peerID.displayName)'")
             }
@@ -314,17 +338,26 @@ extension MultipeerService: MCSessionDelegate {
             case .notConnected:
                 print("[Session] '\(peerID.displayName)' disconnected")
                 connectedPeers.remove(peerID)
+                connectingPeers.remove(peerID)
                 
             case .connecting:
                 print("[Session] '\(peerID.displayName)' connecting...")
+                connectingPeers.insert(peerID)
                 
             case .connected:
                 print("[Session] '\(peerID.displayName)' connected")
+                connectingPeers.remove(peerID)
                 connectedPeers.insert(peerID)
+                
+                if discoveredPeers[peerID] == nil {
+                    discoveredPeers[peerID] = peerID.displayName
+                    discoveredPeerIDs[peerID.displayName] = peerID
+                }
                 
             @unknown default:
                 break
             }
+            
             emitPeers()
         }
     }
