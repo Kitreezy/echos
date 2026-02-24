@@ -1,5 +1,5 @@
 # echos
-Keep talking, but some anonymous >_&lt;
+Let's talk, but a little quieter >_<
 
 Структура файлов(актуальна для расширения):
 ```
