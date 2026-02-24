@@ -120,11 +120,13 @@ final class ChatViewModel {
     }
     
     private func updateConnectionStatus() {
-        let connectedCount = peers.filter { $0.status == .connected }.count
+        let connectedPeers = peers.filter { $0.status == .connected }
+        let connectedCount = connectedPeers.count
         let discoveredCount = peers.count
         
         if connectedCount > 0 {
-            connectionStatus = "Подключено: \(connectedCount) из \(discoveredCount)"
+            let names = connectedPeers.map { $0.displayName }.joined(separator: ", ")
+              connectionStatus = ">_< \(names)"
         } else if discoveredCount > 0 {
             connectionStatus = "Найдено: \(discoveredCount) устройства."
         } else {
