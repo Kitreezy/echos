@@ -58,6 +58,9 @@ final class MultipeerService: NSObject {
     @MainActor
     private var connectedPeers: Set<MCPeerID> = []
     
+    @MainActor
+    private var peerUUIDs: [MCPeerID: UUID] = [:]
+    
     // MARK: - Streams
     
     /// Для обнаружения устройств.
@@ -209,6 +212,16 @@ final class MultipeerService: NSObject {
     
     // MARK: - Helpers
     
+    @MainActor
+    private func getStableUUID(for peerID: MCPeerID) -> UUID {
+        if let existing = peerUUIDs[peerID] {
+            return existing
+        }
+        let newUUId = UUID()
+        peerUUIDs[peerID] = newUUId
+        return newUUId
+    }
+    
     /// Конвертирм internal state в модели Peer для ViewModel.
     @MainActor
     private func emitPeers() {
@@ -222,7 +235,7 @@ final class MultipeerService: NSObject {
             } else {
                 status = .notConnected
             }
-            return Peer(id: UUID(),
+            return Peer(id: getStableUUID(for: peerID),
                         displayName: displayName,
                         status: status,
                         lastSeen: Date())
