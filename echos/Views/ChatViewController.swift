@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import SwiftUI
 
 final class ChatViewController: UIViewController {
     
@@ -124,6 +125,7 @@ final class ChatViewController: UIViewController {
     private var typingAnimationTimer: Timer?
     private var typingDots = 0
     private var currentTypingPeer: String?
+    
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
@@ -131,17 +133,67 @@ final class ChatViewController: UIViewController {
         
         title = "echos"
         view.backgroundColor = .systemBackground
+        
+        setupNavigationBar()
         setupLayout()
         setupTableView()
         setupGestures()
         bindViewModel()
-        startApp()
+        setupAppLifecycleObservers()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        if !UserSettings.hasCompletedOnboarding {
+            showOnboardingAlert()
+        } else if viewModel.multipeerService == nil {
+            Task {
+                await viewModel.initialize()
+                viewModel.multipeerService?.invitationDelegate = self
+                await viewModel.startDeviceDiscovery()
+            }
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        viewModel.stopDeviceDiscovery()
+    
         stopTypingAnimation()
+    }
+    
+    // MARK: - App Lifecycle
+    
+    private func setupAppLifecycleObservers() {
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil
+        )
+        
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appWillEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil
+        )
+    }
+    
+    // MARK: - Navigation Bar
+    
+    private func setupNavigationBar() {
+        
+        let nameButton = UIBarButtonItem(title: UserSettings.displayName,
+                                         style: .plain,
+                                         target: self,
+                                         action: #selector(changeUserName))
+        navigationItem.leftBarButtonItem = nameButton
+        
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "Устройства",
+            style: .plain,
+            target: self,
+            action: #selector(showPeersList)
+        )
     }
 
     // MARK: - Layout
@@ -220,6 +272,37 @@ final class ChatViewController: UIViewController {
         view.endEditing(true)
     }
     
+    // MARK: - Onboarding
+    
+    private func showOnboardingAlert() {
+        let alert = UIAlertController(title: "Добро пожаловать в echos!",
+                                     message: "Как вас зовут? Это имя увидят другие устройства поблизости.",
+                                     preferredStyle: .alert)
+        
+        alert.addTextField { textField in
+            textField.placeholder = "Ваше имя"
+            textField.autocapitalizationType = .words
+            textField.returnKeyType = .done
+        }
+        
+        let contunieAction = UIAlertAction(title: "Продолжить", style: .default) { [weak self] _ in
+            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                self?.showOnboardingAlert()
+                return
+            }
+            UserSettings.userName = name
+            
+            Task {
+                await self?.viewModel.initialize()
+                self?.viewModel.multipeerService?.invitationDelegate = self
+                await self?.viewModel.startDeviceDiscovery()
+            }
+        }
+        alert.addAction(contunieAction)
+        alert.preferredAction = contunieAction
+        present(alert, animated: true)
+    }
+    
     // MARK: - Binding
     
     /// Подписка на @Observable ViewModel через withObservationTracking.
@@ -260,6 +343,15 @@ final class ChatViewController: UIViewController {
         }
     }
     
+    private func restartServiceWithNewName() async {
+        viewModel.multipeerService?.stopDeviceDiscovery()
+        
+        await viewModel.initialize()
+        viewModel.multipeerService?.invitationDelegate = self
+        await viewModel.startDeviceDiscovery()
+        print("[ChatViewController] Service restarted with new name: \(UserSettings.displayName)")
+    }
+    
     // MARK: - Actions
     
     private func startApp() {
@@ -289,12 +381,68 @@ final class ChatViewController: UIViewController {
         viewModel.startTyping()
     }
     
+    @objc
+    private func appDidEnterBackground() {
+        stopTypingAnimation()
+    }
+    
+    @objc
+    private func appWillEnterForeground() {
+
+    }
+    
+    @objc
+    private func changeUserName() {
+        let alert = UIAlertController(title: "Изменить имя",
+                                      message: "Ваше имя будет видно другим устройствам",
+                                      preferredStyle: .alert)
+        
+        alert.addTextField { textField in
+            textField.text = UserSettings.displayName
+            textField.placeholder = "Ваше имя"
+            textField.autocapitalizationType = .words
+            textField.returnKeyType = .done
+        }
+        
+        let saveAction = UIAlertAction(title: "Сохранить", style: .default) { [weak self] _ in
+            guard let newName = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !newName.isEmpty,
+                  newName != UserSettings.displayName else {
+                      return
+            }
+            
+            UserSettings.userName = newName
+            self?.navigationItem.leftBarButtonItem?.title = newName
+            
+            Task {
+                await self?.restartServiceWithNewName()
+            }
+        }
+        
+        let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
+        
+        alert.addAction(saveAction)
+        alert.addAction(cancelAction)
+        alert.preferredAction = saveAction
+        
+        present(alert, animated: true)
+    }
+    
     private func scrollToBottom(animated: Bool) {
         guard !viewModel.messages.isEmpty else {
             return
         }
         let idx = IndexPath(row: viewModel.messages.count - 1, section: 0)
         tableView.scrollToRow(at: idx, at: .bottom, animated: animated)
+    }
+    
+    // MARK: - Routing
+    
+    @objc
+    private func showPeersList() {
+        let peersView = PeersListView(viewModel: viewModel)
+        let hostingVC = UIHostingController(rootView: peersView)
+        navigationController?.pushViewController(hostingVC, animated: true)
     }
     
     // MARK: - Typing Animation
@@ -323,6 +471,10 @@ final class ChatViewController: UIViewController {
         typingAnimationTimer?.invalidate()
         typingAnimationTimer = nil
         typingLabel.isHidden = true
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 
@@ -355,5 +507,45 @@ extension ChatViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         sendTapped()
         return true
+    }
+}
+
+// MARK: - MultipeerInvitationDelegate
+
+extension ChatViewController: MultipeerInvitationDelegate {
+   
+    func shouldAcceptInvitation(from peerName: String) async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                
+                guard self.isViewLoaded && self.view.window != nil else {
+                    print("[ChatViewController] Not in hierarchy, auto-accepting")
+                    continuation.resume(returning: true)
+                    return
+                }
+                
+                let alert = UIAlertController(title: "Новое подключение",
+                                              message: "\(peerName) хочет подключиться к вам. Разрешить?",
+                                              preferredStyle: .alert)
+                
+                let acceptAction = UIAlertAction(title: "Принять", style: .default) { _ in
+                    continuation.resume(returning: true)
+                }
+                
+                let declineAction = UIAlertAction(title: "Отклонить", style: .default) { _ in
+                    continuation.resume(returning: false)
+                }
+                
+                alert.addAction(acceptAction)
+                alert.addAction(declineAction)
+                alert.preferredAction = acceptAction
+                
+                self.present(alert, animated: true)
+            }
+        }
     }
 }

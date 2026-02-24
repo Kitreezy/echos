@@ -8,6 +8,13 @@
 import Foundation
 import MultipeerConnectivity
 
+@MainActor
+protocol MultipeerInvitationDelegate: AnyObject {
+    /// Показать UI для подтверждения подключения.
+    /// - Returns: true если пользователь принял, false если отклонил
+    func shouldAcceptInvitation(from peerName: String) async -> Bool
+}
+
 final class MultipeerService: NSObject {
     
     // MARK: - Configuration
@@ -20,9 +27,13 @@ final class MultipeerService: NSObject {
     
     // MARK: — Public API для получения имени
     
-    var displayName: String {
+    var myDisplayName: String {
         myPeerID.displayName
     }
+    
+    // MARK: - Delegation
+    
+    weak var invitationDelegate: MultipeerInvitationDelegate?
     
     // MARK: - Multipeer Components
     
@@ -37,8 +48,18 @@ final class MultipeerService: NSObject {
     @MainActor
     private var discoveredPeers: [MCPeerID: String] = [:]
     
+    /// Для ручного подключения
+    @MainActor
+    private var discoveredPeerIDs: [String: MCPeerID] = [:]
+    
+    @MainActor
+    private var connectingPeers: Set<MCPeerID> = []
+    
     @MainActor
     private var connectedPeers: Set<MCPeerID> = []
+    
+    @MainActor
+    private var peerUUIDs: [MCPeerID: UUID] = [:]
     
     // MARK: - Streams
     
@@ -57,8 +78,8 @@ final class MultipeerService: NSObject {
     // MARK: - Init
     
     override init() {
-        let deviceName = UIDevice.current.name
-        self.myPeerID = MCPeerID(displayName: deviceName)
+        let displayName = UserSettings.displayName
+        self.myPeerID = MCPeerID(displayName: displayName)
 
         // Peer stream
         let (peerStream, peerCont) = AsyncStream.makeStream(of: [Peer].self)
@@ -121,6 +142,29 @@ final class MultipeerService: NSObject {
         print("[MultipeerService] Discovery stopped")
     }
     
+    // MARK: - Manual Connection
+    
+    func connectToPeer(displayName: String) async throws {
+        guard let peerID = await discoveredPeerIDs[displayName] else {
+            throw MultipeerError.peerNotFound
+        }
+        
+        guard let browser = browser, let session = session else {
+            throw MultipeerError.noSession
+        }
+        
+        await MainActor.run {
+            connectingPeers.insert(peerID)
+            emitPeers()
+        }
+        
+        print("[Browser] Manually connecting to '\(displayName)'")
+        browser.invitePeer(peerID,
+                           to: session,
+                           withContext: nil,
+                           timeout: 10)
+    }
+    
     // MARK: - Messaging
     
     func sendMessage(_ payload: MessagePayload) async throws {
@@ -168,12 +212,30 @@ final class MultipeerService: NSObject {
     
     // MARK: - Helpers
     
+    @MainActor
+    private func getStableUUID(for peerID: MCPeerID) -> UUID {
+        if let existing = peerUUIDs[peerID] {
+            return existing
+        }
+        let newUUId = UUID()
+        peerUUIDs[peerID] = newUUId
+        return newUUId
+    }
+    
     /// Конвертирм internal state в модели Peer для ViewModel.
     @MainActor
     private func emitPeers() {
         let peers = discoveredPeers.map { peerID, displayName in
-            let status: PeerStatus = connectedPeers.contains(peerID) ? .connected : .notConnected
-            return Peer(id: UUID(),    // временный ID
+            let status: PeerStatus
+            
+            if connectedPeers.contains(peerID) {
+                status = .connected
+            } else if connectingPeers.contains(peerID) {
+                status = .connecting
+            } else {
+                status = .notConnected
+            }
+            return Peer(id: getStableUUID(for: peerID),
                         displayName: displayName,
                         status: status,
                         lastSeen: Date())
@@ -185,6 +247,7 @@ final class MultipeerService: NSObject {
         stopDeviceDiscovery()
         peerStreamContinuation?.finish()
         messageStreamContinuation?.finish()
+        typingStreamContinuation?.finish()
     }
 }
 
@@ -193,22 +256,40 @@ final class MultipeerService: NSObject {
 extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
     
     /// Кто-то нашёл нас и хочет подключиться (invite).
-    /// step 4: здесь будем принимать/отклонять приглашения.
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didReceiveInvitationFromPeer peerID: MCPeerID,
                                 withContext context: Data?,
                                 invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         Task { @MainActor in
             print("[Advertiser] Received invite from '\(peerID.displayName)'")
-            // Пока автоматически принимаем все приглашения
-            // TODO step 6: показать UI-алерт для подтверждения
             guard let session = session else {
                 invitationHandler(false, nil)
                 return
             }
             
-            invitationHandler(true, session)
-            print("[Advertiser] Accepted invite from '\(peerID.displayName)'")
+            if discoveredPeers[peerID] == nil {
+                discoveredPeers[peerID] = peerID.displayName
+                discoveredPeerIDs[peerID.displayName] = peerID
+            }
+            
+            if let delegate = invitationDelegate {
+                let shouldAccept = await delegate.shouldAcceptInvitation(from: peerID.displayName)
+                
+                if shouldAccept {
+                    connectingPeers.insert(peerID)
+                    emitPeers()
+                    invitationHandler(true, session)
+                    print("[Advertiser] Accepted invite from '\(peerID.displayName)'")
+                } else {
+                    invitationHandler(false, session)
+                    print("[Advertiser] Declined invite from '\(peerID.displayName)'")
+                }
+            } else {
+                connectingPeers.insert(peerID)
+                emitPeers()
+                invitationHandler(true, session)
+                print("[Advertiser] Auto-accepted invite from '\(peerID.displayName)'")
+            }
         }
     }
     
@@ -231,14 +312,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
         Task { @MainActor in
             print("[Browser] Found peer '\(peerID.displayName)'")
             discoveredPeers[peerID] = peerID.displayName
-            guard let session = session else {
-                return
-            }
-            browser.invitePeer(peerID,
-                               to: session,
-                               withContext: nil,
-                               timeout: 10)
-            print("[Browser] Sent invite to '\(peerID.displayName)'")
+            discoveredPeerIDs[peerID.displayName] = peerID
             
             emitPeers()
         }
@@ -250,6 +324,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
         Task { @MainActor in
             print("[Browser] Lost peer: '\(peerID.displayName)'")
             discoveredPeers.removeValue(forKey: peerID)
+            discoveredPeerIDs.removeValue(forKey: peerID.displayName)
             connectedPeers.remove(peerID)
             emitPeers()
         }
@@ -276,17 +351,26 @@ extension MultipeerService: MCSessionDelegate {
             case .notConnected:
                 print("[Session] '\(peerID.displayName)' disconnected")
                 connectedPeers.remove(peerID)
+                connectingPeers.remove(peerID)
                 
             case .connecting:
                 print("[Session] '\(peerID.displayName)' connecting...")
+                connectingPeers.insert(peerID)
                 
             case .connected:
                 print("[Session] '\(peerID.displayName)' connected")
+                connectingPeers.remove(peerID)
                 connectedPeers.insert(peerID)
+                
+                if discoveredPeers[peerID] == nil {
+                    discoveredPeers[peerID] = peerID.displayName
+                    discoveredPeerIDs[peerID.displayName] = peerID
+                }
                 
             @unknown default:
                 break
             }
+            
             emitPeers()
         }
     }
@@ -345,13 +429,13 @@ extension MultipeerService: MCSessionDelegate {
 
 }
 
-
 // MARK: - Errors
 
 enum MultipeerError: LocalizedError {
     case noSession
     case noPeers
     case sendFailed
+    case peerNotFound
     
     var errorDescription: String? {
         switch self {
@@ -363,6 +447,9 @@ enum MultipeerError: LocalizedError {
             
         case .sendFailed:
             return "Не удалось отправить сообщение"
+            
+        case .peerNotFound:
+            return "Устройство не найдено"
         }
     }
 }
