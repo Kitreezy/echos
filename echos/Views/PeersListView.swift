@@ -85,7 +85,7 @@ struct PeersListView: View {
     private func connectToPeer(_ peer: Peer) {
         Task {
             do {
-                try await viewModel.multipeerService.connectToPeer(displayName: peer.displayName)
+                try await viewModel.multipeerService?.connectToPeer(displayName: peer.displayName)
                 print("[PeersListView] Sent invite to '\(peer.displayName)'")
             } catch {
                 print("[PeersListView] Failed to connect: \(error)")
