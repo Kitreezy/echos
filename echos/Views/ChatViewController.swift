@@ -181,9 +181,15 @@ final class ChatViewController: UIViewController {
     // MARK: - Navigation Bar
     
     private func setupNavigationBar() {
+        
+        let nameButton = UIBarButtonItem(title: UserSettings.displayName,
+                                         style: .plain,
+                                         target: self,
+                                         action: #selector(changeUserName))
+        navigationItem.leftBarButtonItem = nameButton
+        
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "Устройства",
-//            image: UIImage(systemName: "iphone.radiowaves.left.and.right"),
             style: .plain,
             target: self,
             action: #selector(showPeersList)
@@ -337,6 +343,15 @@ final class ChatViewController: UIViewController {
         }
     }
     
+    private func restartServiceWithNewName() async {
+        viewModel.multipeerService?.stopDeviceDiscovery()
+        
+        await viewModel.initialize()
+        viewModel.multipeerService?.invitationDelegate = self
+        await viewModel.startDeviceDiscovery()
+        print("[ChatViewController] Service restarted with new name: \(UserSettings.displayName)")
+    }
+    
     // MARK: - Actions
     
     private func startApp() {
@@ -374,6 +389,43 @@ final class ChatViewController: UIViewController {
     @objc
     private func appWillEnterForeground() {
 
+    }
+    
+    @objc
+    private func changeUserName() {
+        let alert = UIAlertController(title: "Изменить имя",
+                                      message: "Ваше имя будет видно другим устройствам",
+                                      preferredStyle: .alert)
+        
+        alert.addTextField { textField in
+            textField.text = UserSettings.displayName
+            textField.placeholder = "Ваше имя"
+            textField.autocapitalizationType = .words
+            textField.returnKeyType = .done
+        }
+        
+        let saveAction = UIAlertAction(title: "Сохранить", style: .default) { [weak self] _ in
+            guard let newName = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !newName.isEmpty,
+                  newName != UserSettings.displayName else {
+                      return
+            }
+            
+            UserSettings.userName = newName
+            self?.navigationItem.leftBarButtonItem?.title = newName
+            
+            Task {
+                await self?.restartServiceWithNewName()
+            }
+        }
+        
+        let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
+        
+        alert.addAction(saveAction)
+        alert.addAction(cancelAction)
+        alert.preferredAction = saveAction
+        
+        present(alert, animated: true)
     }
     
     private func scrollToBottom(animated: Bool) {
