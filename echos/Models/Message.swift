@@ -7,10 +7,10 @@
 
 import Foundation
 
-enum MessageStatus {
-    case sending
-    case sent
-    case failed
+enum MessageStatus: Int, Codable {
+    case sending = 0
+    case sent = 1
+    case failed = 2
 }
 
 struct Message: Identifiable, Equatable {
