@@ -23,6 +23,7 @@ final class ChatViewModel {
     // MARK: - Services
     
     var multipeerService: MultipeerService?
+    var messageStore: MessageStore?
     
     // MARK: - Typing State
     
@@ -41,6 +42,7 @@ final class ChatViewModel {
     
     func initialize() {
         multipeerService = MultipeerService()
+        messageStore = MessageStore()
         
         Task {
             await startListeningForMessages()
@@ -48,6 +50,28 @@ final class ChatViewModel {
         
         Task {
             await startListenForTyping()
+        }
+        
+        Task {
+            await loadMessageHistory()
+        }
+    }
+    
+    // MARK: - Persistence
+    
+    private func loadMessageHistory() async {
+        guard let messageStore = messageStore else {
+            print("[ChatViewModel] MessageStore not initialized")
+            return
+        }
+        
+        do {
+            let savedMessages = try await messageStore.loadMessages()
+            print("[ChatViewModel] Loaded \(savedMessages.count) messages from storage")
+        }
+        catch {
+            print("[ChatViewModel] Failed to load messages: \(error.localizedDescription)")
+            // в будущем можно бахнуть здесь alert
         }
     }
     
@@ -61,7 +85,17 @@ final class ChatViewModel {
             let message = playLoad.toMessage()
             messages.append(message)
             print("[ChatViewModel] Received message: \(message.text)")
-            // TODO step 7: сохранить в Core Data
+            
+            if let messageStore = messageStore {
+                Task {
+                    do {
+                        try await messageStore.saveMessage(message)
+                    }
+                    catch {
+                        print("[ChatViewModel] Failed to save received message: \(error)")
+                    }
+                }
+            }
         }
     }
     
@@ -157,11 +191,33 @@ final class ChatViewModel {
             
             if let idx = messages.firstIndex(where: { $0.id == message.id }) {
                 messages[idx].status = .sent
+                
+                if let messageStore = messageStore {
+                    Task {
+                        do {
+                            try await messageStore.saveMessage(messages[idx])
+                        }
+                        catch {
+                            print("[ChatViewModel] Failed to save message: \(error)")
+                        }
+                    }
+                }
             }
             print("[ChatViewModel] Message sent successfully")
         } catch {
             if let idx = messages.firstIndex(where: { $0.id == message.id }) {
                 messages[idx].status = .failed
+                
+                if let messageStore = messageStore {
+                    Task {
+                        do {
+                            try await messageStore.saveMessage(messages[idx])
+                        }
+                        catch {
+                            print("[ChatViewModel] Failed to save message: \(error)")
+                        }
+                    }
+                }
             }
             print("[ChatViewModel] Failed to send message: \(error)")
         }
