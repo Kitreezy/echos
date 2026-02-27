@@ -182,18 +182,29 @@ final class ChatViewController: UIViewController {
     
     private func setupNavigationBar() {
         
-        let nameButton = UIBarButtonItem(title: UserSettings.displayName,
-                                         style: .plain,
-                                         target: self,
-                                         action: #selector(changeUserName))
+        let nameButton = UIBarButtonItem(
+            title: UserSettings.displayName,
+            style: .plain,
+            target: self,
+            action: #selector(changeUserName)
+        )
         navigationItem.leftBarButtonItem = nameButton
         
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
+        let historyButton = UIBarButtonItem(
+            image: UIImage(systemName: "clock.arrow.circlepath"),
+            style: .plain,
+            target: self,
+            action: #selector(showHistoryMenu)
+        )
+        
+        let peersButton = UIBarButtonItem(
             title: "Устройства",
             style: .plain,
             target: self,
             action: #selector(showPeersList)
         )
+        
+        navigationItem.rightBarButtonItems = [peersButton, historyButton]
     }
 
     // MARK: - Layout
@@ -428,12 +439,141 @@ final class ChatViewController: UIViewController {
         present(alert, animated: true)
     }
     
+    // MARK: - History Menu
+    
+    @objc
+    private func showHistoryMenu() {
+        let alert = UIAlertController(title: "История",
+                                      message: viewModel.currentConversationPeer != nil
+                                      ? "Сейчас показаны сообщения с '\(viewModel.currentConversationPeer!)'"
+                                      : "Показаны все сообщения",
+                                      preferredStyle: .actionSheet)
+        
+        let showAllAction = UIAlertAction(title: "Вся история",
+                                          style: .default) { [weak self] _ in
+            Task {
+                await self?.viewModel.showAllMessages()
+                await MainActor.run {
+                    self?.updateUI()
+                }
+            }
+        }
+        alert.addAction(showAllAction)
+        
+        if viewModel.currentConversationPeer != nil {
+            let clearCurrentAction = UIAlertAction(title: "Очистить этот чат'",
+                                                   style: .destructive) { [weak self] _ in
+                self?.confirmClearCurrentConversation()
+            }
+            alert.addAction(clearCurrentAction)
+        }
+        
+        let clearAllAction = UIAlertAction(title: "Очистить всю историю",
+                                           style: .destructive) { [weak self] _ in
+            self?.confirmClearAllMessages()
+        }
+        alert.addAction(clearAllAction)
+        
+        let cancelAction = UIAlertAction(title: "Отмена",
+                                         style: .cancel)
+        alert.addAction(cancelAction)
+        
+        if let popoverPresentationController = alert.popoverPresentationController {
+            popoverPresentationController.barButtonItem = navigationItem.rightBarButtonItems?.first
+        }
+        
+        present(alert, animated: true)
+    }
+    
+    // MARK: - Clear Confirmations
+    
+    private func confirmClearCurrentConversation() {
+        guard let peerName = viewModel.currentConversationPeer else {
+            return
+        }
+        
+        let alert = UIAlertController(title: "Очистить чат?",
+                                      message: "Вы действительно хотите очистить весь чат с \(peerName)?",
+                                      preferredStyle: .alert)
+        
+        let deleteAction = UIAlertAction(title: "Очистить",
+                                         style: .destructive) { [weak self] _ in
+            Task {
+                do {
+                    try await self?.viewModel.clearCurrentConversationMessages()
+                    await MainActor.run {
+                        self?.updateUI()
+                    }
+                    print("[ChatViewController] Cleared conversation with '\(peerName)'")
+                }
+                catch {
+                    print("[ChatViewController] Failed to clear: \(error)")
+                    await MainActor.run {
+                        self?.showError("Не удалось очистить историю")
+                    }
+                }
+            }
+        }
+        
+        let cancelAction = UIAlertAction(title: "Отмена",
+                                         style: .cancel)
+        
+        alert.addAction(deleteAction)
+        alert.addAction(cancelAction)
+        
+        present(alert, animated: true)
+    }
+    
+    private func confirmClearAllMessages() {
+        let alert = UIAlertController(
+            title: "Очистить всю историю?",
+            message: "Все сообщения со всеми устройствами будут удалены.",
+            preferredStyle: .alert
+        )
+        
+        let deleteAction = UIAlertAction(title: "Удалить всё", style: .destructive) { [weak self] _ in
+            Task {
+                do {
+                    try await self?.viewModel.clearAllMessages()
+                    await MainActor.run {
+                        self?.updateUI()
+                    }
+                    print("[ChatViewController] Cleared all messages")
+                } catch {
+                    print("[ChatViewController] Failed to clear all: \(error)")
+                    await MainActor.run {
+                        self?.showError("Не удалось очистить историю")
+                    }
+                }
+            }
+        }
+        
+        let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
+        
+        alert.addAction(deleteAction)
+        alert.addAction(cancelAction)
+        
+        present(alert, animated: true)
+    }
+    
+    // MARK: - Helpers
+    
     private func scrollToBottom(animated: Bool) {
         guard !viewModel.messages.isEmpty else {
             return
         }
         let idx = IndexPath(row: viewModel.messages.count - 1, section: 0)
         tableView.scrollToRow(at: idx, at: .bottom, animated: animated)
+    }
+    
+    private func showError(_ message: String) {
+        let alert = UIAlertController(
+            title: "Ошибка",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
     
     // MARK: - Routing
