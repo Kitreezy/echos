@@ -20,6 +20,8 @@ final class ChatViewModel {
     var isDiscovering: Bool = false
     var typingPeerName: String? = nil  // nil - никто не печатает
     
+    var currentConversationPeer: String? = nil
+    
     // MARK: - Services
     
     var multipeerService: MultipeerService?
@@ -66,13 +68,69 @@ final class ChatViewModel {
         }
         
         do {
-            let savedMessages = try await messageStore.loadMessages()
-            print("[ChatViewModel] Loaded \(savedMessages.count) messages from storage")
+            if let connectedPeer = peers.first(where: { $0.status == .connected }) {
+                await switchToConversation(with: connectedPeer.displayName)
+            } else {
+                let all = try await messageStore.loadMessages()
+                messages = all
+                currentConversationPeer = nil
+                print("[ChatViewModel] Loaded \(all.count) messages from storage")
+            }
         }
         catch {
             print("[ChatViewModel] Failed to load messages: \(error.localizedDescription)")
             // в будущем можно бахнуть здесь alert
         }
+    }
+    
+    func switchToConversation(with peerName: String) async {
+        guard let messageStore = messageStore else {
+            return
+        }
+        do {
+            let filtered = try await messageStore.loadMessages(with: peerName)
+            messages = filtered
+            currentConversationPeer = peerName
+            print("[ChatViewModel] Showing conversation with '\(peerName)': \(filtered.count) messages")
+        }
+        catch {
+            print("[ChatViewModel] Failed to switch: \(error)")
+        }
+    }
+    
+    func showAllMessages() async {
+        guard let messageStore = messageStore else {
+            return
+        }
+        do {
+            let all = try await messageStore.loadMessages()
+            messages = all
+            currentConversationPeer = nil
+            print("[ChatViewModel] Showing all messages: \(all.count)")
+        }
+        catch {
+            print("[ChatViewModel] Failed to load all: \(error)")
+        }
+    }
+    
+    func clearAllMessages() async throws {
+        guard let messageStore = messageStore else {
+            return
+        }
+        
+        try await messageStore.clearAll()
+        messages = []
+        print("[ChatViewModel] Cleared all messages")
+    }
+    
+    func clearCurrentConversationMessages() async throws {
+        guard let messageStore = messageStore, let peerName = currentConversationPeer else {
+            return
+        }
+        
+        try await messageStore.deleteConverstaion(with: peerName)
+        messages = []
+        print("[ChatViewModel] Cleared conversation with '\(peerName)'")
     }
     
     // MARK: - Listening
@@ -83,8 +141,13 @@ final class ChatViewModel {
         }
         for await playLoad in multipeerService.messageStream {
             let message = playLoad.toMessage()
-            messages.append(message)
-            print("[ChatViewModel] Received message: \(message.text)")
+            
+            if currentConversationPeer == nil || message.senderName == currentConversationPeer {
+                messages.append(message)
+                print("[ChatViewModel] Received from '\(message.senderName ?? "unknown")': \(message.text.prefix(20))...")
+            } else {
+                print("[ChatViewModel] Silently saved message from '\(message.senderName ?? "unknown")' (different conversation)")
+            }
             
             if let messageStore = messageStore {
                 Task {
@@ -179,12 +242,15 @@ final class ChatViewModel {
         guard !trimmed.isEmpty else {
             return
         }
-        var message = Message(text: trimmed, isFromMe: true, status: .sending)
+        var message = Message(text: trimmed,
+                              senderName: nil,
+                              isFromMe: true,
+                              status: .sending)
         messages.append(message)
         
         stopTyping()
         
-        let playLoad = MessagePayload(from: message)
+        let playLoad = MessagePayload(from: message, senderName: multipeerService.myDisplayName)
         
         do {
             try await multipeerService.sendMessage(playLoad)
