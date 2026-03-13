@@ -53,35 +53,9 @@ final class ChatViewModel {
         Task {
             await startListenForTyping()
         }
-        
-        Task {
-            await loadMessageHistory()
-        }
     }
     
     // MARK: - Persistence
-    
-    private func loadMessageHistory() async {
-        guard let messageStore = messageStore else {
-            print("[ChatViewModel] MessageStore not initialized")
-            return
-        }
-        
-        do {
-            if let connectedPeer = peers.first(where: { $0.status == .connected }) {
-                await switchToConversation(with: connectedPeer.displayName)
-            } else {
-                let all = try await messageStore.loadMessages()
-                messages = all
-                currentConversationPeer = nil
-                print("[ChatViewModel] Loaded \(all.count) messages from storage")
-            }
-        }
-        catch {
-            print("[ChatViewModel] Failed to load messages: \(error.localizedDescription)")
-            // в будущем можно бахнуть здесь alert
-        }
-    }
     
     func switchToConversation(with peerName: String) async {
         guard let messageStore = messageStore else {
@@ -98,6 +72,80 @@ final class ChatViewModel {
         }
     }
     
+    func getAllConversations() async -> [ConversationSummary] {
+        guard let messageStore = messageStore else {
+            return []
+        }
+        do {
+            let allMessages = try await messageStore.loadMessages()
+            var conversations: [String: [Message]] = [:]
+            
+            for message in allMessages {
+                if message.isFromMe {
+                    continue
+                } else if let sender = message.senderName {
+                    conversations[sender, default: []].append(message)
+                }
+            }
+            let summaries = conversations.map { peerName, messages in
+                let lastMessage = messages.max(by: { $0.timestamp < $1.timestamp })
+                let unreadCount = 0
+                
+                return ConversationSummary(peerName: peerName,
+                                           lastMessage: lastMessage?.text ?? "",
+                                           lastMessageTime: lastMessage?.timestamp ?? Date(),
+                                           messageCount: messages.count,
+                                           unreadCount: unreadCount,
+                                           isActive: peers.contains(where:  { $0.displayName == peerName  && $0.status == .connected }))
+                
+            }
+            return summaries.sorted { $0.lastMessageTime > $1.lastMessageTime }
+        }
+        catch {
+            print("[ChatViewModel] Failed to get conversations: \(error)")
+            return []
+        }
+    }
+    
+    func clearCurrentConversation() async throws {
+        guard let messageStore = messageStore,
+              let peerName = currentConversationPeer else {
+            return
+        }
+        try await messageStore.deleteConverstaion(with: peerName)
+        messages = []
+        currentConversationPeer = nil
+        print("[ChatViewModel] Cleared conversation with '\(peerName)'")
+    }
+    
+    func clearAllMessages() async throws {
+        guard let messageStore = messageStore else {
+            return
+        }
+        
+        try await messageStore.clearAll()
+        messages = []
+        print("[ChatViewModel] Cleared all messages")
+    }
+    
+    // MARK: - Connection Management
+    
+    func disconnectFromCurrentPeer() {
+        guard let multipeerService = multipeerService,
+              let peerName = currentConversationPeer else {
+            return
+        }
+        
+        Task { @MainActor in
+            if let peerID = multipeerService.getPeerID(for: peerName) {
+                multipeerService.disconnect(from: peerID)
+                messages = []
+                currentConversationPeer = nil
+                print("[ChatViewModel] Disconnected from '\(peerName)'")
+            }
+        }
+    }
+    
     func showAllMessages() async {
         guard let messageStore = messageStore else {
             return
@@ -111,26 +159,6 @@ final class ChatViewModel {
         catch {
             print("[ChatViewModel] Failed to load all: \(error)")
         }
-    }
-    
-    func clearAllMessages() async throws {
-        guard let messageStore = messageStore else {
-            return
-        }
-        
-        try await messageStore.clearAll()
-        messages = []
-        print("[ChatViewModel] Cleared all messages")
-    }
-    
-    func clearCurrentConversationMessages() async throws {
-        guard let messageStore = messageStore, let peerName = currentConversationPeer else {
-            return
-        }
-        
-        try await messageStore.deleteConverstaion(with: peerName)
-        messages = []
-        print("[ChatViewModel] Cleared conversation with '\(peerName)'")
     }
     
     // MARK: - Listening
@@ -151,12 +179,7 @@ final class ChatViewModel {
             
             if let messageStore = messageStore {
                 Task {
-                    do {
-                        try await messageStore.saveMessage(message)
-                    }
-                    catch {
-                        print("[ChatViewModel] Failed to save received message: \(error)")
-                    }
+                    try? await messageStore.saveMessage(message)
                 }
             }
         }
@@ -201,6 +224,12 @@ final class ChatViewModel {
             for await discoveredPeers in multipeerService.peerStream {
                 self.peers = discoveredPeers
                 updateConnectionStatus()
+                
+                if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
+                    if currentConversationPeer != connected.displayName {
+                        await switchToConversation(with: connected.displayName)
+                    }
+                }
             }
         }
     }
