@@ -63,6 +63,19 @@ struct PeersListView: View {
                 } else if peer.status == .connected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
+                    
+                    Button {
+                        disconnectFromPeer(peer)
+                    } label: {
+                        Text("Отключиться")
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.1))
+                            .foregroundStyle(.red)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 4)
@@ -91,5 +104,24 @@ struct PeersListView: View {
                 print("[PeersListView] Failed to connect: \(error)")
             }
         }
+    }
+    
+    private func disconnectFromPeer(_ peer: Peer) {
+        Task {
+            if viewModel.currentConversationPeer == peer.displayName {
+                viewModel.disconnectFromCurrentPeer()
+            } else {
+                if let peerID = viewModel.multipeerService?.getPeerID(for: peer.displayName) {
+                    viewModel.multipeerService?.disconnect(from: peerID)
+                }
+            }
+            print("[PeersListView] Disconnected from '\(peer.displayName)'")
+        }
+    }
+}
+
+#Preview {
+    NavigationStack {
+        PeersListView(viewModel: ChatViewModel())
     }
 }
