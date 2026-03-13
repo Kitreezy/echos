@@ -165,6 +165,43 @@ final class MultipeerService: NSObject {
                            timeout: 10)
     }
     
+    // MARK: - Connection Managment
+    
+    @MainActor
+    func getPeerID(for displayName: String) -> MCPeerID? {
+        discoveredPeerIDs[displayName]
+    }
+    
+    func disconnect(from peerID: MCPeerID) {
+        guard let session = session else {
+            return
+        }
+        
+        Task { @MainActor in
+            print("[MultipeerService] Disconnecting from '\(peerID.displayName)'")
+            
+            // MCSession не имеет метода disconnect для одного peer
+            // Нужно пересоздать session без этого peer
+            // Или просто удалить из connectedPeers и обновить UI
+            
+            connectedPeers.remove(peerID)
+            emitPeers()
+            
+            session.disconnect()
+        }
+    }
+
+    func disconnectAll() {
+        session?.disconnect()
+        
+        Task { @MainActor in
+            connectedPeers.removeAll()
+            connectingPeers.removeAll()
+            emitPeers()
+            print("[MultipeerService] Disconnected from all peers")
+        }
+    }
+    
     // MARK: - Messaging
     
     func sendMessage(_ payload: MessagePayload) async throws {
