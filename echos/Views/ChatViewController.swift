@@ -149,7 +149,7 @@ final class ChatViewController: UIViewController {
             showOnboardingAlert()
         } else if viewModel.multipeerService == nil {
             Task {
-                await viewModel.initialize()
+                viewModel.initialize()
                 viewModel.multipeerService?.invitationDelegate = self
                 await viewModel.startDeviceDiscovery()
             }
@@ -190,21 +190,11 @@ final class ChatViewController: UIViewController {
         )
         navigationItem.leftBarButtonItem = nameButton
         
-        let historyButton = UIBarButtonItem(
-            image: UIImage(systemName: "clock.arrow.circlepath"),
-            style: .plain,
-            target: self,
-            action: #selector(showHistoryMenu)
+        let menuButton = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis"),
+            menu: createMainMenu()
         )
-        
-        let peersButton = UIBarButtonItem(
-            title: "Устройства",
-            style: .plain,
-            target: self,
-            action: #selector(showPeersList)
-        )
-        
-        navigationItem.rightBarButtonItems = [peersButton, historyButton]
+        navigationItem.rightBarButtonItem = menuButton
     }
 
     // MARK: - Layout
@@ -304,7 +294,7 @@ final class ChatViewController: UIViewController {
             UserSettings.userName = name
             
             Task {
-                await self?.viewModel.initialize()
+                self?.viewModel.initialize()
                 self?.viewModel.multipeerService?.invitationDelegate = self
                 await self?.viewModel.startDeviceDiscovery()
             }
@@ -337,11 +327,12 @@ final class ChatViewController: UIViewController {
     
     private func updateUI() {
         statusLabel.text = viewModel.connectionStatus
-        
         emptyStateView.isHidden = !viewModel.messages.isEmpty
         
         tableView.reloadData()
         scrollToBottom(animated: true)
+        
+        updateMenu()
         
         if let peerName = viewModel.typingPeerName {
             if currentTypingPeer != peerName {
@@ -357,7 +348,7 @@ final class ChatViewController: UIViewController {
     private func restartServiceWithNewName() async {
         viewModel.multipeerService?.stopDeviceDiscovery()
         
-        await viewModel.initialize()
+        viewModel.initialize()
         viewModel.multipeerService?.invitationDelegate = self
         await viewModel.startDeviceDiscovery()
         print("[ChatViewController] Service restarted with new name: \(UserSettings.displayName)")
@@ -439,36 +430,103 @@ final class ChatViewController: UIViewController {
         present(alert, animated: true)
     }
     
+    // MARK: - Main Menu (UIMenu)
+    
+    private func createMainMenu() -> UIMenu {
+        let navigationSection = UIMenu(title: "", options: .displayInline, children: [
+            UIAction(
+                title: "Все чаты",
+                image: UIImage(systemName: "bubble.left.and.bubble.right")
+            ) { [weak self] _ in
+                self?.showConversationsList()
+            },
+            
+            UIAction(
+                title: "Устройства поблизости",
+                image: UIImage(systemName: "antenna.radiowaves.left.and.right")
+            ) { [weak self] _ in
+                self?.showPeersList()
+            }
+        ])
+        
+        var chatSection: UIMenu?
+        if let peerName = viewModel.currentConversationPeer {
+            chatSection = UIMenu(title: "Чат с '\(peerName)'", options: .displayInline, children: [
+                UIAction(
+                    title: "Отключиться",
+                    image: UIImage(systemName: "link.badge.minus"),
+                    attributes: .destructive
+                ) { [weak self] _ in
+                    self?.confirmDisconnect()
+                },
+                
+                UIAction(
+                    title: "Очистить историю",
+                    image: UIImage(systemName: "trash"),
+                    attributes: .destructive
+                ) { [weak self] _ in
+                    self?.confirmClearCurrentConversation()
+                }
+            ])
+        }
+        
+        let generalSection = UIMenu(title: "", options: .displayInline, children: [
+            UIAction(
+                title: "Очистить всю историю",
+                image: UIImage(systemName: "trash.fill"),
+                attributes: .destructive
+            ) { [weak self] _ in
+                self?.confirmClearAllMessages()
+            }
+        ])
+        
+        var children: [UIMenuElement] = [navigationSection]
+        if let chatSection = chatSection {
+            children.append(chatSection)
+        }
+        children.append(generalSection)
+        
+        return UIMenu(title: "", children: children)
+    }
+    
+    // MARK: - Menu Update
+    
+    private func updateMenu() {
+        if let menuButton = navigationItem.rightBarButtonItem {
+            menuButton.menu = createMainMenu()
+        }
+    }
+    
     // MARK: - History Menu
     
     @objc
     private func showHistoryMenu() {
-        let alert = UIAlertController(title: "История",
+        let alert = UIAlertController(title: "Опции",
                                       message: viewModel.currentConversationPeer != nil
-                                      ? "Сейчас показаны сообщения с '\(viewModel.currentConversationPeer!)'"
-                                      : "Показаны все сообщения",
+                                      ? "Чат с '\(viewModel.currentConversationPeer ?? "Неизвестный пользователь")'"
+                                      : "Нет активного чата",
                                       preferredStyle: .actionSheet)
-        
-        let showAllAction = UIAlertAction(title: "Вся история",
-                                          style: .default) { [weak self] _ in
-            Task {
-                await self?.viewModel.showAllMessages()
-                await MainActor.run {
-                    self?.updateUI()
-                }
-            }
+        let conversationsAcion = UIAlertAction(title: "~Все чаты",
+                                               style: .default) { [weak self] _ in
+            self?.showConversationsList()
         }
-        alert.addAction(showAllAction)
+        alert.addAction(conversationsAcion)
         
         if viewModel.currentConversationPeer != nil {
-            let clearCurrentAction = UIAlertAction(title: "Очистить этот чат'",
+            let disconnectAction = UIAlertAction(title: "~Отключиться",
+                                                 style: .default) { [weak self] _ in
+                self?.confirmDisconnect()
+            }
+            alert.addAction(disconnectAction)
+            
+            let clearCurrentAction = UIAlertAction(title: "~Очистить этот чат",
                                                    style: .destructive) { [weak self] _ in
                 self?.confirmClearCurrentConversation()
             }
             alert.addAction(clearCurrentAction)
         }
         
-        let clearAllAction = UIAlertAction(title: "Очистить всю историю",
+        let clearAllAction = UIAlertAction(title: "~Очистить всю историю",
                                            style: .destructive) { [weak self] _ in
             self?.confirmClearAllMessages()
         }
@@ -478,9 +536,34 @@ final class ChatViewController: UIViewController {
                                          style: .cancel)
         alert.addAction(cancelAction)
         
-        if let popoverPresentationController = alert.popoverPresentationController {
-            popoverPresentationController.barButtonItem = navigationItem.rightBarButtonItems?.first
+        if let popover = alert.popoverPresentationController {
+            popover.barButtonItem = navigationItem.rightBarButtonItems?.last
         }
+        
+        present(alert, animated: true)
+    }
+    
+    // MARK: - Disconnect Confirmation
+    
+    private func confirmDisconnect() {
+        guard let peerName = viewModel.currentConversationPeer else {
+            return
+        }
+        
+        let alert = UIAlertController(title: "Отключиться?",
+                                      message: "Вы будете отключены от '\(peerName)'. История сохранится.",
+                                      preferredStyle: .alert)
+        
+        let disconnectAction = UIAlertAction(title: "Отключиться",
+                                             style: .destructive) { [weak self] _ in
+            self?.viewModel.disconnectFromCurrentPeer()
+            print("[ChatViewController] Disconnected from  '\(peerName)'... [DONE]")
+        }
+        
+        let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
+        
+        alert.addAction(disconnectAction)
+        alert.addAction(cancelAction)
         
         present(alert, animated: true)
     }
@@ -500,7 +583,7 @@ final class ChatViewController: UIViewController {
                                          style: .destructive) { [weak self] _ in
             Task {
                 do {
-                    try await self?.viewModel.clearCurrentConversationMessages()
+                    try await self?.viewModel.clearCurrentConversation()
                     await MainActor.run {
                         self?.updateUI()
                     }
@@ -582,6 +665,13 @@ final class ChatViewController: UIViewController {
     private func showPeersList() {
         let peersView = PeersListView(viewModel: viewModel)
         let hostingVC = UIHostingController(rootView: peersView)
+        navigationController?.pushViewController(hostingVC, animated: true)
+    }
+    
+    @objc
+    private func showConversationsList() {
+        let conversationsView = ConversationsListView(viewModel: viewModel)
+        let hostingVC = UIHostingController(rootView: conversationsView)
         navigationController?.pushViewController(hostingVC, animated: true)
     }
     
