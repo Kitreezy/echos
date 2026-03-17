@@ -61,6 +61,12 @@ final class MultipeerService: NSObject {
     @MainActor
     private var peerUUIDs: [MCPeerID: UUID] = [:]
     
+    @MainActor
+    private var peerRSSI: [MCPeerID: Int] = [:]
+    
+    @MainActor
+    private var peerDistances: [MCPeerID: Double] = [:]
+    
     // MARK: - Streams
     
     /// Для обнаружения устройств.
@@ -123,6 +129,13 @@ final class MultipeerService: NSObject {
         
         browser?.delegate = self
         browser?.startBrowsingForPeers()
+        
+        // Временно решение: симуляция RSSI для найденных peers
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            await simulateRSSIUpdates()
+        }
+        
         print("[MultipeerService] Discovery started: advertising as '\(myPeerID.displayName)")
     }
     
@@ -140,6 +153,22 @@ final class MultipeerService: NSObject {
         session = nil
     
         print("[MultipeerService] Discovery stopped")
+    }
+    
+    // Симуляция RSSI (пока нет Core Bluetooth)
+    @MainActor
+    private func simulateRSSIUpdates() {
+        for peerID in discoveredPeers.keys {
+            let rssi = Int.random(in: -90...(-40))
+            peerRSSI[peerID] = rssi
+            peerDistances[peerID] = calculateDistance(from: rssi)
+        }
+        emitPeers()
+        
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            await simulateRSSIUpdates()
+        }
     }
     
     // MARK: - Manual Connection
@@ -163,6 +192,18 @@ final class MultipeerService: NSObject {
                            to: session,
                            withContext: nil,
                            timeout: 10)
+    }
+    
+    // MARK: - RSSI Calculation
+    /// Приблизительное вычисление дистанции (пока без интеграции CoreBluetooth)
+    private func calculateDistance(from rssi: Int) -> Double {
+        let txPower: Double = -40
+        let pathLossExponent = 2.5
+        
+        let ratio = (txPower - Double(rssi)) / (10 * pathLossExponent)
+        let distance = pow(10, ratio)
+        
+        return max(1, min(distance, 100))
     }
     
     // MARK: - Connection Managment
@@ -275,7 +316,9 @@ final class MultipeerService: NSObject {
             return Peer(id: getStableUUID(for: peerID),
                         displayName: displayName,
                         status: status,
-                        lastSeen: Date())
+                        lastSeen: Date(),
+                        rssi: peerRSSI[peerID],
+                        distance: peerDistances[peerID])
         }
         peerStreamContinuation?.yield(peers)
     }
@@ -351,6 +394,13 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             discoveredPeers[peerID] = peerID.displayName
             discoveredPeerIDs[peerID.displayName] = peerID
             
+            if let rssiString = info?["RSSI"],
+               let rssi = Int(rssiString) {
+                peerRSSI[peerID] = rssi
+                peerDistances[peerID] = calculateDistance(from: rssi)
+                print("[MultipeerService] RSSI for \(peerID.displayName): \(rssi) dBm (~\(Int(peerDistances[peerID] ?? 0))m)")
+            }
+            
             emitPeers()
         }
     }
@@ -363,6 +413,10 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             discoveredPeers.removeValue(forKey: peerID)
             discoveredPeerIDs.removeValue(forKey: peerID.displayName)
             connectedPeers.remove(peerID)
+            
+            peerRSSI.removeValue(forKey: peerID)
+            peerDistances.removeValue(forKey: peerID)
+            
             emitPeers()
         }
     }
