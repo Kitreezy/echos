@@ -10,9 +10,13 @@ import SwiftUI
 
 final class ChatViewController: UIViewController {
     
+    private let sharedViewModel: ChatViewModel
+    
     // MARK: - ViewModel
     
-    private let viewModel = ChatViewModel()
+    private var viewModel: ChatViewModel {
+        return sharedViewModel
+    }
     
     // MARK: - UI
     
@@ -126,7 +130,27 @@ final class ChatViewController: UIViewController {
     private var typingDots = 0
     private var currentTypingPeer: String?
     
+    // MARK: Init
+    
+    init(viewModel: ChatViewModel) {
+        self.sharedViewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+     
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
     // MARK: - Lifecycle
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        
+        navigationController?.setNavigationBarHidden(false, animated: animated)
+        
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        navigationController?.interactivePopGestureRecognizer?.delegate = nil
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -144,16 +168,6 @@ final class ChatViewController: UIViewController {
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        
-        if !UserSettings.hasCompletedOnboarding {
-            showOnboardingAlert()
-        } else if viewModel.multipeerService == nil {
-            Task {
-                viewModel.initialize()
-                viewModel.multipeerService?.invitationDelegate = self
-                await viewModel.startDeviceDiscovery()
-            }
-        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -181,14 +195,18 @@ final class ChatViewController: UIViewController {
     // MARK: - Navigation Bar
     
     private func setupNavigationBar() {
-        
-        let nameButton = UIBarButtonItem(
-            title: UserSettings.displayName,
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "chevron.left"),
             style: .plain,
             target: self,
-            action: #selector(changeUserName)
+            action: #selector(backToDiscovery)
         )
-        navigationItem.leftBarButtonItem = nameButton
+        
+        if let peerName = viewModel.currentConversationPeer {
+            title = peerName.uppercased()
+        } else {
+            title = "ECHOS"
+        }
         
         let menuButton = UIBarButtonItem(
             image: UIImage(systemName: "ellipsis"),
@@ -428,6 +446,11 @@ final class ChatViewController: UIViewController {
         alert.preferredAction = saveAction
         
         present(alert, animated: true)
+    }
+    
+    @objc
+    private func backToDiscovery() {
+        navigationController?.popViewController(animated: true)
     }
     
     // MARK: - Main Menu (UIMenu)
