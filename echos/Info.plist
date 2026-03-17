@@ -28,5 +28,9 @@
 		<string>_echos-chat._tcp</string>
 		<string>_echos-chat._udp</string>
 	</array>
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleLightContent</string>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <true/>
 </dict>
 </plist>
