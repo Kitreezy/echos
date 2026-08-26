@@ -24,8 +24,9 @@ final class ChatViewModel {
     
     // MARK: - Services
     
-    var multipeerService: MultipeerService?
-    var messageStore: MessageStore?
+    /// Тип — протокол, а не конкретный класс: в тестах сюда подставляется фейк.
+    var multipeerService: (any PeerTransport)?
+    var messageStore: (any MessageStoring)?
     
     // MARK: - Typing State
     
@@ -42,9 +43,13 @@ final class ChatViewModel {
     
     // MARK: - Setup
     
-    func initialize() {
-        multipeerService = MultipeerService()
-        messageStore = MessageStore()
+    /// Точка внедрения зависимостей.
+    /// Прод вызывает без аргументов и получает реальные Multipeer + Core Data,
+    /// тест передаёт свои реализации.
+    func initialize(transport: (any PeerTransport)? = nil,
+                    store: (any MessageStoring)? = nil) {
+        multipeerService = transport ?? MultipeerService()
+        messageStore = store ?? MessageStore()
         
         Task {
             await startListeningForMessages()

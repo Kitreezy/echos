@@ -31,8 +31,23 @@ final class PersistenceController {
         return controller
     }()
     
+    /// Модель грузится из бандла ОДИН раз на процесс.
+    ///
+    /// `NSPersistentContainer(name:)` при каждом вызове создаёт новый
+    /// `NSManagedObjectModel`. В приложении контроллер один, и это незаметно,
+    /// но в тестах стеков много — и Core Data начинает ругаться
+    /// «Failed to find a unique match for an NSEntityDescription».
+    private static let managedObjectModel: NSManagedObjectModel = {
+        guard let url = Bundle(for: PersistenceController.self).url(forResource: "echos", withExtension: "momd"),
+              let model = NSManagedObjectModel(contentsOf: url) else {
+            fatalError("CoreData: не найдена модель echos.momd")
+        }
+        return model
+    }()
+    
     init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: "echos")
+        container = NSPersistentContainer(name: "echos",
+                                          managedObjectModel: Self.managedObjectModel)
         
         if inMemory {
             container.persistentStoreDescriptions.first?.url = URL(filePath: "/dev/null")
