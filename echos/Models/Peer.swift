@@ -6,7 +6,7 @@
 //
 
 import UIKit
-import SwiftUICore
+import SwiftUI
 
 /// Статус подключения соседнего устройства
 enum PeerStatus: Equatable {
