@@ -102,6 +102,7 @@ final class MultipeerService: NSObject {
         self.typingStreamContinuation = typingCont
 
         super.init()
+        print("[lifecycle] MultipeerService init — advertising as '\(displayName)'")
     }
     
     // MARK: - Discovery
@@ -311,6 +312,7 @@ final class MultipeerService: NSObject {
     /// изолированный стейт — только закрыть стримы (континуации `Sendable`).
     /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
     deinit {
+        print("[lifecycle] MultipeerService deinit")
         peerStreamContinuation?.finish()
         messageStreamContinuation?.finish()
         typingStreamContinuation?.finish()

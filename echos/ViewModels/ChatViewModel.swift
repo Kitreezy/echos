@@ -39,7 +39,13 @@ final class ChatViewModel {
     
     // MARK: - Init
     
-    init() {}
+    init() {
+        print("[lifecycle] ChatViewModel init")
+    }
+
+    deinit {
+        print("[lifecycle] ChatViewModel deinit")
+    }
     
     // MARK: - Setup
     
@@ -57,6 +63,15 @@ final class ChatViewModel {
         
         Task {
             await startListenForTyping()
+        }
+
+        // Подписка на peerStream живёт всё время жизни сервиса, а не сессии
+        // поиска: иначе каждый повторный startDeviceDiscovery() (например,
+        // после возврата из фона) добавлял бы ещё одного потребителя
+        // одного и того же AsyncStream, и апдейты по пирам делились бы
+        // между ними случайным образом.
+        Task {
+            await startListeningForPeers()
         }
     }
     
@@ -224,16 +239,20 @@ final class ChatViewModel {
         connectionStatus = "Ищем устройства..."
         
         multipeerService.startDeviceDiscovery()
-        
-        Task {
-            for await discoveredPeers in multipeerService.peerStream {
-                self.peers = discoveredPeers
-                updateConnectionStatus()
-                
-                if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
-                    if currentConversationPeer != connected.displayName {
-                        await switchToConversation(with: connected.displayName)
-                    }
+    }
+
+    /// Слушает поток найденных устройств. Запускается один раз из `initialize()`.
+    private func startListeningForPeers() async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
+        for await discoveredPeers in multipeerService.peerStream {
+            self.peers = discoveredPeers
+            updateConnectionStatus()
+
+            if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
+                if currentConversationPeer != connected.displayName {
+                    await switchToConversation(with: connected.displayName)
                 }
             }
         }
