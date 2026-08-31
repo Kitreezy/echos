@@ -7,13 +7,19 @@
 
 import CoreData
 
+/// Стек Core Data живёт на главном акторе: наружу отдаётся только
+/// `container.viewContext` (main-queue контекст), поэтому изоляция
+/// на `@MainActor` — самое честное описание того, как класс уже используется.
+/// Это же снимает предупреждения strict concurrency про глобальное
+/// изменяемое состояние в `shared` / `preview` / `managedObjectModel`.
+@MainActor
 final class PersistenceController {
     
     static let shared = PersistenceController()
     
     let container: NSPersistentContainer
     
-    static var preview: PersistenceController = {
+    static let preview: PersistenceController = {
         let controller = PersistenceController(inMemory: true)
         
         let viewContext = controller.container.viewContext
@@ -61,6 +67,6 @@ final class PersistenceController {
         }
         
         container.viewContext.automaticallyMergesChangesFromParent = true
-        container.viewContext.mergePolicy = NSMergeByPropertyStoreTrumpMergePolicy
+        container.viewContext.mergePolicy = NSMergePolicy.mergeByPropertyStoreTrump
     }
 }

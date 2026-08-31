@@ -11,6 +11,7 @@ enum DeviceInfo {
     
     /// Получить полное имя устройства из настроек.
     /// Возвращает имя типа "iPhone (имя)" вместо просто.
+    @MainActor
     static var deviceName: String {
         UIDevice.current.name
     }

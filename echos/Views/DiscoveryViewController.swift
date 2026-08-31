@@ -312,10 +312,14 @@ final class DiscoveryViewController: UIViewController {
     
     private func startPulseAnimation() {
         pulseTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            UIView.animate(withDuration: 0.5, delay: 0, options: [.autoreverse, .repeat], animations: {
-                self?.scanningLabel.alpha = 0.4
-                self?.scanningIcon.alpha = 0.4
-            }, completion: nil)
+            // Таймер живёт на главном run loop, а UIView.animate изолирован
+            // главным актором — подтверждаем это компилятору явно.
+            MainActor.assumeIsolated {
+                UIView.animate(withDuration: 0.5, delay: 0, options: [.autoreverse, .repeat], animations: {
+                    self?.scanningLabel.alpha = 0.4
+                    self?.scanningIcon.alpha = 0.4
+                }, completion: nil)
+            }
         }
     }
     
@@ -335,9 +339,12 @@ final class DiscoveryViewController: UIViewController {
         withObservationTracking {
             _ = viewModel.peers
         } onChange: { [weak self] in
-            DispatchQueue.main.async {
-                self?.updateUI()
-                self?.scheduleObservation()
+            // onChange прилетает вне главного актора и вне изоляции вьюхи,
+            // поэтому возвращаемся на него явно через Task { @MainActor }.
+            Task { @MainActor in
+                guard let self else { return }
+                self.updateUI()
+                self.scheduleObservation()
             }
         }
     }

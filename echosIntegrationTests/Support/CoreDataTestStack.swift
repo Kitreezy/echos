@@ -17,6 +17,7 @@ import CoreData
 enum CoreDataTestStack {
     
     /// Свежий пустой стек. Вызывать в `setUp`, а не в `class` scope.
+    @MainActor
     static func makeInMemory() -> PersistenceController {
         PersistenceController(inMemory: true)
     }
