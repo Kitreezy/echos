@@ -172,7 +172,8 @@ final class ChatViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-    
+
+        print("[lifecycle] ChatViewController viewWillDisappear (isMovingFromParent: \(isMovingFromParent))")
         stopTypingAnimation()
     }
     
@@ -735,6 +736,7 @@ final class ChatViewController: UIViewController {
     }
     
     deinit {
+        print("[lifecycle] ChatViewController deinit")
         NotificationCenter.default.removeObserver(self)
     }
 }

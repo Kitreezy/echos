@@ -140,6 +140,9 @@ final class DiscoveryViewController: UIViewController {
     
     private var pulseTimer: Timer?
     private var rotationAnimation: CABasicAnimation?
+
+    /// Возобновлять поиск при возврате из фона только если он реально шёл.
+    private var shouldResumeDiscovery = false
     
     // MARK: - Lifecycle
     
@@ -156,7 +159,8 @@ final class DiscoveryViewController: UIViewController {
         setupTableView()
         bindViewModel()
         startAnimations()
-        
+        setupAppLifecycleObservers()
+
         Task {
             viewModel.initialize()
             viewModel.multipeerService?.invitationDelegate = self
@@ -169,8 +173,59 @@ final class DiscoveryViewController: UIViewController {
         super.viewWillDisappear(animated)
         
         stopAnimations()
-        
+
         // navigationController?.setNavigationBarHidden(false, animated: animated)  // ❌ НЕ НУЖНО
+    }
+
+    // MARK: - App Lifecycle
+
+    /// Наблюдатели живут здесь, а не в ChatViewController: этот экран —
+    /// root навигации и владелец ChatViewModel, он жив всё время работы
+    /// приложения. ChatViewController существует только пока открыт чат,
+    /// и свернуть приложение с экрана радара он бы не поймал.
+    private func setupAppLifecycleObservers() {
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil
+        )
+
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appWillEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil
+        )
+    }
+
+    @objc
+    private func appDidEnterBackground() {
+        guard viewModel.isDiscovering else {
+            return
+        }
+
+        shouldResumeDiscovery = true
+        viewModel.stopDeviceDiscovery()
+        radarState.isScanning = false
+        stopAnimations()
+    }
+
+    @objc
+    private func appWillEnterForeground() {
+        guard shouldResumeDiscovery else {
+            return
+        }
+
+        shouldResumeDiscovery = false
+        startAnimations()
+
+        Task {
+            await viewModel.startDeviceDiscovery()
+            radarState.isScanning = true
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     // MARK: - Status Bar
