@@ -9,7 +9,7 @@ import Foundation
 
 enum UserSettings {
     
-    private static var userNameKey = "echos_user_name"
+    private static let userNameKey = "echos_user_name"
     
     static var userName: String? {
         get {
@@ -24,6 +24,7 @@ enum UserSettings {
         userName != nil
     }
     
+    @MainActor
     static var displayName: String {
         if let customName = userName, !customName.isEmpty {
             return customName

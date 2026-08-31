@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import MultipeerConnectivity
+@preconcurrency import MultipeerConnectivity
 
 @MainActor
 protocol MultipeerInvitationDelegate: AnyObject {
@@ -15,6 +15,12 @@ protocol MultipeerInvitationDelegate: AnyObject {
     func shouldAcceptInvitation(from peerName: String) async -> Bool
 }
 
+/// Весь стейт сервиса и так жил на главном акторе (россыпь `@MainActor`
+/// на свойствах и методах). В Swift 6 честнее изолировать класс целиком:
+/// `PeerTransport`, которому он соответствует, тоже `@MainActor`.
+/// Делегатные методы MultipeerConnectivity приходят с фоновых очередей,
+/// поэтому они помечены `nonisolated` и явно прыгают на главный актор.
+@MainActor
 final class MultipeerService: NSObject {
     
     // MARK: - Configuration
@@ -45,26 +51,19 @@ final class MultipeerService: NSObject {
     // MARK: - State
     
     /// Обнаружение устройства (peerID -> displayName)
-    @MainActor
     private var discoveredPeers: [MCPeerID: String] = [:]
     
     /// Для ручного подключения
-    @MainActor
     private var discoveredPeerIDs: [String: MCPeerID] = [:]
     
-    @MainActor
     private var connectingPeers: Set<MCPeerID> = []
     
-    @MainActor
     private var connectedPeers: Set<MCPeerID> = []
     
-    @MainActor
     private var peerUUIDs: [MCPeerID: UUID] = [:]
     
-    @MainActor
     private var peerRSSI: [MCPeerID: Int] = [:]
     
-    @MainActor
     private var peerDistances: [MCPeerID: Double] = [:]
     
     // MARK: - Streams
@@ -133,7 +132,7 @@ final class MultipeerService: NSObject {
         // Временно решение: симуляция RSSI для найденных peers
         Task {
             try? await Task.sleep(for: .seconds(2))
-            await simulateRSSIUpdates()
+            simulateRSSIUpdates()
         }
         
         print("[MultipeerService] Discovery started: advertising as '\(myPeerID.displayName)")
@@ -156,7 +155,6 @@ final class MultipeerService: NSObject {
     }
     
     // Симуляция RSSI (пока нет Core Bluetooth)
-    @MainActor
     private func simulateRSSIUpdates() {
         for peerID in discoveredPeers.keys {
             let rssi = Int.random(in: -90...(-40))
@@ -167,14 +165,14 @@ final class MultipeerService: NSObject {
         
         Task {
             try? await Task.sleep(for: .seconds(3))
-            await simulateRSSIUpdates()
+            simulateRSSIUpdates()
         }
     }
     
     // MARK: - Manual Connection
     
     func connectToPeer(displayName: String) async throws {
-        guard let peerID = await discoveredPeerIDs[displayName] else {
+        guard let peerID = discoveredPeerIDs[displayName] else {
             throw MultipeerError.peerNotFound
         }
         
@@ -182,10 +180,8 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
-        await MainActor.run {
-            connectingPeers.insert(peerID)
-            emitPeers()
-        }
+        connectingPeers.insert(peerID)
+        emitPeers()
         
         print("[Browser] Manually connecting to '\(displayName)'")
         browser.invitePeer(peerID,
@@ -208,7 +204,6 @@ final class MultipeerService: NSObject {
     
     // MARK: - Connection Managment
     
-    @MainActor
     func getPeerID(for displayName: String) -> MCPeerID? {
         discoveredPeerIDs[displayName]
     }
@@ -218,29 +213,25 @@ final class MultipeerService: NSObject {
             return
         }
         
-        Task { @MainActor in
-            print("[MultipeerService] Disconnecting from '\(peerID.displayName)'")
-            
-            // MCSession не имеет метода disconnect для одного peer
-            // Нужно пересоздать session без этого peer
-            // Или просто удалить из connectedPeers и обновить UI
-            
-            connectedPeers.remove(peerID)
-            emitPeers()
-            
-            session.disconnect()
-        }
+        print("[MultipeerService] Disconnecting from '\(peerID.displayName)'")
+
+        // MCSession не имеет метода disconnect для одного peer
+        // Нужно пересоздать session без этого peer
+        // Или просто удалить из connectedPeers и обновить UI
+
+        connectedPeers.remove(peerID)
+        emitPeers()
+
+        session.disconnect()
     }
 
     func disconnectAll() {
         session?.disconnect()
         
-        Task { @MainActor in
-            connectedPeers.removeAll()
-            connectingPeers.removeAll()
-            emitPeers()
-            print("[MultipeerService] Disconnected from all peers")
-        }
+        connectedPeers.removeAll()
+        connectingPeers.removeAll()
+        emitPeers()
+        print("[MultipeerService] Disconnected from all peers")
     }
     
     // MARK: - Messaging
@@ -250,7 +241,7 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = await getConnectedPeers()
+        let connectedPeers = self.connectedPeers
         guard !connectedPeers.isEmpty else {
             throw MultipeerError.noPeers
         }
@@ -271,7 +262,7 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = await getConnectedPeers()
+        let connectedPeers = self.connectedPeers
         guard !connectedPeers.isEmpty else {
             throw MultipeerError.noPeers
         }
@@ -283,14 +274,8 @@ final class MultipeerService: NSObject {
         print("[Session] Sent typing event: \(event.type)")
     }
     
-    @MainActor
-    private func getConnectedPeers() -> Set<MCPeerID> {
-        connectedPeers
-    }
-    
     // MARK: - Helpers
     
-    @MainActor
     private func getStableUUID(for peerID: MCPeerID) -> UUID {
         if let existing = peerUUIDs[peerID] {
             return existing
@@ -301,7 +286,6 @@ final class MultipeerService: NSObject {
     }
     
     /// Конвертирм internal state в модели Peer для ViewModel.
-    @MainActor
     private func emitPeers() {
         let peers = discoveredPeers.map { peerID, displayName in
             let status: PeerStatus
@@ -323,8 +307,10 @@ final class MultipeerService: NSObject {
         peerStreamContinuation?.yield(peers)
     }
     
+    /// `deinit` вызывается вне главного актора, поэтому здесь нельзя трогать
+    /// изолированный стейт — только закрыть стримы (континуации `Sendable`).
+    /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
     deinit {
-        stopDeviceDiscovery()
         peerStreamContinuation?.finish()
         messageStreamContinuation?.finish()
         typingStreamContinuation?.finish()
@@ -336,11 +322,16 @@ final class MultipeerService: NSObject {
 extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
     
     /// Кто-то нашёл нас и хочет подключиться (invite).
-    func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didReceiveInvitationFromPeer peerID: MCPeerID,
                                 withContext context: Data?,
                                 invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        // Замыкание из MultipeerConnectivity не помечено `@Sendable`, но
+        // фреймворк гарантирует, что вызвать его можно ровно один раз
+        // с любой очереди. Оборачиваем явно, чтобы протащить на главный актор.
+        let respond = UncheckedSendableBox(invitationHandler)
         Task { @MainActor in
+            let invitationHandler = respond.value
             print("[Advertiser] Received invite from '\(peerID.displayName)'")
             guard let session = session else {
                 invitationHandler(false, nil)
@@ -373,7 +364,7 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
         }
     }
     
-    func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didNotStartAdvertisingPeer error: any Error) {
         Task { @MainActor in
             print("[Advertiser] Failed to start: \(error.localizedDescription)")
@@ -386,7 +377,7 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
 extension MultipeerService: MCNearbyServiceBrowserDelegate {
     
     /// Устройство найдено.
-    func browser(_ browser: MCNearbyServiceBrowser,
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              foundPeer peerID: MCPeerID,
                              withDiscoveryInfo info: [String: String]?) {
         Task { @MainActor in
@@ -406,7 +397,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
     }
     
     /// Устройство пропало из радиуса.
-    func browser(_ browser: MCNearbyServiceBrowser,
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              lostPeer peerID: MCPeerID) {
         Task { @MainActor in
             print("[Browser] Lost peer: '\(peerID.displayName)'")
@@ -421,7 +412,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
         }
     }
     
-    func browser(_ browser: MCNearbyServiceBrowser,
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              didNotStartBrowsingForPeers error: any Error) {
         Task { @MainActor in
             print("[Browser] Failed to start: \(error.localizedDescription)")
@@ -434,7 +425,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
 extension MultipeerService: MCSessionDelegate {
         
     // Состояние подключения изменилось
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  peer peerID: MCPeerID,
                  didChange state: MCSessionState) {
         Task { @MainActor in
@@ -467,7 +458,7 @@ extension MultipeerService: MCSessionDelegate {
     }
     
     // Получили данные
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didReceive data: Data,
                  fromPeer peerID: MCPeerID) {
         Task { @MainActor in
@@ -496,21 +487,21 @@ extension MultipeerService: MCSessionDelegate {
     
     // MARK: — Unused MCSessionDelegate methods
     
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didReceive stream: InputStream,
                  withName streamName: String,
                  fromPeer peerID: MCPeerID) {
         // Не используется streams
     }
     
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didStartReceivingResourceWithName resourceName: String,
                  fromPeer peerID: MCPeerID,
                  with progress: Progress) {
         // Не используется file transfers
     }
     
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didFinishReceivingResourceWithName resourceName: String,
                  fromPeer peerID: MCPeerID,
                  at localURL: URL?,

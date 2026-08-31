@@ -336,9 +336,12 @@ final class ChatViewController: UIViewController {
             let _ = viewModel.connectionStatus
             let _ = viewModel.typingPeerName
         } onChange: { [weak self] in
-            DispatchQueue.main.async {
-                self?.updateUI()
-                self?.scheduleObservation()  // переподписка
+            // onChange прилетает вне главного актора и вне изоляции вьюхи,
+            // поэтому возвращаемся на него явно через Task { @MainActor }.
+            Task { @MainActor in
+                guard let self else { return }
+                self.updateUI()
+                self.scheduleObservation()  // переподписка
             }
         }
     }
@@ -708,13 +711,18 @@ final class ChatViewController: UIViewController {
         
         typingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.5,
                                                     repeats: true) { [weak self] _ in
-            guard let self = self else {
-                return
+            // Timer со scheduledTimer всегда стреляет на главном run loop,
+            // но замыкание для компилятора — @Sendable и nonisolated.
+            // assumeIsolated фиксирует факт, который мы и так знаем.
+            MainActor.assumeIsolated {
+                guard let self = self else {
+                    return
+                }
+
+                self.typingDots = (self.typingDots % 3) + 1
+                let dots = String(repeating: ".", count: self.typingDots)
+                self.typingLabel.text = "\(peerName) печатает\(dots)"
             }
-            
-            self.typingDots = (self.typingDots % 3) + 1
-            let dots = String(repeating: ".", count: self.typingDots)
-            self.typingLabel.text = "\(peerName) печатает\(dots)"
         }
         
         typingLabel.text = "\(peerName) печатает."
