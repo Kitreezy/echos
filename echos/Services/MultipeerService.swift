@@ -68,38 +68,29 @@ final class MultipeerService: NSObject {
     
     // MARK: - Streams
     
-    /// Для обнаружения устройств.
-    private var peerStreamContinuation: AsyncStream<[Peer]>.Continuation?
-    let peerStream: AsyncStream<[Peer]>
+    /// Потоки мультикастовые: каждое обращение к свойству отдаёт новый
+    /// независимый `AsyncStream`, и все подписчики получают одни и те же
+    /// события. Раньше здесь лежал один `AsyncStream` на всех, и второй
+    /// потребитель воровал часть событий у первого.
     
-    /// Для входащих сообщений
-    private var messageStreamContinuation: AsyncStream<MessagePayload>.Continuation?
-    let messageStream: AsyncStream<MessagePayload>
+    /// Для обнаружения устройств. Реплеит последний список: экран, открытый
+    /// после начала поиска, сразу видит уже найденные устройства.
+    private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
+    var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
+    
+    /// Для входящих сообщений
+    private let messageBroadcast = AsyncBroadcast<MessagePayload>()
+    var messageStream: AsyncStream<MessagePayload> { messageBroadcast.stream }
     
     /// Для typing-событий
-    private var  typingStreamContinuation: AsyncStream<TypingEvent>.Continuation?
-    let typingStream: AsyncStream<TypingEvent>
+    private let typingBroadcast = AsyncBroadcast<TypingEvent>()
+    var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
     
     // MARK: - Init
     
     override init() {
         let displayName = UserSettings.displayName
         self.myPeerID = MCPeerID(displayName: displayName)
-
-        // Peer stream
-        let (peerStream, peerCont) = AsyncStream.makeStream(of: [Peer].self)
-        self.peerStream = peerStream
-        self.peerStreamContinuation = peerCont
-
-        // Message stream
-        let (msgStream, msgCont) = AsyncStream.makeStream(of: MessagePayload.self)
-        self.messageStream = msgStream
-        self.messageStreamContinuation = msgCont
-
-        // Typing stream
-        let (typingStream, typingCont) = AsyncStream.makeStream(of: TypingEvent.self)
-        self.typingStream = typingStream
-        self.typingStreamContinuation = typingCont
 
         super.init()
         print("[lifecycle] MultipeerService init — advertising as '\(displayName)'")
@@ -305,17 +296,22 @@ final class MultipeerService: NSObject {
                         rssi: peerRSSI[peerID],
                         distance: peerDistances[peerID])
         }
-        peerStreamContinuation?.yield(peers)
+        // Сортировка обязательна: `discoveredPeers` — словарь, порядок его
+        // обхода меняется от вызова к вызову. Без стабильного порядка список
+        // «дёргается» в UI, а `removeDuplicates` на стороне потребителя не
+        // может опознать два одинаковых по сути обновления.
+        .sorted { $0.displayName < $1.displayName }
+
+        peerBroadcast.yield(peers)
     }
     
-    /// `deinit` вызывается вне главного актора, поэтому здесь нельзя трогать
-    /// изолированный стейт — только закрыть стримы (континуации `Sendable`).
+    /// `deinit` вызывается вне главного актора, поэтому изолированный стейт
+    /// здесь трогать нельзя. Закрывать потоки руками и не нужно: вместе с
+    /// сервисом освобождаются броадкастеры, а `AsyncStream` завершается сам,
+    /// когда его continuation деаллоцируется.
     /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
     deinit {
         print("[lifecycle] MultipeerService deinit")
-        peerStreamContinuation?.finish()
-        messageStreamContinuation?.finish()
-        typingStreamContinuation?.finish()
     }
 }
 
@@ -473,12 +469,12 @@ extension MultipeerService: MCSessionDelegate {
                 case .message:
                     print("[Session] Recived message from '\(peerID.displayName)")
                     let payload = try packet.decodeMessage()
-                    messageStreamContinuation?.yield(payload)
+                    messageBroadcast.yield(payload)
                     
                 case .typing:
                     print("[Session] Recived typing event from '\(peerID.displayName)")
                     let event = try packet.decodeTypingEvent()
-                    typingStreamContinuation?.yield(event)
+                    typingBroadcast.yield(event)
                 }
                 
             } catch {
