@@ -25,6 +25,12 @@ protocol PeerTransport: AnyObject {
     
     // MARK: - Streams
     
+    /// Потоки мультикастовые: каждое обращение отдаёт НОВЫЙ независимый
+    /// `AsyncStream`, и все подписчики получают одни и те же события.
+    /// Реализация обязана держать по одному continuation на подписчика
+    /// (см. `AsyncBroadcast`), иначе два `for await` начнут делить события
+    /// между собой вместо того чтобы каждый получил все.
+    
     var peerStream: AsyncStream<[Peer]> { get }
     var messageStream: AsyncStream<MessagePayload> { get }
     var typingStream: AsyncStream<TypingEvent> { get }

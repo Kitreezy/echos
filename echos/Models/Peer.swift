@@ -111,4 +111,26 @@ struct Peer: Identifiable, Equatable {
     var isActive: Bool {
         status == .connected
     }
+
+    /// Сравнение без `lastSeen`.
+    ///
+    /// `lastSeen` перезаписывается на каждый повторный emit, поэтому обычное
+    /// `==` не даёт `removeDuplicates` схлопнуть два содержательно одинаковых
+    /// обновления — а именно такие и генерирует периодическая симуляция RSSI.
+    func hasSameState(as other: Peer) -> Bool {
+        id == other.id
+        && displayName == other.displayName
+        && status == other.status
+        && rssi == other.rssi
+        && distance == other.distance
+    }
+}
+
+extension Array where Element == Peer {
+
+    /// Поэлементное `hasSameState`. Корректно работает потому, что сервис
+    /// отдаёт список отсортированным по имени.
+    func hasSameState(as other: [Peer]) -> Bool {
+        count == other.count && zip(self, other).allSatisfy { $0.hasSameState(as: $1) }
+    }
 }

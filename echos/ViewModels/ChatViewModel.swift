@@ -5,8 +5,17 @@
 //  Created by Artem Rodionov on 17.02.2026.
 //
 
+import AsyncAlgorithms
 import Foundation
 import Observation
+
+/// Три потока транспорта сводятся к одному типу события, чтобы их можно было
+/// слить оператором `merge` и читать одним циклом.
+enum TransportEvent: Sendable {
+    case peers([Peer])
+    case message(MessagePayload)
+    case typing(TypingEvent)
+}
 
 @Observable
 @MainActor
@@ -30,16 +39,43 @@ final class ChatViewModel {
     
     // MARK: - Typing State
     
-    private var typingTimer: Task<Void, Never>?
-    private let typingTimeout: TimeInterval = 3.0
+    /// Пауза, после которой считаем, что пользователь действительно печатает.
+    var typingStartDelay: Duration = .milliseconds(300)
     
-    private var typingDebounceTimer: Task<Void, Never>?
-    private let typingDebounceDelay: TimeInterval = 0.3
+    /// Пауза, после которой считаем, что печатать перестали.
+    var typingIdleTimeout: Duration = .seconds(3)
+    
     private var isCurrentlyTyping = false
+    
+    /// Поток нажатий. `startTyping()` только кладёт сюда событие — всё
+    /// остальное делают операторы в `observeTyping()`.
+    private let keystrokes: AsyncStream<Void>
+    private let keystrokeContinuation: AsyncStream<Void>.Continuation
+    
+    // MARK: - Pipeline
+    
+    /// Как часто сбрасывать накопленные сообщения в хранилище.
+    /// Меняется до `initialize()` — конвейер собирается один раз.
+    var persistenceFlushInterval: Duration = .seconds(1)
+    
+    /// Очередь на запись. `AsyncChannel` (в отличие от `AsyncStream`) даёт
+    /// backpressure: отправитель ждёт, пока получатель заберёт элемент, —
+    /// поэтому очередь не может распухнуть неограниченно.
+    private let messagesToPersist = AsyncChannel<Message>()
+    
+    private var transportTask: Task<Void, Never>?
+    private var typingTask: Task<Void, Never>?
+    private var persistenceTask: Task<Void, Never>?
+    
+    /// Как часто ViewModel применяла обновление списка пиров. Диагностика для
+    /// тестов: показывает, что `removeDuplicates` действительно схлопывает
+    /// повторы, а не просто «работает».
+    private(set) var appliedPeerUpdates = 0
     
     // MARK: - Init
     
     init() {
+        (keystrokes, keystrokeContinuation) = AsyncStream.makeStream(of: Void.self)
         print("[lifecycle] ChatViewModel init")
     }
 
@@ -54,24 +90,29 @@ final class ChatViewModel {
     /// тест передаёт свои реализации.
     func initialize(transport: (any PeerTransport)? = nil,
                     store: (any MessageStoring)? = nil) {
+        // `initialize()` вызывается повторно (возврат из фона, смена экрана),
+        // поэтому старые подписки снимаются явно. Раньше каждый вызов добавлял
+        // ещё три несфотменяемые Task.
+        transportTask?.cancel()
+        typingTask?.cancel()
+        
         multipeerService = transport ?? MultipeerService()
         messageStore = store ?? MessageStore()
         
-        Task {
-            await startListeningForMessages()
+        transportTask = Task { [weak self] in
+            await self?.consumeTransportEvents()
         }
         
-        Task {
-            await startListenForTyping()
+        typingTask = Task { [weak self] in
+            await self?.observeTyping()
         }
-
-        // Подписка на peerStream живёт всё время жизни сервиса, а не сессии
-        // поиска: иначе каждый повторный startDeviceDiscovery() (например,
-        // после возврата из фона) добавлял бы ещё одного потребителя
-        // одного и того же AsyncStream, и апдейты по пирам делились бы
-        // между ними случайным образом.
-        Task {
-            await startListeningForPeers()
+        
+        // Конвейер записи переживает переподключения: он не привязан к
+        // конкретному транспорту и не должен терять накопленную пачку.
+        if persistenceTask == nil {
+            persistenceTask = Task { [weak self] in
+                await self?.consumePersistenceQueue()
+            }
         }
     }
     
@@ -183,34 +224,65 @@ final class ChatViewModel {
     
     // MARK: - Listening
     
-    private func startListeningForMessages() async {
+    /// Один цикл на три потока.
+    ///
+    /// Было: три независимые `Task`, каждая со своим `for await`. Стало: потоки
+    /// приводятся к общему типу события и сливаются `merge`. Плюсы — одна точка
+    /// отмены, один `switch` и гарантированный порядок обработки внутри цикла.
+    private func consumeTransportEvents() async {
         guard let multipeerService = multipeerService else {
             return
         }
-        for await playLoad in multipeerService.messageStream {
-            let message = playLoad.toMessage()
-            
-            if currentConversationPeer == nil || message.senderName == currentConversationPeer {
-                messages.append(message)
-                print("[ChatViewModel] Received from '\(message.senderName ?? "unknown")': \(message.text.prefix(20))...")
-            } else {
-                print("[ChatViewModel] Silently saved message from '\(message.senderName ?? "unknown")' (different conversation)")
-            }
-            
-            if let messageStore = messageStore {
-                Task {
-                    try? await messageStore.saveMessage(message)
-                }
+        
+        let peers = multipeerService.peerStream
+            // Список пиров пересобирается на каждый чих, включая периодическую
+            // симуляцию RSSI. Отсекаем содержательные повторы...
+            .removeDuplicates { $0.hasSameState(as: $1) }
+            // ...и ограничиваем частоту перерисовки, оставляя последнее
+            // значение в окне. `_throttle` в 1.1.5 всё ещё с подчёркиванием —
+            // API помечен как экспериментальный.
+            ._throttle(for: .milliseconds(300), latest: true)
+            .map(TransportEvent.peers)
+        
+        let messages = multipeerService.messageStream.map(TransportEvent.message)
+        let typing = multipeerService.typingStream.map(TransportEvent.typing)
+        
+        for await event in merge(peers, messages, typing) {
+            switch event {
+            case .peers(let discoveredPeers):
+                await handlePeers(discoveredPeers)
+                
+            case .message(let payload):
+                handleIncomingMessage(payload)
+                
+            case .typing(let typingEvent):
+                handleTypingEvent(typingEvent)
             }
         }
     }
     
-    private func startListenForTyping() async {
-        guard let multipeerService = multipeerService else {
-            return
+    private func handleIncomingMessage(_ payload: MessagePayload) {
+        let message = payload.toMessage()
+        
+        if currentConversationPeer == nil || message.senderName == currentConversationPeer {
+            messages.append(message)
+            print("[ChatViewModel] Received from '\(message.senderName ?? "unknown")': \(message.text.prefix(20))...")
+        } else {
+            print("[ChatViewModel] Silently saved message from '\(message.senderName ?? "unknown")' (different conversation)")
         }
-        for await event in multipeerService.typingStream {
-            handleTypingEvent(event)
+        
+        persist(message)
+    }
+    
+    private func handlePeers(_ discoveredPeers: [Peer]) async {
+        peers = discoveredPeers
+        appliedPeerUpdates += 1
+        updateConnectionStatus()
+        
+        if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
+            if currentConversationPeer != connected.displayName {
+                await switchToConversation(with: connected.displayName)
+            }
         }
     }
     
@@ -228,6 +300,42 @@ final class ChatViewModel {
         }
     }
     
+    // MARK: - Persistence pipeline
+    
+    /// Кладёт сообщение в очередь на запись вместо отдельной `Task` на каждое.
+    private func persist(_ message: Message) {
+        Task { [messagesToPersist] in
+            await messagesToPersist.send(message)
+        }
+    }
+    
+    /// Пишет накопленное пачками.
+    ///
+    /// Было: `Task { try? await store.saveMessage(message) }` на каждое
+    /// сообщение — незаказанные конкурентные записи в Core Data без гарантии
+    /// порядка. Стало: один потребитель, `chunked(by:)` собирает всё
+    /// пришедшее за интервал в массив, записи идут последовательно.
+    private func consumePersistenceQueue() async {
+        let batches = messagesToPersist.chunked(
+            by: AsyncTimerSequence.repeating(every: persistenceFlushInterval)
+        )
+        
+        for await batch in batches {
+            guard let messageStore = messageStore else {
+                continue
+            }
+            
+            for message in batch {
+                do {
+                    try await messageStore.saveMessage(message)
+                }
+                catch {
+                    print("[ChatViewModel] Failed to save message: \(error)")
+                }
+            }
+        }
+    }
+    
     // MARK: - Discovery
     
     /// Запуск обнаружения устройств
@@ -239,23 +347,6 @@ final class ChatViewModel {
         connectionStatus = "Ищем устройства..."
         
         multipeerService.startDeviceDiscovery()
-    }
-
-    /// Слушает поток найденных устройств. Запускается один раз из `initialize()`.
-    private func startListeningForPeers() async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
-        for await discoveredPeers in multipeerService.peerStream {
-            self.peers = discoveredPeers
-            updateConnectionStatus()
-
-            if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
-                if currentConversationPeer != connected.displayName {
-                    await switchToConversation(with: connected.displayName)
-                }
-            }
-        }
     }
     
     func stopDeviceDiscovery() {
@@ -295,7 +386,7 @@ final class ChatViewModel {
         guard !trimmed.isEmpty else {
             return
         }
-        var message = Message(text: trimmed,
+        let message = Message(text: trimmed,
                               senderName: nil,
                               isFromMe: true,
                               status: .sending)
@@ -308,105 +399,91 @@ final class ChatViewModel {
         do {
             try await multipeerService.sendMessage(playLoad)
             
-            if let idx = messages.firstIndex(where: { $0.id == message.id }) {
-                messages[idx].status = .sent
-                
-                if let messageStore = messageStore {
-                    Task {
-                        do {
-                            try await messageStore.saveMessage(messages[idx])
-                        }
-                        catch {
-                            print("[ChatViewModel] Failed to save message: \(error)")
-                        }
-                    }
-                }
-            }
+            updateStatus(.sent, for: message.id)
             print("[ChatViewModel] Message sent successfully")
         } catch {
-            if let idx = messages.firstIndex(where: { $0.id == message.id }) {
-                messages[idx].status = .failed
-                
-                if let messageStore = messageStore {
-                    Task {
-                        do {
-                            try await messageStore.saveMessage(messages[idx])
-                        }
-                        catch {
-                            print("[ChatViewModel] Failed to save message: \(error)")
-                        }
-                    }
-                }
-            }
+            updateStatus(.failed, for: message.id)
             print("[ChatViewModel] Failed to send message: \(error)")
         }
     }
     
     // MARK: - Typing indication
     
-    
+    /// Вызывается на каждое нажатие клавиши. Никакой логики — только событие
+    /// в поток; решение «печатает / перестал» принимают операторы.
     func startTyping() {
-        guard let multipeerService = multipeerService else {
-            return
-        }
-        typingDebounceTimer?.cancel()
+        keystrokeContinuation.yield()
+    }
+    
+    /// Два потребителя одного потока нажатий с разными интервалами.
+    ///
+    /// Было: `typingDebounceTimer` и `typingTimer` — две задачи с `Task.sleep`,
+    /// которые надо было руками отменять в четырёх местах. Стало: тот же
+    /// поток нажатий, размноженный `share()`, и два `debounce` с разными
+    /// интервалами. `share()` здесь обязателен — без него второй `for await`
+    /// начал бы отбирать нажатия у первого.
+    private func observeTyping() async {
+        let shared = keystrokes.share()
+        let startDelay = typingStartDelay
+        let idleTimeout = typingIdleTimeout
         
-        if isCurrentlyTyping {
-            typingTimer?.cancel()
-            typingTimer = Task {
-                try? await Task.sleep(for: .seconds(typingTimeout))
-                if !Task.isCancelled {
-                    stopTyping()
+        await withTaskGroup(of: Void.self) { group in
+            // Короткая пауза после нажатия — пользователь печатает.
+            group.addTask { [weak self] in
+                for await _ in shared.debounce(for: startDelay) {
+                    await self?.sendTypingStart()
                 }
             }
-            return
-        }
-        
-        typingDebounceTimer = Task {
-            try? await Task.sleep(for: .seconds(typingDebounceDelay))
             
-            guard !Task.isCancelled else {
-                return
-            }
-            
-            isCurrentlyTyping = true
-            
-            let event = TypingEvent(type: .start,
-                                    peerName: multipeerService.myDisplayName)
-            try? await multipeerService.sendTypingEvent(event)
-            print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
-        }
-        
-        typingTimer = Task {
-            try? await Task.sleep(for: .seconds(typingTimeout))
-            
-            if !Task.isCancelled {
-                stopTyping()
+            // Длинная пауза — печатать перестали.
+            group.addTask { [weak self] in
+                for await _ in shared.debounce(for: idleTimeout) {
+                    await self?.sendTypingStop()
+                }
             }
         }
     }
     
+    /// Явная остановка: отправка сообщения, уход с экрана, остановка поиска.
+    /// Пауза в 3 секунды тут не нужна — событие шлём сразу.
     func stopTyping() {
-        guard let multipeerService = multipeerService else {
+        Task { [weak self] in
+            await self?.sendTypingStop()
+        }
+    }
+    
+    private func sendTypingStart() async {
+        guard let multipeerService = multipeerService, !isCurrentlyTyping else {
             return
         }
         
-        typingDebounceTimer?.cancel()
-        typingTimer?.cancel()
-        typingDebounceTimer = nil
-        typingTimer = nil
+        isCurrentlyTyping = true
         
-        guard isCurrentlyTyping else {
+        let event = TypingEvent(type: .start, peerName: multipeerService.myDisplayName)
+        try? await multipeerService.sendTypingEvent(event)
+        print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
+    }
+    
+    private func sendTypingStop() async {
+        guard let multipeerService = multipeerService, isCurrentlyTyping else {
             return
         }
         
         isCurrentlyTyping = false
         
-        Task {
-            let event = TypingEvent(type: .stop,
-                                    peerName: multipeerService.myDisplayName)
-            try? await multipeerService.sendTypingEvent(event)
-            print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
+        let event = TypingEvent(type: .stop, peerName: multipeerService.myDisplayName)
+        try? await multipeerService.sendTypingEvent(event)
+        print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
+    }
+    
+    // MARK: - Helpers
+    
+    private func updateStatus(_ status: MessageStatus, for id: UUID) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else {
+            return
         }
+        
+        messages[idx].status = status
+        persist(messages[idx])
     }
 }
