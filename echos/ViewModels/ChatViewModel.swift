@@ -96,7 +96,7 @@ final class ChatViewModel {
         transportTask?.cancel()
         typingTask?.cancel()
         
-        multipeerService = transport ?? MultipeerService()
+        multipeerService = transport ?? PeerTransportFactory.make()
         messageStore = store ?? MessageStore()
         
         transportTask = Task { [weak self] in
@@ -197,14 +197,10 @@ final class ChatViewModel {
             return
         }
         
-        Task { @MainActor in
-            if let peerID = multipeerService.getPeerID(for: peerName) {
-                multipeerService.disconnect(from: peerID)
-                messages = []
-                currentConversationPeer = nil
-                print("[ChatViewModel] Disconnected from '\(peerName)'")
-            }
-        }
+        multipeerService.disconnect(from: peerName)
+        messages = []
+        currentConversationPeer = nil
+        print("[ChatViewModel] Disconnected from '\(peerName)'")
     }
     
     func showAllMessages() async {

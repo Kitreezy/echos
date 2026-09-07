@@ -314,7 +314,7 @@ final class ChatViewController: UIViewController {
             
             Task {
                 self?.viewModel.initialize()
-                self?.viewModel.multipeerService?.invitationDelegate = self
+                self?.viewModel.multipeerService?.approvalDelegate = self
                 await self?.viewModel.startDeviceDiscovery()
             }
         }
@@ -371,7 +371,7 @@ final class ChatViewController: UIViewController {
         viewModel.multipeerService?.stopDeviceDiscovery()
         
         viewModel.initialize()
-        viewModel.multipeerService?.invitationDelegate = self
+        viewModel.multipeerService?.approvalDelegate = self
         await viewModel.startDeviceDiscovery()
         print("[ChatViewController] Service restarted with new name: \(UserSettings.displayName)")
     }
@@ -773,11 +773,11 @@ extension ChatViewController: UITextFieldDelegate {
     }
 }
 
-// MARK: - MultipeerInvitationDelegate
+// MARK: - PeerConnectionApproving
 
-extension ChatViewController: MultipeerInvitationDelegate {
+extension ChatViewController: PeerConnectionApproving {
    
-    func shouldAcceptInvitation(from peerName: String) async -> Bool {
+    func shouldAcceptConnection(from peerName: String) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else {

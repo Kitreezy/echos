@@ -8,7 +8,6 @@
 //
 
 import Foundation
-import MultipeerConnectivity
 @testable import echos
 
 @MainActor
@@ -17,7 +16,7 @@ final class LoopbackTransport: PeerTransport {
     // MARK: - Identity
 
     var myDisplayName: String = "Tester"
-    var invitationDelegate: MultipeerInvitationDelegate?
+    var approvalDelegate: PeerConnectionApproving?
 
     // MARK: - Streams
 
@@ -88,11 +87,11 @@ final class LoopbackTransport: PeerTransport {
 
     func connectToPeer(displayName: String) async throws {}
 
-    func getPeerID(for displayName: String) -> MCPeerID? {
-        nil
-    }
+    private(set) var disconnectedPeers: [String] = []
 
-    func disconnect(from peerID: MCPeerID) {}
+    func disconnect(from displayName: String) {
+        disconnectedPeers.append(displayName)
+    }
 
     func disconnectAll() {}
 

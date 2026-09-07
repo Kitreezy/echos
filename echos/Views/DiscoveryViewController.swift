@@ -163,7 +163,7 @@ final class DiscoveryViewController: UIViewController {
 
         Task {
             viewModel.initialize()
-            viewModel.multipeerService?.invitationDelegate = self
+            viewModel.multipeerService?.approvalDelegate = self
             await viewModel.startDeviceDiscovery()
             radarState.isScanning = true
         }
@@ -545,10 +545,10 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     }
 }
 
-// MARK: - MultipeerInvitationDelegate
+// MARK: - PeerConnectionApproving
 
-extension DiscoveryViewController: MultipeerInvitationDelegate {
-    func shouldAcceptInvitation(from peerName: String) async -> Bool {
+extension DiscoveryViewController: PeerConnectionApproving {
+    func shouldAcceptConnection(from peerName: String) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else {
