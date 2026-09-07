@@ -8,16 +8,6 @@
 import Foundation
 @preconcurrency import MultipeerConnectivity
 
-@MainActor
-protocol MultipeerInvitationDelegate: AnyObject {
-    /// Показать UI для подтверждения подключения.
-    /// - Returns: true если пользователь принял, false если отклонил
-    func shouldAcceptInvitation(from peerName: String) async -> Bool
-}
-
-/// Весь стейт сервиса и так жил на главном акторе (россыпь `@MainActor`
-/// на свойствах и методах). В Swift 6 честнее изолировать класс целиком:
-/// `PeerTransport`, которому он соответствует, тоже `@MainActor`.
 /// Делегатные методы MultipeerConnectivity приходят с фоновых очередей,
 /// поэтому они помечены `nonisolated` и явно прыгают на главный актор.
 @MainActor
@@ -39,7 +29,7 @@ final class MultipeerService: NSObject {
     
     // MARK: - Delegation
     
-    weak var invitationDelegate: MultipeerInvitationDelegate?
+    weak var approvalDelegate: PeerConnectionApproving?
     
     // MARK: - Multipeer Components
     
@@ -70,8 +60,7 @@ final class MultipeerService: NSObject {
     
     /// Потоки мультикастовые: каждое обращение к свойству отдаёт новый
     /// независимый `AsyncStream`, и все подписчики получают одни и те же
-    /// события. Раньше здесь лежал один `AsyncStream` на всех, и второй
-    /// потребитель воровал часть событий у первого.
+    /// события. 
     
     /// Для обнаружения устройств. Реплеит последний список: экран, открытый
     /// после начала поиска, сразу видит уже найденные устройства.
@@ -196,12 +185,9 @@ final class MultipeerService: NSObject {
     
     // MARK: - Connection Managment
     
-    func getPeerID(for displayName: String) -> MCPeerID? {
-        discoveredPeerIDs[displayName]
-    }
-    
-    func disconnect(from peerID: MCPeerID) {
-        guard let session = session else {
+    func disconnect(from displayName: String) {
+        guard let session = session,
+              let peerID = discoveredPeerIDs[displayName] else {
             return
         }
         
@@ -341,8 +327,8 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
                 discoveredPeerIDs[peerID.displayName] = peerID
             }
             
-            if let delegate = invitationDelegate {
-                let shouldAccept = await delegate.shouldAcceptInvitation(from: peerID.displayName)
+            if let delegate = approvalDelegate {
+                let shouldAccept = await delegate.shouldAcceptConnection(from: peerID.displayName)
                 
                 if shouldAccept {
                     connectingPeers.insert(peerID)

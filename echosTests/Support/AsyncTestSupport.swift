@@ -31,6 +31,34 @@ func waitUntil(
     return condition()
 }
 
+/// Ждёт первый элемент потока, удовлетворяющий условию.
+///
+/// Нужен для потоков состояния: они реплеят последнее значение новому
+/// подписчику, поэтому «первый пришедший элемент» и «то, что мы ждём» —
+/// разные вещи. Брать `collect(count: 1)` в таких случаях значит поймать
+/// промежуточное состояние.
+func firstElement<S: AsyncSequence>(
+    of sequence: S,
+    timeout: Duration = .seconds(2),
+    where predicate: @escaping @Sendable (S.Element) -> Bool
+) async -> S.Element? where S: Sendable, S.Element: Sendable {
+    let finder = Task { () -> S.Element? in
+        for try await element in sequence where predicate(element) {
+            return element
+        }
+        return nil
+    }
+
+    let timer = Task {
+        try? await Task.sleep(for: timeout)
+        finder.cancel()
+    }
+
+    defer { timer.cancel() }
+
+    return (try? await finder.value) ?? nil
+}
+
 /// Собирает не более `count` элементов потока, но не дольше таймаута.
 func collect<S: AsyncSequence>(
     _ sequence: S,

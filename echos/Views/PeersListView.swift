@@ -111,9 +111,7 @@ struct PeersListView: View {
             if viewModel.currentConversationPeer == peer.displayName {
                 viewModel.disconnectFromCurrentPeer()
             } else {
-                if let peerID = viewModel.multipeerService?.getPeerID(for: peer.displayName) {
-                    viewModel.multipeerService?.disconnect(from: peerID)
-                }
+                viewModel.multipeerService?.disconnect(from: peer.displayName)
             }
             print("[PeersListView] Disconnected from '\(peer.displayName)'")
         }
