@@ -21,6 +21,16 @@ protocol PeerConnectionApproving: AnyObject {
     func shouldAcceptConnection(from peerName: String) async -> Bool
 }
 
+/// Состояние связи транспорта — в терминах, одинаковых для Multipeer и релея.
+enum TransportConnectionState: Sendable, Equatable {
+    case offline
+    case connecting
+    /// Сети нет. Отдельно от `connecting`: попыток сейчас не идёт,
+    /// и пользователю честнее сказать «нет сети», а не «подключаемся».
+    case waitingForNetwork
+    case online
+}
+
 @MainActor
 protocol PeerTransport: AnyObject {
     
@@ -44,6 +54,11 @@ protocol PeerTransport: AnyObject {
     var messageStream: AsyncStream<MessagePayload> { get }
     var typingStream: AsyncStream<TypingEvent> { get }
     
+    /// Состояние связи. Транспорту, у которого нет единого соединения
+    /// (Multipeer), сообщать нечего — для него работает пустая реализация
+    /// по умолчанию.
+    var connectionStateUpdates: AsyncStream<TransportConnectionState> { get }
+    
     // MARK: - Discovery
     
     func startDeviceDiscovery()
@@ -63,6 +78,16 @@ protocol PeerTransport: AnyObject {
     
     func sendMessage(_ payload: MessagePayload) async throws
     func sendTypingEvent(_ event: TypingEvent) async throws
+}
+
+extension PeerTransport {
+
+    /// У Multipeer нет одного соединения, состояние которого можно показать:
+    /// связь устанавливается с каждым устройством отдельно и уже отражена
+    /// в статусах пиров.
+    var connectionStateUpdates: AsyncStream<TransportConnectionState> {
+        AsyncStream { $0.finish() }
+    }
 }
 
 extension MultipeerService: PeerTransport {}

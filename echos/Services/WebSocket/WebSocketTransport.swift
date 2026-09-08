@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import UIKit
 
 @MainActor
 final class WebSocketTransport: NSObject {
@@ -35,14 +36,33 @@ final class WebSocketTransport: NSObject {
     var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
 
     /// Состояние соединения с релеем — для индикатора в UI.
-    var connectionStateUpdates: AsyncStream<WebSocketClient.State> { client.stateUpdates }
     var connectionState: WebSocketClient.State { client.state }
+
+    var connectionStateUpdates: AsyncStream<TransportConnectionState> {
+        let states = client.stateUpdates
+
+        return AsyncStream { continuation in
+            let task = Task {
+                for await state in states {
+                    continuation.yield(TransportConnectionState(state))
+                }
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
 
     // MARK: - Private
 
     private let client: WebSocketClient
     private var readerTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
+
+    /// Пользователь включил поиск и не выключал. Отличается от «сейчас
+    /// подключены»: в фоне соединения нет, но возобновлять его при возврате
+    /// надо, а если поиск остановлен явно — не надо.
+    private var isActive = false
 
     /// Имя → идентификатор. Релей оперирует именами, а `Peer` требует
     /// стабильный `id`, иначе SwiftUI будет пересоздавать строки списка.
@@ -51,15 +71,69 @@ final class WebSocketTransport: NSObject {
 
     // MARK: - Init
 
-    init(url: URL, displayName: String = UserSettings.displayName) {
+    init(url: URL,
+         displayName: String = UserSettings.displayName,
+         networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
         self.myDisplayName = displayName
-        self.client = WebSocketClient(url: url)
+        self.client = WebSocketClient(url: url, networkMonitor: networkMonitor)
         super.init()
+        observeAppLifecycle()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: - App Lifecycle
+
+    /// Наблюдатели живут на уровне транспорта, а не экрана.
+    ///
+    /// Раньше фон обрабатывал только `DiscoveryViewController`, и уход в фон
+    /// из чата, минуя радар, оставлял сокет умирать по таймауту. Транспорт же
+    /// жив всё время, пока идёт сессия.
+    private func observeAppLifecycle() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc
+    private func appDidEnterBackground() {
+        guard isActive else {
+            return
+        }
+
+        // Закрываемся штатно, а не ждём, пока соединение умрёт само: так
+        // сервер сразу уберёт нас из присутствия, и собеседники не будут
+        // видеть призрака ещё минуту.
+        client.disconnect()
+        clearPeers()
+    }
+
+    @objc
+    private func appWillEnterForeground() {
+        guard isActive else {
+            return
+        }
+
+        client.connect()
     }
 
     // MARK: - Discovery
 
     func startDeviceDiscovery() {
+        isActive = true
+
         guard readerTask == nil else {
             client.connect()
             return
@@ -97,6 +171,8 @@ final class WebSocketTransport: NSObject {
     }
 
     func stopDeviceDiscovery() {
+        isActive = false
+
         readerTask?.cancel()
         readerTask = nil
 
@@ -207,3 +283,15 @@ final class WebSocketTransport: NSObject {
 }
 
 extension WebSocketTransport: PeerTransport {}
+
+private extension TransportConnectionState {
+
+    init(_ state: WebSocketClient.State) {
+        switch state {
+        case .disconnected:       self = .offline
+        case .connecting:         self = .connecting
+        case .waitingForNetwork:  self = .waitingForNetwork
+        case .connected:          self = .online
+        }
+    }
+}

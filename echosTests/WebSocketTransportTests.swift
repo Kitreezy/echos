@@ -13,21 +13,24 @@ import XCTest
 final class WebSocketTransportTests: XCTestCase {
 
     private var server: RelayServer!
+    private var monitor: FakeNetworkMonitor!
 
     override func setUp() async throws {
         try await super.setUp()
         server = RelayServer()
         try await server.start()
+        monitor = FakeNetworkMonitor()
     }
 
     override func tearDown() async throws {
         await server.stop()
         server = nil
+        monitor = nil
         try await super.tearDown()
     }
 
     private func makeTransport(named name: String) -> WebSocketTransport {
-        WebSocketTransport(url: server.url, displayName: name)
+        WebSocketTransport(url: server.url, displayName: name, networkMonitor: monitor)
     }
 
     /// Поднимает оба транспорта и ждёт, пока сервер увидит обоих.
