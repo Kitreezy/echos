@@ -14,16 +14,20 @@ import XCTest
 final class WebSocketClientTests: XCTestCase {
 
     private var server: RelayServer!
+    private var monitor: FakeNetworkMonitor!
 
     override func setUp() async throws {
         try await super.setUp()
         server = RelayServer()
         try await server.start()
+        // Подставной монитор, чтобы тесты не зависели от реальной сети машины.
+        monitor = FakeNetworkMonitor()
     }
 
     override func tearDown() async throws {
         await server.stop()
         server = nil
+        monitor = nil
         try await super.tearDown()
     }
 
@@ -43,7 +47,7 @@ final class WebSocketClientTests: XCTestCase {
     }
 
     private func makeClient() -> WebSocketClient {
-        let client = WebSocketClient(url: server.url)
+        let client = WebSocketClient(url: server.url, networkMonitor: monitor)
         // Интервалы прода — секунды; в тестах ждать столько нельзя.
         client.pingInterval = .milliseconds(100)
         client.pongTimeout = .milliseconds(300)

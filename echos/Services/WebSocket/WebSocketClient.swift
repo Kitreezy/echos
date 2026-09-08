@@ -10,6 +10,7 @@
 //
 
 import Foundation
+import Network
 
 @MainActor
 final class WebSocketClient {
@@ -19,6 +20,10 @@ final class WebSocketClient {
     enum State: Sendable, Equatable {
         case disconnected
         case connecting
+        /// Сети нет — ретраи приостановлены до появления пути. Отдельный
+        /// случай, а не `connecting`: попытки в этот момент не идут, и
+        /// пользователю честнее показать «нет сети», а не «подключаемся».
+        case waitingForNetwork
         case connected
     }
 
@@ -71,6 +76,7 @@ final class WebSocketClient {
     private let url: URL
     private let sessionConfiguration: URLSessionConfiguration
     private let delegate = SocketDelegate()
+    private let networkMonitor: any NetworkMonitoring
 
     private var session: URLSession?
     private var socket: URLSessionWebSocketTask?
@@ -78,6 +84,11 @@ final class WebSocketClient {
     private var receiveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    private var networkTask: Task<Void, Never>?
+
+    /// Интерфейс, на котором стоит текущее соединение. Нужен, чтобы поймать
+    /// переход Wi-Fi ↔ LTE.
+    private var connectedInterface: NWInterface.InterfaceType?
 
     /// `true` — пользователь явно отключился, переподключаться не нужно.
     private var isStopped = true
@@ -88,9 +99,12 @@ final class WebSocketClient {
 
     // MARK: - Init
 
-    init(url: URL, configuration: URLSessionConfiguration = .ephemeral) {
+    init(url: URL,
+         configuration: URLSessionConfiguration = .ephemeral,
+         networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
         self.url = url
         self.sessionConfiguration = configuration
+        self.networkMonitor = networkMonitor
         delegate.client = self
     }
 
@@ -107,15 +121,93 @@ final class WebSocketClient {
 
         isStopped = false
         reconnectAttempt = 0
+
+        networkMonitor.start()
+        observeNetwork()
+
+        // Если монитор уже знает, что сети нет, — даже не пытаемся.
+        if networkMonitor.currentPath?.isReachable == false {
+            state = .waitingForNetwork
+            return
+        }
+
         openConnection()
     }
 
     func disconnect() {
         isStopped = true
+
+        networkTask?.cancel()
+        networkTask = nil
+
         reconnectTask?.cancel()
         reconnectTask = nil
+
         teardownSocket(closeCode: .normalClosure)
         state = .disconnected
+    }
+
+    // MARK: - Network awareness
+
+    /// Реакция на изменения сетевого пути.
+    ///
+    /// Три разных события, и на каждое своя реакция:
+    /// пути нет — прекратить попытки; путь появился — подключиться немедленно,
+    /// не досиживая backoff; сменился интерфейс — пересоздать соединение,
+    /// потому что старое уже мертво, хоть и выглядит живым.
+    private func observeNetwork() {
+        guard networkTask == nil else {
+            return
+        }
+
+        networkTask = Task { [weak self] in
+            guard let updates = self?.networkMonitor.pathUpdates else {
+                return
+            }
+
+            for await path in updates {
+                self?.handle(path: path)
+            }
+        }
+    }
+
+    private func handle(path: NetworkPathSnapshot) {
+        guard !isStopped else {
+            return
+        }
+
+        guard path.isReachable else {
+            print("[WebSocketClient] No network path, pausing reconnects")
+
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            teardownSocket(closeCode: nil)
+            connectedInterface = nil
+            state = .waitingForNetwork
+            return
+        }
+
+        // Смена интерфейса меняет локальный адрес: соединение уже оборвано,
+        // но узнать об этом иначе как по таймауту ping нельзя.
+        let interfaceChanged = state == .connected
+            && connectedInterface != nil
+            && connectedInterface != path.interface
+
+        if interfaceChanged {
+            print("[WebSocketClient] Interface changed, reconnecting")
+            teardownSocket(closeCode: nil)
+        }
+
+        guard state != .connected || interfaceChanged else {
+            return
+        }
+
+        // Сеть вернулась — начинаем с чистого листа, а не с накопленной
+        // задержки: ждать 30 секунд после включения Wi-Fi незачем.
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempt = 0
+        openConnection()
     }
 
     // MARK: - Sending
@@ -196,6 +288,7 @@ final class WebSocketClient {
         }
 
         reconnectAttempt = 0
+        connectedInterface = networkMonitor.currentPath?.interface
         state = .connected
         startHeartbeat(on: openedSocket)
 
@@ -224,9 +317,18 @@ final class WebSocketClient {
         }
 
         teardownSocket(closeCode: nil)
+        connectedInterface = nil
 
         guard !isStopped else {
             state = .disconnected
+            return
+        }
+
+        // Сеть и сервер отваливаются одинаково с точки зрения сокета, но
+        // требуют разного: при отсутствии пути ретраи бессмысленны — ждём
+        // сигнала монитора, он придёт сам.
+        guard networkMonitor.currentPath?.isReachable != false else {
+            state = .waitingForNetwork
             return
         }
 

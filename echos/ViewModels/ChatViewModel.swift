@@ -63,7 +63,17 @@ final class ChatViewModel {
     /// поэтому очередь не может распухнуть неограниченно.
     private let messagesToPersist = AsyncChannel<Message>()
     
+    /// Буфер перед каналом. Нужен, чтобы зафиксировать порядок синхронно —
+    /// см. `persist(_:)`.
+    private var pendingPersistence: [Message] = []
+    private var persistencePump: Task<Void, Never>?
+    
+    /// Состояние связи транспорта. Для Multipeer остаётся `.offline` —
+    /// у него нет единого соединения, и статус там формируют сами пиры.
+    private(set) var transportState: TransportConnectionState = .offline
+
     private var transportTask: Task<Void, Never>?
+    private var connectionStateTask: Task<Void, Never>?
     private var typingTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
     
@@ -95,6 +105,7 @@ final class ChatViewModel {
         // ещё три несфотменяемые Task.
         transportTask?.cancel()
         typingTask?.cancel()
+        connectionStateTask?.cancel()
         
         multipeerService = transport ?? PeerTransportFactory.make()
         messageStore = store ?? MessageStore()
@@ -105,6 +116,10 @@ final class ChatViewModel {
         
         typingTask = Task { [weak self] in
             await self?.observeTyping()
+        }
+        
+        connectionStateTask = Task { [weak self] in
+            await self?.observeConnectionState()
         }
         
         // Конвейер записи переживает переподключения: он не привязан к
@@ -298,11 +313,29 @@ final class ChatViewModel {
     
     // MARK: - Persistence pipeline
     
-    /// Кладёт сообщение в очередь на запись вместо отдельной `Task` на каждое.
+    /// Кладёт сообщение в очередь на запись.
+    ///
+    /// Порядок фиксируется здесь, синхронно, а в канал сообщения перекладывает
+    /// одна-единственная задача-насос. Заводить `Task` на каждое сообщение
+    /// нельзя: порядок их запуска планировщиком не определён, и сообщения
+    /// приезжают в хранилище вперемешку — что и ловил тест на порядок записи.
     private func persist(_ message: Message) {
-        Task { [messagesToPersist] in
-            await messagesToPersist.send(message)
+        pendingPersistence.append(message)
+        
+        guard persistencePump == nil else {
+            return
         }
+        
+        persistencePump = Task { [weak self] in
+            while let next = self?.takeNextPending() {
+                await self?.messagesToPersist.send(next)
+            }
+            self?.persistencePump = nil
+        }
+    }
+    
+    private func takeNextPending() -> Message? {
+        pendingPersistence.isEmpty ? nil : pendingPersistence.removeFirst()
     }
     
     /// Пишет накопленное пачками.
@@ -356,7 +389,33 @@ final class ChatViewModel {
         stopTyping()
     }
     
+    /// Состояние связи важнее числа найденных устройств: если сети нет,
+    /// «Нет устройств рядом» вводит в заблуждение.
+    private func observeConnectionState() async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
+        
+        for await state in multipeerService.connectionStateUpdates {
+            transportState = state
+            updateConnectionStatus()
+        }
+    }
+    
     private func updateConnectionStatus() {
+        switch transportState {
+        case .waitingForNetwork:
+            connectionStatus = "Нет сети"
+            return
+            
+        case .connecting:
+            connectionStatus = "Переподключаемся..."
+            return
+            
+        case .offline, .online:
+            break
+        }
+        
         let connectedPeers = peers.filter { $0.status == .connected }
         let connectedCount = connectedPeers.count
         let discoveredCount = peers.count
