@@ -208,12 +208,12 @@ final class WebSocketTransport: NSObject {
 
     // MARK: - Messaging
 
-    func sendMessage(_ payload: MessagePayload) async throws {
-        try await send(.message(payload, from: myDisplayName))
+    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
+        try await send(.message(payload, from: myDisplayName, to: peerName))
     }
 
-    func sendTypingEvent(_ event: TypingEvent) async throws {
-        try await send(.typing(event, from: myDisplayName))
+    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
+        try await send(.typing(event, from: myDisplayName, to: peerName))
     }
 
     func sendStroke(_ stroke: Stroke, to peerName: String) async throws {

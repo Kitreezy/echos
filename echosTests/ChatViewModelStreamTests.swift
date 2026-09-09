@@ -29,6 +29,18 @@ final class ChatViewModelStreamTests: XCTestCase {
         return viewModel
     }
 
+    /// Отправка адресная, поэтому собеседник должен быть выбран.
+    /// Раньше сообщения уходили всем подряд, и тестам это было не нужно.
+    private func makeViewModelInConversation(
+        transport: LoopbackTransport,
+        store: SpyMessageStore = SpyMessageStore(),
+        with peer: String = "Bob"
+    ) async -> ChatViewModel {
+        let viewModel = await makeViewModel(transport: transport, store: store)
+        viewModel.currentConversationPeer = peer
+        return viewModel
+    }
+
     private func payload(_ text: String, from sender: String = "Alice") -> MessagePayload {
         MessagePayload(from: Message(text: text, isFromMe: false), senderName: sender)
     }
@@ -106,7 +118,7 @@ final class ChatViewModelStreamTests: XCTestCase {
 
     func test_burstOfKeystrokes_sendsSingleTypingStart() async {
         let transport = LoopbackTransport()
-        let viewModel = await makeViewModel(transport: transport)
+        let viewModel = await makeViewModelInConversation(transport: transport)
 
         for _ in 0..<10 {
             viewModel.startTyping()
@@ -122,7 +134,7 @@ final class ChatViewModelStreamTests: XCTestCase {
 
     func test_pauseAfterTyping_sendsStop() async {
         let transport = LoopbackTransport()
-        let viewModel = await makeViewModel(transport: transport)
+        let viewModel = await makeViewModelInConversation(transport: transport)
 
         viewModel.startTyping()
 
@@ -137,7 +149,7 @@ final class ChatViewModelStreamTests: XCTestCase {
 
     func test_explicitStopTyping_doesNotSendStopTwice() async {
         let transport = LoopbackTransport()
-        let viewModel = await makeViewModel(transport: transport)
+        let viewModel = await makeViewModelInConversation(transport: transport)
 
         viewModel.startTyping()
         _ = await waitUntil { transport.sentTypingTypes.contains(.start) }
@@ -172,7 +184,7 @@ final class ChatViewModelStreamTests: XCTestCase {
     func test_sentMessage_isPersistedWithFinalStatus() async {
         let transport = LoopbackTransport()
         let store = SpyMessageStore()
-        let viewModel = await makeViewModel(transport: transport, store: store)
+        let viewModel = await makeViewModelInConversation(transport: transport, store: store)
 
         await viewModel.sendMessage("исходящее")
 
@@ -181,5 +193,20 @@ final class ChatViewModelStreamTests: XCTestCase {
         XCTAssertTrue(persisted)
         XCTAssertEqual(store.saved.last?.status, .sent)
         XCTAssertEqual(transport.sentMessages.count, 1)
+        XCTAssertEqual(transport.sentMessages.first?.recipient, "Bob",
+                       "Переписка один на один и есть один на один")
+    }
+
+    /// Без выбранного собеседника отправлять некому. Раньше сообщение
+    /// уходило всем на релее, теперь помечается непосланным.
+    func test_messageWithoutConversation_isMarkedFailed() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModel(transport: transport)
+        viewModel.currentConversationPeer = nil
+
+        await viewModel.sendMessage("в никуда")
+
+        XCTAssertTrue(transport.sentMessages.isEmpty)
+        XCTAssertEqual(viewModel.messages.last?.status, .failed)
     }
 }
