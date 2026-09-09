@@ -146,7 +146,7 @@ final class WebSocketClientTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "из оффлайна", isFromMe: true),
                                      senderName: "Alice")
-        await sender.send(try RelayEnvelope.message(payload, from: "Alice").encoded())
+        await sender.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         // Поднимаем обратно — дальше клиент возвращается и представляется сам.
         try await server.start()

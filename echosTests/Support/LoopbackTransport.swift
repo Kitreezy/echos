@@ -25,6 +25,7 @@ final class LoopbackTransport: PeerTransport {
     private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
     private let messageBroadcast = AsyncBroadcast<MessagePayload>()
     private let typingBroadcast = AsyncBroadcast<TypingEvent>()
+    private let strokeBroadcast = AsyncBroadcast<Stroke>()
 
     /// Сколько раз у потоков запрашивали подписку. Тесту нужно дождаться, пока
     /// конвейер ViewModel действительно встанет на потоки: события, отправленные
@@ -46,6 +47,16 @@ final class LoopbackTransport: PeerTransport {
         return typingBroadcast.stream
     }
 
+    var strokeStream: AsyncStream<Stroke> {
+        strokeBroadcast.stream
+    }
+
+    /// Сколько подписчиков сейчас читают росчерки. Тест ждёт по нему, а не
+    /// по времени: событие, отправленное до подписки, теряется.
+    var strokeSubscriberCount: Int {
+        strokeBroadcast.subscriberCount
+    }
+
     /// Один вызов `consumeTransportEvents()` подписывается на все три потока.
     var pipelinesConnected: Int {
         subscriptionsCreated / 3
@@ -53,12 +64,13 @@ final class LoopbackTransport: PeerTransport {
 
     // MARK: - Recorded output
 
-    private(set) var sentMessages: [MessagePayload] = []
-    private(set) var sentTypingEvents: [TypingEvent] = []
+    private(set) var sentMessages: [(payload: MessagePayload, recipient: String)] = []
+    private(set) var sentTypingEvents: [(event: TypingEvent, recipient: String)] = []
+    private(set) var sentStrokes: [(stroke: Stroke, recipient: String)] = []
     private(set) var isDiscovering = false
 
     var sentTypingTypes: [TypingEventType] {
-        sentTypingEvents.map(\.type)
+        sentTypingEvents.map(\.event.type)
     }
 
     // MARK: - Test input
@@ -73,6 +85,10 @@ final class LoopbackTransport: PeerTransport {
 
     func emit(typing: TypingEvent) {
         typingBroadcast.yield(typing)
+    }
+
+    func emit(stroke: Stroke) {
+        strokeBroadcast.yield(stroke)
     }
 
     // MARK: - PeerTransport
@@ -95,11 +111,15 @@ final class LoopbackTransport: PeerTransport {
 
     func disconnectAll() {}
 
-    func sendMessage(_ payload: MessagePayload) async throws {
-        sentMessages.append(payload)
+    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
+        sentMessages.append((payload, peerName))
     }
 
-    func sendTypingEvent(_ event: TypingEvent) async throws {
-        sentTypingEvents.append(event)
+    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
+        sentTypingEvents.append((event, peerName))
+    }
+
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
+        sentStrokes.append((stroke, peerName))
     }
 }

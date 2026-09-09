@@ -451,12 +451,26 @@ final class ChatViewController: UIViewController {
                 image: UIImage(systemName: "point.3.connected.trianglepath.dotted")
             ) { [weak self] _ in
                 self?.showPeersNetwork()
+            },
+
+            UIAction(
+                title: "Моя стена",
+                image: UIImage(systemName: "scribble")
+            ) { [weak self] _ in
+                self?.showWall(of: nil)
             }
         ])
         
         var chatSection: UIMenu?
         if let peerName = viewModel.currentConversationPeer {
             chatSection = UIMenu(title: "Чат с '\(peerName)'", options: .displayInline, children: [
+                UIAction(
+                    title: "Стена '\(peerName)'",
+                    image: UIImage(systemName: "scribble.variable")
+                ) { [weak self] _ in
+                    self?.showWall(of: peerName)
+                },
+
                 UIAction(
                     title: "Отключиться",
                     image: UIImage(systemName: "link.badge.minus"),
@@ -629,6 +643,20 @@ final class ChatViewController: UIViewController {
         navigationController?.pushViewController(hostingVC, animated: true)
     }
     
+    /// Стена: своя (`owner == nil`) или собеседника.
+    private func showWall(of owner: String?) {
+        guard let transport = viewModel.multipeerService else {
+            return
+        }
+
+        let wall = WallView(
+            viewModel: WallViewModel(owner: owner, transport: transport),
+            ownName: transport.myDisplayName
+        )
+        navigationController?.pushViewController(UIHostingController(rootView: wall),
+                                                 animated: true)
+    }
+
     /// Общая картина: кто на связи, кто рядом, с кем связь потеряна.
     /// В отличие от «Устройств поблизости», сгруппировано по состоянию.
     @objc

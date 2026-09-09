@@ -110,7 +110,7 @@ final class WebSocketTransportTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "привет из сети", isFromMe: true),
                                      senderName: "Alice")
-        try await alice.sendMessage(payload)
+        try await alice.sendMessage(payload, to: "Bob")
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
 
@@ -127,7 +127,7 @@ final class WebSocketTransportTests: XCTestCase {
 
         let incoming = bob.typingStream
 
-        try await alice.sendTypingEvent(TypingEvent(type: .start, peerName: "Alice"))
+        try await alice.sendTypingEvent(TypingEvent(type: .start, peerName: "Alice"), to: "Bob")
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
 
@@ -147,7 +147,7 @@ final class WebSocketTransportTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "эхо", isFromMe: true),
                                      senderName: "Alice")
-        try await alice.sendMessage(payload)
+        try await alice.sendMessage(payload, to: "Bob")
 
         _ = await collect(bob.messageStream, count: 1, timeout: .seconds(5))
         let ownMessages = await collect(echoed, count: 1, timeout: .milliseconds(300))

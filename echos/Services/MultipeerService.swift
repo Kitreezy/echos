@@ -75,6 +75,10 @@ final class MultipeerService: NSObject {
     private let typingBroadcast = AsyncBroadcast<TypingEvent>()
     var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
     
+    /// Для росчерков на стене
+    private let strokeBroadcast = AsyncBroadcast<Stroke>()
+    var strokeStream: AsyncStream<Stroke> { strokeBroadcast.stream }
+    
     // MARK: - Init
     
     override init() {
@@ -214,42 +218,61 @@ final class MultipeerService: NSObject {
     
     // MARK: - Messaging
     
-    func sendMessage(_ payload: MessagePayload) async throws {
+    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = self.connectedPeers
-        guard !connectedPeers.isEmpty else {
-            throw MultipeerError.noPeers
-        }
+        let peerID = try connectedPeerID(named: peerName)
         
         let packet = try MultipeerPacket(message: payload)
         let data = try JSONEncoder().encode(packet)
         
-        // Отправляем всем подключённым peers
-        try session.send(data, toPeers: Array(connectedPeers), with: .reliable)
+        try session.send(data, toPeers: [peerID], with: .reliable)
         
-        print("[Session] Sent message to \(connectedPeers.count) peer(s)")
+        print("[Session] Sent message to '\(peerName)'")
+    }
+    
+    /// Общая проверка для адресной отправки: собеседник найден и на связи.
+    private func connectedPeerID(named peerName: String) throws -> MCPeerID {
+        guard let peerID = discoveredPeerIDs[peerName],
+              connectedPeers.contains(peerID) else {
+            throw MultipeerError.peerNotFound
+        }
+        return peerID
     }
     
     // MARK: - Typing
     
-    func sendTypingEvent(_ event: TypingEvent) async throws {
+    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = self.connectedPeers
-        guard !connectedPeers.isEmpty else {
-            throw MultipeerError.noPeers
-        }
+        let peerID = try connectedPeerID(named: peerName)
         
         let packet = try MultipeerPacket(typingEvent: event)
         let data = try JSONEncoder().encode(packet)
         
-        try session.send(data, toPeers: Array(connectedPeers), with: .unreliable)
-        print("[Session] Sent typing event: \(event.type)")
+        try session.send(data, toPeers: [peerID], with: .unreliable)
+        print("[Session] Sent typing event to '\(peerName)': \(event.type)")
+    }
+
+    /// Росчерк уходит одному — владельцу стены — и `.reliable`: индикатор
+    /// набора можно потерять, а пропавший штрих оставит на стене дыру,
+    /// которую нечем восполнить.
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
+        guard let session = session else {
+            throw MultipeerError.noSession
+        }
+        
+        let peerID = try connectedPeerID(named: peerName)
+        
+        let packet = try MultipeerPacket(stroke: stroke)
+        let data = try JSONEncoder().encode(packet)
+        
+        try session.send(data, toPeers: [peerID], with: .reliable)
+        print("[Session] Sent stroke to '\(peerName)' with \(stroke.points.count) points")
     }
     
     // MARK: - Helpers
@@ -461,6 +484,11 @@ extension MultipeerService: MCSessionDelegate {
                     print("[Session] Recived typing event from '\(peerID.displayName)")
                     let event = try packet.decodeTypingEvent()
                     typingBroadcast.yield(event)
+                    
+                case .stroke:
+                    print("[Session] Recived stroke from '\(peerID.displayName)")
+                    let stroke = try packet.decodeStroke()
+                    strokeBroadcast.yield(stroke)
                 }
                 
             } catch {

@@ -112,7 +112,7 @@ class WebSocketContractTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "контракт", isFromMe: true),
                                      senderName: "Alice")
-        await alice.send(try RelayEnvelope.message(payload, from: "Alice").encoded())
+        await alice.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         let delivered = await firstElement(of: incoming, timeout: .seconds(5)) { data in
             guard let envelope = try? RelayEnvelope.decode(from: data) else {
@@ -209,7 +209,7 @@ class WebSocketContractTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "из оффлайна", isFromMe: true),
                                      senderName: "Alice")
-        await client.send(try RelayEnvelope.message(payload, from: "Alice").encoded())
+        await client.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         monitor.goOnline()
 

@@ -20,6 +20,8 @@ enum RelayEnvelopeKind: String, Codable, Sendable {
     case message
     /// В обе стороны: индикатор набора.
     case typing
+    /// В обе стороны: росчерк на стене.
+    case stroke
 }
 
 struct RelayEnvelope: Codable, Sendable {
@@ -27,11 +29,20 @@ struct RelayEnvelope: Codable, Sendable {
     let kind: RelayEnvelopeKind
     /// Кто отправил. Сервер проставляет его сам, клиенту доверять нельзя.
     let sender: String
+    /// Кому предназначено. `nil` — всем, кроме отправителя.
+    ///
+    /// Нужен для стены: росчерк адресован одному человеку, и при трёх
+    /// участниках рассылать его всем неправильно.
+    let recipient: String?
     let payload: Data?
 
-    private init(kind: RelayEnvelopeKind, sender: String, payload: Data?) {
+    private init(kind: RelayEnvelopeKind,
+                 sender: String,
+                 recipient: String? = nil,
+                 payload: Data?) {
         self.kind = kind
         self.sender = sender
+        self.recipient = recipient
         self.payload = payload
     }
 
@@ -47,16 +58,31 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: try JSONEncoder().encode(names))
     }
 
-    static func message(_ payload: MessagePayload, from sender: String) throws -> RelayEnvelope {
+    static func message(_ payload: MessagePayload,
+                        from sender: String,
+                        to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .message,
                       sender: sender,
+                      recipient: recipient,
                       payload: try JSONEncoder().encode(payload))
     }
 
-    static func typing(_ event: TypingEvent, from sender: String) throws -> RelayEnvelope {
+    static func typing(_ event: TypingEvent,
+                       from sender: String,
+                       to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .typing,
                       sender: sender,
+                      recipient: recipient,
                       payload: try JSONEncoder().encode(event))
+    }
+
+    static func stroke(_ stroke: Stroke,
+                       from sender: String,
+                       to recipient: String) throws -> RelayEnvelope {
+        RelayEnvelope(kind: .stroke,
+                      sender: sender,
+                      recipient: recipient,
+                      payload: try JSONEncoder().encode(stroke))
     }
 
     // MARK: - Decoding
@@ -71,6 +97,10 @@ struct RelayEnvelope: Codable, Sendable {
 
     func decodeTyping() throws -> TypingEvent {
         try decode(TypingEvent.self)
+    }
+
+    func decodeStroke() throws -> Stroke {
+        try decode(Stroke.self)
     }
 
     private func decode<T: Decodable>(_ type: T.Type) throws -> T {
@@ -93,7 +123,7 @@ struct RelayEnvelope: Codable, Sendable {
     /// Подменяет отправителя. Сервер вызывает это перед рассылкой, чтобы
     /// в конверте стояло имя, под которым клиент реально представился.
     func stamped(sender: String) -> RelayEnvelope {
-        RelayEnvelope(kind: kind, sender: sender, payload: payload)
+        RelayEnvelope(kind: kind, sender: sender, recipient: recipient, payload: payload)
     }
 }
 

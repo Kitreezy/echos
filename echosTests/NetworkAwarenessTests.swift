@@ -212,7 +212,7 @@ final class NetworkAwarenessTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "без сети", isFromMe: true),
                                      senderName: "Alice")
-        await client.send(try RelayEnvelope.message(payload, from: "Alice").encoded())
+        await client.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         monitor.goOnline()
 

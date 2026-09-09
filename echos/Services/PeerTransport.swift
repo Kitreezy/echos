@@ -53,6 +53,7 @@ protocol PeerTransport: AnyObject {
     var peerStream: AsyncStream<[Peer]> { get }
     var messageStream: AsyncStream<MessagePayload> { get }
     var typingStream: AsyncStream<TypingEvent> { get }
+    var strokeStream: AsyncStream<Stroke> { get }
     
     /// Состояние связи. Транспорту, у которого нет единого соединения
     /// (Multipeer), сообщать нечего — для него работает пустая реализация
@@ -76,8 +77,12 @@ protocol PeerTransport: AnyObject {
     
     // MARK: - Messaging
     
-    func sendMessage(_ payload: MessagePayload) async throws
-    func sendTypingEvent(_ event: TypingEvent) async throws
+    /// Всё адресное: переписка один на один и есть один на один, а не
+    /// рассылка всем, кто оказался рядом.
+    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws
+    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws
+    /// Росчерк адресный: он предназначен владельцу стены, а не всем вокруг.
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws
 }
 
 extension PeerTransport {
