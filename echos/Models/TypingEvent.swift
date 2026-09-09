@@ -27,10 +27,12 @@ struct TypingEvent: Codable {
     }
 }
 
-/// Обертка для всех типов данных, чтобы различать сообщения и typing-события
+/// Обертка для всех типов данных, чтобы различать сообщения, typing-события
+/// и росчерки на стене
 enum MultipeerDataType: String, Codable {
     case message
     case typing
+    case stroke
 }
 
 struct MultipeerPacket: Codable {
@@ -48,11 +50,20 @@ struct MultipeerPacket: Codable {
         self.playload = try JSONEncoder().encode(typingEvent)
     }
     
+    init(stroke: Stroke) throws {
+        self.type = .stroke
+        self.playload = try JSONEncoder().encode(stroke)
+    }
+    
     func decodeMessage() throws -> MessagePayload {
         try JSONDecoder().decode(MessagePayload.self, from: playload)
     }
     
     func decodeTypingEvent() throws -> TypingEvent {
         try JSONDecoder().decode(TypingEvent.self, from: playload)
+    }
+    
+    func decodeStroke() throws -> Stroke {
+        try JSONDecoder().decode(Stroke.self, from: playload)
     }
 }

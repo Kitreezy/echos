@@ -20,6 +20,8 @@ enum RelayEnvelopeKind: String, Codable, Sendable {
     case message
     /// В обе стороны: индикатор набора.
     case typing
+    /// В обе стороны: росчерк на стене.
+    case stroke
 }
 
 struct RelayEnvelope: Codable, Sendable {
@@ -59,6 +61,12 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: try JSONEncoder().encode(event))
     }
 
+    static func stroke(_ stroke: Stroke, from sender: String) throws -> RelayEnvelope {
+        RelayEnvelope(kind: .stroke,
+                      sender: sender,
+                      payload: try JSONEncoder().encode(stroke))
+    }
+
     // MARK: - Decoding
 
     func decodePresence() throws -> [String] {
@@ -71,6 +79,10 @@ struct RelayEnvelope: Codable, Sendable {
 
     func decodeTyping() throws -> TypingEvent {
         try decode(TypingEvent.self)
+    }
+
+    func decodeStroke() throws -> Stroke {
+        try decode(Stroke.self)
     }
 
     private func decode<T: Decodable>(_ type: T.Type) throws -> T {

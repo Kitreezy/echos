@@ -46,6 +46,25 @@ final class DiscoveryViewController: UIViewController {
         return hosting.view
     }()
     
+    /// Своя стена. Раньше открывалась только из меню чата, то есть была
+    /// недоступна, пока рядом никого нет, — хотя смысл стены как раз в том,
+    /// чтобы смотреть её, когда никого нет.
+    private lazy var wallButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.attributedTitle = AttributedString(
+            "моя стена",
+            attributes: AttributeContainer([
+                .font: Typography.micro,
+                .kern: Typography.narrow
+            ])
+        )
+        config.baseForegroundColor = .inkMuted
+
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     /// Одна строка вместо крутящейся иконки с надписью капсом.
     /// Показывается, только когда сказать действительно есть что.
     private let statusLabel: UILabel = {
@@ -79,6 +98,10 @@ final class DiscoveryViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        // У радара нет заголовка, поэтому кнопка возврата на вложенных
+        // экранах называлась бы системным «Back».
+        navigationItem.backButtonTitle = "Назад"
+
         setupUI()
         setupTableView()
         bindViewModel()
@@ -186,7 +209,11 @@ final class DiscoveryViewController: UIViewController {
             tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            tableView.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
+
+            wallButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            wallButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                                               constant: -Space.step)
         ]
     }()
     
@@ -204,6 +231,9 @@ final class DiscoveryViewController: UIViewController {
         view.addSubview(radarView)
         view.addSubview(statusLabel)
         view.addSubview(tableView)
+        view.addSubview(wallButton)
+
+        wallButton.addTarget(self, action: #selector(showOwnWall), for: .touchUpInside)
         
         NSLayoutConstraint.activate(layoutConstraints)
     }
@@ -214,6 +244,25 @@ final class DiscoveryViewController: UIViewController {
         tableView.register(PeerDiscoveryCell.self, forCellReuseIdentifier: "PeerCell")
     }
     
+    @objc
+    private func showOwnWall() {
+        guard let transport = viewModel.multipeerService else {
+            return
+        }
+
+        let wall = WallView(
+            viewModel: WallViewModel(owner: nil, transport: transport),
+            ownName: transport.myDisplayName
+        )
+
+        // Радар прячет панель навигации в viewWillAppear, и стена без этой
+        // строки открывалась бы без кнопки «назад». При возврате радар
+        // спрячет её снова сам.
+        navigationController?.setNavigationBarHidden(false, animated: true)
+        navigationController?.pushViewController(UIHostingController(rootView: wall),
+                                                 animated: true)
+    }
+
     // MARK: - Animations
 
     /// Вращение и пульсация ушли вместе с иконкой: единственное движение
