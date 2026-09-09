@@ -246,8 +246,17 @@ final class DiscoveryViewController: UIViewController {
         }
     }
     
+    /// Что показывать в списке. Демо-список подставляется, только если его
+    /// явно попросили аргументом запуска.
+    private var displayedPeers: [Peer] {
+        if viewModel.peers.isEmpty, UserSettings.showsDemoPeers {
+            return demoPeers()
+        }
+        return viewModel.peers
+    }
+    
     private func updateUI() {
-        let displayPeers = viewModel.peers.isEmpty ? mockPeers() : viewModel.peers
+        let displayPeers = displayedPeers
         
         peerCountLabel.text = displayPeers.isEmpty ? "" : "\(displayPeers.count)"
 
@@ -328,7 +337,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
-        return viewModel.peers.isEmpty ? mockPeers().count : viewModel.peers.count
+        return displayedPeers.count
     }
     
     func tableView(_ tableView: UITableView,
@@ -337,8 +346,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
             return UITableViewCell()
         }
         
-        let peers = viewModel.peers.isEmpty ? mockPeers() : viewModel.peers
-        let peer = peers[indexPath.row]
+        let peer = displayedPeers[indexPath.row]
         
         cell.configure(with: peer)
         return cell
@@ -347,8 +355,8 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
+        // В демо-режиме строки некликабельны: за ними нет живых устройств.
         guard !viewModel.peers.isEmpty else {
-            showToast("Демо режим - ожидание устройств...")
             return
         }
         
@@ -411,7 +419,7 @@ extension DiscoveryViewController: PeerConnectionApproving {
 
 extension DiscoveryViewController {
     
-    private func mockPeers() -> [Peer] {
+    private func demoPeers() -> [Peer] {
         return [
             Peer(
                 id: UUID(),
