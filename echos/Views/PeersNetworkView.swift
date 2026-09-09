@@ -27,17 +27,17 @@ struct PeersNetworkView: View {
     
     var body: some View {
         ZStack {
-            Color(hex: "#0A0E1A").ignoresSafeArea()
+            Color.surface.ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // Header
                 HStack {
                     Image(systemName: "antenna.radiowaves.left.and.right")
-                        .foregroundColor(Color(hex: "#00FF41"))
+                        .foregroundColor(Color.own)
                     
                     Text("EKKO // PEER_NETWORK")
                         .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color(hex: "#00FF41"))
+                        .foregroundColor(Color.own)
                     
                     Spacer()
                     
@@ -45,14 +45,14 @@ struct PeersNetworkView: View {
                         // Settings
                     } label: {
                         Image(systemName: "gearshape")
-                            .foregroundColor(Color(hex: "#00FF41"))
+                            .foregroundColor(Color.own)
                     }
                 }
                 .padding()
-                .background(Color(hex: "#0A0E1A"))
+                .background(Color.surface)
                 
                 Divider()
-                    .background(Color(hex: "#00FF41").opacity(0.3))
+                    .background(Color.own.opacity(0.3))
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -61,7 +61,7 @@ struct PeersNetworkView: View {
                             SectionHeader(
                                 icon: "■",
                                 title: "ACTIVE TRANSMISSIONS",
-                                color: Color(hex: "#00FF41")
+                                color: Color.own
                             )
                             
                             VStack(spacing: 12) {
@@ -82,7 +82,7 @@ struct PeersNetworkView: View {
                             SectionHeader(
                                 icon: "■",
                                 title: "LOST CONTACTS",
-                                color: Color(hex: "#FF1744")
+                                color: Color.lost
                             )
                             
                             VStack(spacing: 12) {
@@ -101,7 +101,7 @@ struct PeersNetworkView: View {
                             SectionHeader(
                                 icon: "■",
                                 title: "KNOWN FREQUENCY",
-                                color: Color(hex: "#666666")
+                                color: Color.inkMuted
                             )
                             
                             VStack(spacing: 12) {
@@ -124,10 +124,10 @@ struct PeersNetworkView: View {
                 } label: {
                     Text("START NEW SCAN")
                         .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color(hex: "#0A0E1A"))
+                        .foregroundColor(Color.surface)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color(hex: "#00FF41"))
+                        .background(Color.own)
                 }
                 .padding()
             }
@@ -173,9 +173,9 @@ enum PeerCardType {
     
     var color: Color {
         switch self {
-        case .active: return Color(hex: "#00FF41")
-        case .lost: return Color(hex: "#FF1744")
-        case .known: return Color(hex: "#666666")
+        case .active: return Color.own
+        case .lost: return Color.lost
+        case .known: return Color.inkMuted
         }
     }
 }
@@ -226,7 +226,7 @@ struct PeerNetworkCard: View {
                 }
                 .frame(height: 68)
             }
-            .background(Color(hex: "#1A1F2E"))
+            .background(Color.surfaceRaised)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)

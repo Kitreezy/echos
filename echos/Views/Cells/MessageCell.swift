@@ -16,7 +16,7 @@ final class MessageCell: UITableViewCell {
     
     private let bubbleView: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(hex: "#1A1F2E")
+        view.backgroundColor = UIColor.surfaceRaised
         view.layer.cornerRadius = 16
         view.clipsToBounds = true
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -32,7 +32,7 @@ final class MessageCell: UITableViewCell {
     private let senderNameLabel: UILabel = {
         let label = UILabel()
         label.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-        label.textColor = UIColor(hex: "#00BFFF")
+        label.textColor = UIColor.other
         label.translatesAutoresizingMaskIntoConstraints = false
         label.isHidden = true
         return label
@@ -175,9 +175,9 @@ final class MessageCell: UITableViewCell {
         bubbleTrailingConstraint?.isActive = true
         
         // Terminal green colors
-        sideBar.backgroundColor = UIColor(hex: "#00FF41")
-        messageLabel.textColor = UIColor(hex: "#00FF41")
-        timeLabel.textColor = UIColor(hex: "#00FF41").withAlphaComponent(0.6)
+        sideBar.backgroundColor = UIColor.own
+        messageLabel.textColor = UIColor.own
+        timeLabel.textColor = UIColor.own.withAlphaComponent(0.6)
     }
     
     private func configureTheirSide() {
@@ -186,10 +186,10 @@ final class MessageCell: UITableViewCell {
         bubbleLeadingConstraint?.isActive = true
         
         // Terminal cyan colors
-        sideBar.backgroundColor = UIColor(hex: "#00BFFF")
-        messageLabel.textColor = UIColor(hex: "#00BFFF")
-        timeLabel.textColor = UIColor(hex: "#00BFFF").withAlphaComponent(0.6)
-        senderNameLabel.textColor = UIColor(hex: "#00BFFF")
+        sideBar.backgroundColor = UIColor.other
+        messageLabel.textColor = UIColor.other
+        timeLabel.textColor = UIColor.other.withAlphaComponent(0.6)
+        senderNameLabel.textColor = UIColor.other
     }
     
     private func configureMyStatus(_ status: MessageStatus) {
@@ -198,21 +198,21 @@ final class MessageCell: UITableViewCell {
         switch status {
         case .sending:
             statusLabel.text = "SENDING"
-            statusLabel.textColor = UIColor(hex: "#FFB800")
+            statusLabel.textColor = UIColor.own
             
         case .sent:
             statusLabel.text = "SENT"
-            statusLabel.textColor = UIColor(hex: "#00FF41")
+            statusLabel.textColor = UIColor.own
             
         case .failed:
             statusLabel.text = "FAILED"
-            statusLabel.textColor = .systemRed
+            statusLabel.textColor = .lost
         }
     }
     
     private func configureTheirStatus() {
         statusLabel.text = "RECEIVED"
-        statusLabel.textColor = UIColor(hex: "#00BFFF")
+        statusLabel.textColor = UIColor.other
         statusLabel.isHidden = false
     }
     

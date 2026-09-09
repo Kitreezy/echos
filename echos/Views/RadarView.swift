@@ -23,25 +23,25 @@ struct RadarView: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color(hex: "#39FF14").opacity(0.6), lineWidth: 1)
+                .stroke(Color.alive.opacity(0.6), lineWidth: 1)
                 .frame(width: 64, height: 64)
                 .scaleEffect(ping1Scale)
                 .opacity(ping1Opacity)
             
             Circle()
-                .stroke(Color(hex: "#39FF14").opacity(0.4), lineWidth: 1)
+                .stroke(Color.alive.opacity(0.4), lineWidth: 1)
                 .frame(width: 128, height: 128)
                 .scaleEffect(ping2Scale)
                 .opacity(ping2Opacity)
             
             Circle()
-                .stroke(Color(hex: "#39FF14").opacity(0.2), lineWidth: 1)
+                .stroke(Color.alive.opacity(0.2), lineWidth: 1)
                 .frame(width: 192, height: 192)
                 .scaleEffect(ping3Scale)
                 .opacity(ping3Opacity)
             
             Circle()
-                .stroke(Color(hex: "#39FF14").opacity(0.1), lineWidth: 1)
+                .stroke(Color.alive.opacity(0.1), lineWidth: 1)
                 .frame(width: 256, height: 256)
                 .scaleEffect(ping4Scale)
                 .opacity(ping4Opacity)
@@ -52,8 +52,8 @@ struct RadarView: View {
                     .fill(
                         AngularGradient(
                             gradient: Gradient(stops: [
-                                .init(color: Color(hex: "#39FF14").opacity(0.5), location: 0.0),
-                                .init(color: Color(hex: "#39FF14").opacity(0.2), location: 0.15),
+                                .init(color: Color.alive.opacity(0.5), location: 0.0),
+                                .init(color: Color.alive.opacity(0.2), location: 0.15),
                                 .init(color: .clear, location: 0.25)
                             ]),
                             center: .center,
@@ -73,9 +73,9 @@ struct RadarView: View {
             }
             
             Circle()
-                .fill(Color(hex: "#39FF14"))
+                .fill(Color.alive)
                 .frame(width: 12, height: 12)
-                .shadow(color: Color(hex: "#39FF14"), radius: 15, x: 0, y: 0)
+                .shadow(color: Color.alive, radius: 15, x: 0, y: 0)
                 .zIndex(10)
         }
         .frame(width: 256, height: 256)
@@ -118,7 +118,7 @@ struct RadarView: View {
 
 #Preview {
     ZStack {
-        Color(hex: "#0D0F14").ignoresSafeArea()
+        Color.surface.ignoresSafeArea()
         
         let state = RadarState()
         RadarView(state: state)

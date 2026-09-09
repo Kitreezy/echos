@@ -28,18 +28,18 @@ final class DiscoveryViewController: UIViewController {
     
     private let headerContainer: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(hex: "#0D0F14").withAlphaComponent(0.8)
+        view.backgroundColor = UIColor.surface.withAlphaComponent(0.8)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
     
     private let radarIcon: UIImageView = {
         let imageView = UIImageView(image: UIImage(systemName: "dot.radiowaves.left.and.right"))
-        imageView.tintColor = UIColor(hex: "#39FF14")
+        imageView.tintColor = UIColor.alive
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         
-        imageView.layer.shadowColor = UIColor(hex: "#39FF14").cgColor
+        imageView.layer.shadowColor = UIColor.alive.cgColor
         imageView.layer.shadowRadius = 8
         imageView.layer.shadowOpacity = 0.8
         imageView.layer.shadowOffset = .zero
@@ -51,10 +51,10 @@ final class DiscoveryViewController: UIViewController {
         let label = UILabel()
         label.text = "ECHOS // SIGNAL: STRONG"
         label.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-        label.textColor = UIColor(hex: "#39FF14")
+        label.textColor = UIColor.alive
         label.translatesAutoresizingMaskIntoConstraints = false
         
-        label.layer.shadowColor = UIColor(hex: "#39FF14").cgColor
+        label.layer.shadowColor = UIColor.alive.cgColor
         label.layer.shadowRadius = 5
         label.layer.shadowOpacity = 0.8
         label.layer.shadowOffset = .zero
@@ -66,10 +66,10 @@ final class DiscoveryViewController: UIViewController {
         let label = UILabel()
         label.text = "PEER: 0 CONN"
         label.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-        label.textColor = UIColor(hex: "#39FF14")
+        label.textColor = UIColor.alive
         label.translatesAutoresizingMaskIntoConstraints = false
         
-        label.layer.shadowColor = UIColor(hex: "#39FF14").cgColor
+        label.layer.shadowColor = UIColor.alive.cgColor
         label.layer.shadowRadius = 5
         label.layer.shadowOpacity = 0.8
         label.layer.shadowOffset = .zero
@@ -79,7 +79,7 @@ final class DiscoveryViewController: UIViewController {
     
     private let separatorLine: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(hex: "#39FF14").withAlphaComponent(0.3)
+        view.backgroundColor = UIColor.alive.withAlphaComponent(0.3)
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -102,11 +102,11 @@ final class DiscoveryViewController: UIViewController {
     
     private let scanningIcon: UIImageView = {
         let imageView = UIImageView(image: UIImage(systemName: "arrow.triangle.2.circlepath"))
-        imageView.tintColor = UIColor(hex: "#00E5FF")
+        imageView.tintColor = UIColor.other
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         
-        imageView.layer.shadowColor = UIColor(hex: "#00E5FF").cgColor
+        imageView.layer.shadowColor = UIColor.other.cgColor
         imageView.layer.shadowRadius = 4
         imageView.layer.shadowOpacity = 0.6
         imageView.layer.shadowOffset = .zero
@@ -118,11 +118,11 @@ final class DiscoveryViewController: UIViewController {
         let label = UILabel()
         label.text = "SCANNING FREQUENCIES..."
         label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        label.textColor = UIColor(hex: "#00E5FF")
+        label.textColor = UIColor.other
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         
-        label.layer.shadowColor = UIColor(hex: "#00E5FF").cgColor
+        label.layer.shadowColor = UIColor.other.cgColor
         label.layer.shadowRadius = 4
         label.layer.shadowOpacity = 0.6
         label.layer.shadowOffset = .zero
@@ -297,7 +297,7 @@ final class DiscoveryViewController: UIViewController {
     // MARK: - Setup
     
     private func setupUI() {
-        view.backgroundColor = UIColor(hex: "#0D0F14")
+        view.backgroundColor = UIColor.surface
         
         setupScanlines()
         
@@ -562,7 +562,7 @@ extension DiscoveryViewController: PeerConnectionApproving {
                     preferredStyle: .alert
                 )
                 
-                alert.view.tintColor = UIColor(hex: "#39FF14")
+                alert.view.tintColor = UIColor.alive
                 
                 alert.addAction(UIAlertAction(title: "ACCEPT", style: .default) { _ in
                     continuation.resume(returning: true)

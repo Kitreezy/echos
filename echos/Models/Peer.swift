@@ -79,16 +79,16 @@ struct Peer: Identifiable, Equatable {
     var statusColor: Color {
         switch status {
         case .notConnected:
-            return Color(hex: "#00E5FF")  // secondary
+            return Color.other  // secondary
             
         case .connecting:
-            return .orange
+            return .own
             
         case .connected:
-            return Color(hex: "#39FF14")    // primary
+            return Color.alive    // primary
             
         case .failed:
-            return Color(hex: "#FF2079")       // destructive
+            return Color.lost       // destructive
         }
     }
     

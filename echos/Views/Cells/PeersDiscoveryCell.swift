@@ -17,7 +17,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     
     private let containerView: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(hex: "#1A1F2E")
+        view.backgroundColor = UIColor.surfaceRaised
         view.layer.cornerRadius = 8
         view.layer.borderWidth = 1
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -26,7 +26,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     
     private let statusBar: UIView = {
         let view = UIView()
-        view.backgroundColor = UIColor(hex: "#00FF41")
+        view.backgroundColor = UIColor.own
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -34,7 +34,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     private let nameLabel: UILabel = {
         let label = UILabel()
         label.font = .monospacedSystemFont(ofSize: 16, weight: .semibold)
-        label.textColor = UIColor(hex: "#00FF41")
+        label.textColor = UIColor.own
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -42,7 +42,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     private let infoLabel: UILabel = {
         let label = UILabel()
         label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.textColor = UIColor(hex: "#00FF41").withAlphaComponent(0.6)
+        label.textColor = UIColor.own.withAlphaComponent(0.6)
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -179,12 +179,12 @@ final class PeerDiscoveryCell: UITableViewCell {
      // MARK: - Configuration Helpers
      
     private func configureConnected() {
-        let color = UIColor(hex: "#39FF14")
+        let color = UIColor.alive
         
         containerView.alpha = 1.0
         statusBar.backgroundColor = color
         nameLabel.textColor = color
-        infoLabel.textColor = UIColor(hex: "#6B7280")  
+        infoLabel.textColor = UIColor.inkMuted  
         hoverLayer.backgroundColor = color.withAlphaComponent(0.05)
         
         // Shadow
@@ -215,12 +215,12 @@ final class PeerDiscoveryCell: UITableViewCell {
     }
      
     private func configureNotConnected() {
-        let color = UIColor(hex: "#00E5FF")
+        let color = UIColor.other
         
         containerView.alpha = 1.0
         statusBar.backgroundColor = color
         nameLabel.textColor = color
-        infoLabel.textColor = UIColor(hex: "#6B7280")
+        infoLabel.textColor = UIColor.inkMuted
         hoverLayer.backgroundColor = color.withAlphaComponent(0.05)
         
         // Shadow
@@ -256,7 +256,7 @@ final class PeerDiscoveryCell: UITableViewCell {
         containerView.alpha = 1.0
         statusBar.backgroundColor = color
         nameLabel.textColor = color
-        infoLabel.textColor = UIColor(hex: "#6B7280")
+        infoLabel.textColor = UIColor.inkMuted
         hoverLayer.backgroundColor = color.withAlphaComponent(0.05)
         
         // Shadow
@@ -294,7 +294,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     }
      
     private func configureFailed() {
-        let color = UIColor(hex: "#FF2079")
+        let color = UIColor.lost
         
         containerView.alpha = 0.8
         

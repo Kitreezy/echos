@@ -119,7 +119,7 @@ final class ChatViewController: UIViewController {
         var config = UIButton.Configuration.filled()
         config.image = UIImage(systemName: "arrow.uturn.up")
         config.cornerStyle = .capsule
-        config.baseBackgroundColor = .systemBlue
+        config.baseBackgroundColor = .action
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         
