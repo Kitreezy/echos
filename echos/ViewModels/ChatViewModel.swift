@@ -483,10 +483,18 @@ final class ChatViewModel {
         
         stopTyping()
         
+        // Сообщение адресное, и без собеседника отправлять его некому.
+        // Раньше в этом случае оно уходило всем подряд.
+        guard let peerName = currentConversationPeer else {
+            updateStatus(.failed, for: message.id)
+            print("[ChatViewModel] No conversation selected, message not sent")
+            return
+        }
+        
         let playLoad = MessagePayload(from: message, senderName: multipeerService.myDisplayName)
         
         do {
-            try await multipeerService.sendMessage(playLoad)
+            try await multipeerService.sendMessage(playLoad, to: peerName)
             
             updateStatus(.sent, for: message.id)
             print("[ChatViewModel] Message sent successfully")
@@ -542,26 +550,30 @@ final class ChatViewModel {
     }
     
     private func sendTypingStart() async {
-        guard let multipeerService = multipeerService, !isCurrentlyTyping else {
+        guard let multipeerService = multipeerService,
+              let peerName = currentConversationPeer,
+              !isCurrentlyTyping else {
             return
         }
         
         isCurrentlyTyping = true
         
         let event = TypingEvent(type: .start, peerName: multipeerService.myDisplayName)
-        try? await multipeerService.sendTypingEvent(event)
+        try? await multipeerService.sendTypingEvent(event, to: peerName)
         print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
     }
     
     private func sendTypingStop() async {
-        guard let multipeerService = multipeerService, isCurrentlyTyping else {
+        guard let multipeerService = multipeerService,
+              let peerName = currentConversationPeer,
+              isCurrentlyTyping else {
             return
         }
         
         isCurrentlyTyping = false
         
         let event = TypingEvent(type: .stop, peerName: multipeerService.myDisplayName)
-        try? await multipeerService.sendTypingEvent(event)
+        try? await multipeerService.sendTypingEvent(event, to: peerName)
         print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
     }
     

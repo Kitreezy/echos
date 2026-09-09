@@ -64,13 +64,13 @@ final class LoopbackTransport: PeerTransport {
 
     // MARK: - Recorded output
 
-    private(set) var sentMessages: [MessagePayload] = []
-    private(set) var sentTypingEvents: [TypingEvent] = []
+    private(set) var sentMessages: [(payload: MessagePayload, recipient: String)] = []
+    private(set) var sentTypingEvents: [(event: TypingEvent, recipient: String)] = []
     private(set) var sentStrokes: [(stroke: Stroke, recipient: String)] = []
     private(set) var isDiscovering = false
 
     var sentTypingTypes: [TypingEventType] {
-        sentTypingEvents.map(\.type)
+        sentTypingEvents.map(\.event.type)
     }
 
     // MARK: - Test input
@@ -111,12 +111,12 @@ final class LoopbackTransport: PeerTransport {
 
     func disconnectAll() {}
 
-    func sendMessage(_ payload: MessagePayload) async throws {
-        sentMessages.append(payload)
+    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
+        sentMessages.append((payload, peerName))
     }
 
-    func sendTypingEvent(_ event: TypingEvent) async throws {
-        sentTypingEvents.append(event)
+    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
+        sentTypingEvents.append((event, peerName))
     }
 
     func sendStroke(_ stroke: Stroke, to peerName: String) async throws {

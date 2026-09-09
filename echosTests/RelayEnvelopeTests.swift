@@ -17,7 +17,7 @@ final class RelayEnvelopeTests: XCTestCase {
                                      senderName: "Alice")
 
         let restored = try RelayEnvelope.decode(
-            from: try RelayEnvelope.message(payload, from: "Alice").encoded()
+            from: try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded()
         )
 
         XCTAssertEqual(restored.kind, .message)
@@ -29,7 +29,7 @@ final class RelayEnvelopeTests: XCTestCase {
         let event = TypingEvent(type: .stop, peerName: "Bob")
 
         let restored = try RelayEnvelope.decode(
-            from: try RelayEnvelope.typing(event, from: "Bob").encoded()
+            from: try RelayEnvelope.typing(event, from: "Bob", to: "Alice").encoded()
         )
 
         XCTAssertEqual(restored.kind, .typing)
@@ -52,7 +52,7 @@ final class RelayEnvelopeTests: XCTestCase {
         let payload = MessagePayload(from: Message(text: "текст", isFromMe: true),
                                      senderName: "Mallory")
 
-        let forged = try RelayEnvelope.message(payload, from: "Alice")
+        let forged = try RelayEnvelope.message(payload, from: "Alice", to: "Bob")
         let corrected = forged.stamped(sender: "Mallory")
 
         XCTAssertEqual(corrected.sender, "Mallory")
@@ -73,7 +73,7 @@ final class RelayEnvelopeTests: XCTestCase {
     func test_decodingMessageAsTyping_throws() throws {
         let payload = MessagePayload(from: Message(text: "привет", isFromMe: true),
                                      senderName: "Alice")
-        let envelope = try RelayEnvelope.message(payload, from: "Alice")
+        let envelope = try RelayEnvelope.message(payload, from: "Alice", to: "Bob")
 
         XCTAssertThrowsError(try envelope.decodeTyping())
     }

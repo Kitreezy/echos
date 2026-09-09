@@ -58,15 +58,21 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: try JSONEncoder().encode(names))
     }
 
-    static func message(_ payload: MessagePayload, from sender: String) throws -> RelayEnvelope {
+    static func message(_ payload: MessagePayload,
+                        from sender: String,
+                        to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .message,
                       sender: sender,
+                      recipient: recipient,
                       payload: try JSONEncoder().encode(payload))
     }
 
-    static func typing(_ event: TypingEvent, from sender: String) throws -> RelayEnvelope {
+    static func typing(_ event: TypingEvent,
+                       from sender: String,
+                       to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .typing,
                       sender: sender,
+                      recipient: recipient,
                       payload: try JSONEncoder().encode(event))
     }
 
