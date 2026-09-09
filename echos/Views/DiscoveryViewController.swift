@@ -65,9 +65,6 @@ final class DiscoveryViewController: UIViewController {
         return table
     }()
     
-    private var pulseTimer: Timer?
-    private var rotationAnimation: CABasicAnimation?
-
     /// Возобновлять поиск при возврате из фона только если он реально шёл.
     private var shouldResumeDiscovery = false
     
@@ -246,8 +243,17 @@ final class DiscoveryViewController: UIViewController {
         }
     }
     
+    /// Что показывать в списке. Демо-список подставляется, только если его
+    /// явно попросили аргументом запуска.
+    private var displayedPeers: [Peer] {
+        if viewModel.peers.isEmpty, UserSettings.showsDemoPeers {
+            return demoPeers()
+        }
+        return viewModel.peers
+    }
+    
     private func updateUI() {
-        let displayPeers = viewModel.peers.isEmpty ? mockPeers() : viewModel.peers
+        let displayPeers = displayedPeers
         
         peerCountLabel.text = displayPeers.isEmpty ? "" : "\(displayPeers.count)"
 
@@ -255,34 +261,6 @@ final class DiscoveryViewController: UIViewController {
         statusLabel.text = displayPeers.isEmpty ? "Пока никого рядом" : ""
 
         tableView.reloadData()
-    }
-    
-    private func calculateAverageSignal(from peers: [Peer]) -> Int {
-        let connectedPeers = peers.filter { $0.status == .connected }
-        guard !connectedPeers.isEmpty else {
-            return 0
-        }
-        
-        let totalSignal = connectedPeers.reduce(0) { sum, peer in
-            sum + peer.signalPercentage
-        }
-        return totalSignal / connectedPeers.count
-    }
-    
-    private func getSignalStatus(_ percentage: Int) -> String {
-        switch percentage {
-        case 80...100:
-            return "STRONG"
-            
-        case 50..<80:
-            return "MEDIUM"
-            
-        case 20..<50:
-            return "WEAK"
-            
-        default:
-            return "LOST"
-        }
     }
     
     // MARK: - Actions
@@ -328,7 +306,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
-        return viewModel.peers.isEmpty ? mockPeers().count : viewModel.peers.count
+        return displayedPeers.count
     }
     
     func tableView(_ tableView: UITableView,
@@ -337,8 +315,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
             return UITableViewCell()
         }
         
-        let peers = viewModel.peers.isEmpty ? mockPeers() : viewModel.peers
-        let peer = peers[indexPath.row]
+        let peer = displayedPeers[indexPath.row]
         
         cell.configure(with: peer)
         return cell
@@ -347,8 +324,8 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         
+        // В демо-режиме строки некликабельны: за ними нет живых устройств.
         guard !viewModel.peers.isEmpty else {
-            showToast("Демо режим - ожидание устройств...")
             return
         }
         
@@ -411,7 +388,7 @@ extension DiscoveryViewController: PeerConnectionApproving {
 
 extension DiscoveryViewController {
     
-    private func mockPeers() -> [Peer] {
+    private func demoPeers() -> [Peer] {
         return [
             Peer(
                 id: UUID(),

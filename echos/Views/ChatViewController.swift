@@ -392,12 +392,6 @@ final class ChatViewController: UIViewController {
     
     // MARK: - Actions
     
-    private func startApp() {
-        Task {
-            await viewModel.startDeviceDiscovery()
-        }
-    }
-    
     @objc
     private func sendTapped() {
         guard let text = textField.text, !text.isEmpty else {
@@ -427,43 +421,6 @@ final class ChatViewController: UIViewController {
     @objc
     private func appWillEnterForeground() {
 
-    }
-    
-    @objc
-    private func changeUserName() {
-        let alert = UIAlertController(title: "Изменить имя",
-                                      message: "Ваше имя будет видно другим устройствам",
-                                      preferredStyle: .alert)
-        
-        alert.addTextField { textField in
-            textField.text = UserSettings.displayName
-            textField.placeholder = "Ваше имя"
-            textField.autocapitalizationType = .words
-            textField.returnKeyType = .done
-        }
-        
-        let saveAction = UIAlertAction(title: "Сохранить", style: .default) { [weak self] _ in
-            guard let newName = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !newName.isEmpty,
-                  newName != UserSettings.displayName else {
-                      return
-            }
-            
-            UserSettings.userName = newName
-            self?.navigationItem.leftBarButtonItem?.title = newName
-            
-            Task {
-                await self?.restartServiceWithNewName()
-            }
-        }
-        
-        let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
-        
-        alert.addAction(saveAction)
-        alert.addAction(cancelAction)
-        alert.preferredAction = saveAction
-        
-        present(alert, animated: true)
     }
     
     @objc
@@ -546,50 +503,6 @@ final class ChatViewController: UIViewController {
     }
     
     // MARK: - History Menu
-    
-    @objc
-    private func showHistoryMenu() {
-        let alert = UIAlertController(title: "Опции",
-                                      message: viewModel.currentConversationPeer != nil
-                                      ? "Чат с '\(viewModel.currentConversationPeer ?? "Неизвестный пользователь")'"
-                                      : "Нет активного чата",
-                                      preferredStyle: .actionSheet)
-        let conversationsAcion = UIAlertAction(title: "~Все чаты",
-                                               style: .default) { [weak self] _ in
-            self?.showConversationsList()
-        }
-        alert.addAction(conversationsAcion)
-        
-        if viewModel.currentConversationPeer != nil {
-            let disconnectAction = UIAlertAction(title: "~Отключиться",
-                                                 style: .default) { [weak self] _ in
-                self?.confirmDisconnect()
-            }
-            alert.addAction(disconnectAction)
-            
-            let clearCurrentAction = UIAlertAction(title: "~Очистить этот чат",
-                                                   style: .destructive) { [weak self] _ in
-                self?.confirmClearCurrentConversation()
-            }
-            alert.addAction(clearCurrentAction)
-        }
-        
-        let clearAllAction = UIAlertAction(title: "~Очистить всю историю",
-                                           style: .destructive) { [weak self] _ in
-            self?.confirmClearAllMessages()
-        }
-        alert.addAction(clearAllAction)
-        
-        let cancelAction = UIAlertAction(title: "Отмена",
-                                         style: .cancel)
-        alert.addAction(cancelAction)
-        
-        if let popover = alert.popoverPresentationController {
-            popover.barButtonItem = navigationItem.rightBarButtonItems?.last
-        }
-        
-        present(alert, animated: true)
-    }
     
     // MARK: - Disconnect Confirmation
     
