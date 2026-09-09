@@ -65,12 +65,14 @@ final class WallTests: XCTestCase {
 
     // MARK: - Отправка
 
-    func test_strokeOnSomeoneElsesWall_isSent() async {
+    /// Росчерк адресный: он предназначен владельцу стены, а не всем вокруг.
+    func test_strokeOnSomeoneElsesWall_isSentToThatPeer() async {
         let wall = makeWall(owner: "Bob")
 
         await draw(wall, points: 3)
 
         XCTAssertEqual(transport.sentStrokes.count, 1)
+        XCTAssertEqual(transport.sentStrokes.first?.recipient, "Bob")
     }
 
     /// На своей стене рисуют для себя — отправлять некому.

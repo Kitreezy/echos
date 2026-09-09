@@ -79,7 +79,8 @@ protocol PeerTransport: AnyObject {
     
     func sendMessage(_ payload: MessagePayload) async throws
     func sendTypingEvent(_ event: TypingEvent) async throws
-    func sendStroke(_ stroke: Stroke) async throws
+    /// Росчерк адресный: он предназначен владельцу стены, а не всем вокруг.
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws
 }
 
 extension PeerTransport {

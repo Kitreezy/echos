@@ -66,7 +66,7 @@ final class LoopbackTransport: PeerTransport {
 
     private(set) var sentMessages: [MessagePayload] = []
     private(set) var sentTypingEvents: [TypingEvent] = []
-    private(set) var sentStrokes: [Stroke] = []
+    private(set) var sentStrokes: [(stroke: Stroke, recipient: String)] = []
     private(set) var isDiscovering = false
 
     var sentTypingTypes: [TypingEventType] {
@@ -119,7 +119,7 @@ final class LoopbackTransport: PeerTransport {
         sentTypingEvents.append(event)
     }
 
-    func sendStroke(_ stroke: Stroke) async throws {
-        sentStrokes.append(stroke)
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
+        sentStrokes.append((stroke, peerName))
     }
 }
