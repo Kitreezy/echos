@@ -16,6 +16,10 @@ echos/
     PeersListView.swift        # SwiftUI список устройств
 }- Services/                   # todo:
     MultipeerService.swift
+}- Persistence/
+    echos.xcdatamodeld          # CoreData модель для хранения сообщений 
+    PersistenceController.swift # Singleton для управления Core Data стеком
+    MessageStore.swift          # Repository для работы с сообщениями в Core Data
 }- Extensions/                 # Удобные расширения
 }- Resources/                  # Ассеты, цвета, локализация
 }- Utilites/                   # Вспомогательные свойства
@@ -41,7 +45,7 @@ echos/
 </p>
 
 <p align="center">
-  <strong>Статус MVP:</strong> в разработке · step 5 / 25+
+  <strong>Статус MVP:</strong> в разработке · step 7 / 25+
 </p>
 
 ## ✨ О проекте
@@ -159,4 +163,7 @@ Combine помечен как «legacy preferred alternative» в новых п�
 - [UIAlertController](https://developer.apple.com/documentation/uikit/uialertcontroller)
 - [UIHostingController](https://developer.apple.com/documentation/swiftui/uihostingcontroller)
 - [SwiftUI List](https://developer.apple.com/documentation/swiftui/list)
+- [Core Data Programming Guide](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/CoreData/)
+- [NSPersistentContainer](https://developer.apple.com/documentation/coredata/nspersistentcontainer)
+- [NSManagedObjectContext](https://developer.apple.com/documentation/coredata/nsmanagedobjectcontext)
 - (актуальны для расширения)

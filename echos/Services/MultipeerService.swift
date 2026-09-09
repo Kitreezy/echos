@@ -6,15 +6,11 @@
 //
 
 import Foundation
-import MultipeerConnectivity
+@preconcurrency import MultipeerConnectivity
 
+/// Делегатные методы MultipeerConnectivity приходят с фоновых очередей,
+/// поэтому они помечены `nonisolated` и явно прыгают на главный актор.
 @MainActor
-protocol MultipeerInvitationDelegate: AnyObject {
-    /// Показать UI для подтверждения подключения.
-    /// - Returns: true если пользователь принял, false если отклонил
-    func shouldAcceptInvitation(from peerName: String) async -> Bool
-}
-
 final class MultipeerService: NSObject {
     
     // MARK: - Configuration
@@ -33,7 +29,7 @@ final class MultipeerService: NSObject {
     
     // MARK: - Delegation
     
-    weak var invitationDelegate: MultipeerInvitationDelegate?
+    weak var approvalDelegate: PeerConnectionApproving?
     
     // MARK: - Multipeer Components
     
@@ -45,35 +41,39 @@ final class MultipeerService: NSObject {
     // MARK: - State
     
     /// Обнаружение устройства (peerID -> displayName)
-    @MainActor
     private var discoveredPeers: [MCPeerID: String] = [:]
     
     /// Для ручного подключения
-    @MainActor
     private var discoveredPeerIDs: [String: MCPeerID] = [:]
     
-    @MainActor
     private var connectingPeers: Set<MCPeerID> = []
     
-    @MainActor
     private var connectedPeers: Set<MCPeerID> = []
     
-    @MainActor
     private var peerUUIDs: [MCPeerID: UUID] = [:]
+    
+    private var peerRSSI: [MCPeerID: Int] = [:]
+    
+    private var peerDistances: [MCPeerID: Double] = [:]
     
     // MARK: - Streams
     
-    /// Для обнаружения устройств.
-    private var peerStreamContinuation: AsyncStream<[Peer]>.Continuation?
-    let peerStream: AsyncStream<[Peer]>
+    /// Потоки мультикастовые: каждое обращение к свойству отдаёт новый
+    /// независимый `AsyncStream`, и все подписчики получают одни и те же
+    /// события. 
     
-    /// Для входащих сообщений
-    private var messageStreamContinuation: AsyncStream<MessagePayload>.Continuation?
-    let messageStream: AsyncStream<MessagePayload>
+    /// Для обнаружения устройств. Реплеит последний список: экран, открытый
+    /// после начала поиска, сразу видит уже найденные устройства.
+    private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
+    var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
+    
+    /// Для входящих сообщений
+    private let messageBroadcast = AsyncBroadcast<MessagePayload>()
+    var messageStream: AsyncStream<MessagePayload> { messageBroadcast.stream }
     
     /// Для typing-событий
-    private var  typingStreamContinuation: AsyncStream<TypingEvent>.Continuation?
-    let typingStream: AsyncStream<TypingEvent>
+    private let typingBroadcast = AsyncBroadcast<TypingEvent>()
+    var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
     
     // MARK: - Init
     
@@ -81,22 +81,8 @@ final class MultipeerService: NSObject {
         let displayName = UserSettings.displayName
         self.myPeerID = MCPeerID(displayName: displayName)
 
-        // Peer stream
-        let (peerStream, peerCont) = AsyncStream.makeStream(of: [Peer].self)
-        self.peerStream = peerStream
-        self.peerStreamContinuation = peerCont
-
-        // Message stream
-        let (msgStream, msgCont) = AsyncStream.makeStream(of: MessagePayload.self)
-        self.messageStream = msgStream
-        self.messageStreamContinuation = msgCont
-
-        // Typing stream
-        let (typingStream, typingCont) = AsyncStream.makeStream(of: TypingEvent.self)
-        self.typingStream = typingStream
-        self.typingStreamContinuation = typingCont
-
         super.init()
+        print("[lifecycle] MultipeerService init — advertising as '\(displayName)'")
     }
     
     // MARK: - Discovery
@@ -123,6 +109,13 @@ final class MultipeerService: NSObject {
         
         browser?.delegate = self
         browser?.startBrowsingForPeers()
+        
+        // Временно решение: симуляция RSSI для найденных peers
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            simulateRSSIUpdates()
+        }
+        
         print("[MultipeerService] Discovery started: advertising as '\(myPeerID.displayName)")
     }
     
@@ -142,10 +135,25 @@ final class MultipeerService: NSObject {
         print("[MultipeerService] Discovery stopped")
     }
     
+    // Симуляция RSSI (пока нет Core Bluetooth)
+    private func simulateRSSIUpdates() {
+        for peerID in discoveredPeers.keys {
+            let rssi = Int.random(in: -90...(-40))
+            peerRSSI[peerID] = rssi
+            peerDistances[peerID] = calculateDistance(from: rssi)
+        }
+        emitPeers()
+        
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            simulateRSSIUpdates()
+        }
+    }
+    
     // MARK: - Manual Connection
     
     func connectToPeer(displayName: String) async throws {
-        guard let peerID = await discoveredPeerIDs[displayName] else {
+        guard let peerID = discoveredPeerIDs[displayName] else {
             throw MultipeerError.peerNotFound
         }
         
@@ -153,16 +161,55 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
-        await MainActor.run {
-            connectingPeers.insert(peerID)
-            emitPeers()
-        }
+        connectingPeers.insert(peerID)
+        emitPeers()
         
         print("[Browser] Manually connecting to '\(displayName)'")
         browser.invitePeer(peerID,
                            to: session,
                            withContext: nil,
                            timeout: 10)
+    }
+    
+    // MARK: - RSSI Calculation
+    /// Приблизительное вычисление дистанции (пока без интеграции CoreBluetooth)
+    private func calculateDistance(from rssi: Int) -> Double {
+        let txPower: Double = -40
+        let pathLossExponent = 2.5
+        
+        let ratio = (txPower - Double(rssi)) / (10 * pathLossExponent)
+        let distance = pow(10, ratio)
+        
+        return max(1, min(distance, 100))
+    }
+    
+    // MARK: - Connection Managment
+    
+    func disconnect(from displayName: String) {
+        guard let session = session,
+              let peerID = discoveredPeerIDs[displayName] else {
+            return
+        }
+        
+        print("[MultipeerService] Disconnecting from '\(peerID.displayName)'")
+
+        // MCSession не имеет метода disconnect для одного peer
+        // Нужно пересоздать session без этого peer
+        // Или просто удалить из connectedPeers и обновить UI
+
+        connectedPeers.remove(peerID)
+        emitPeers()
+
+        session.disconnect()
+    }
+
+    func disconnectAll() {
+        session?.disconnect()
+        
+        connectedPeers.removeAll()
+        connectingPeers.removeAll()
+        emitPeers()
+        print("[MultipeerService] Disconnected from all peers")
     }
     
     // MARK: - Messaging
@@ -172,7 +219,7 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = await getConnectedPeers()
+        let connectedPeers = self.connectedPeers
         guard !connectedPeers.isEmpty else {
             throw MultipeerError.noPeers
         }
@@ -193,7 +240,7 @@ final class MultipeerService: NSObject {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = await getConnectedPeers()
+        let connectedPeers = self.connectedPeers
         guard !connectedPeers.isEmpty else {
             throw MultipeerError.noPeers
         }
@@ -205,14 +252,8 @@ final class MultipeerService: NSObject {
         print("[Session] Sent typing event: \(event.type)")
     }
     
-    @MainActor
-    private func getConnectedPeers() -> Set<MCPeerID> {
-        connectedPeers
-    }
-    
     // MARK: - Helpers
     
-    @MainActor
     private func getStableUUID(for peerID: MCPeerID) -> UUID {
         if let existing = peerUUIDs[peerID] {
             return existing
@@ -223,7 +264,6 @@ final class MultipeerService: NSObject {
     }
     
     /// Конвертирм internal state в модели Peer для ViewModel.
-    @MainActor
     private func emitPeers() {
         let peers = discoveredPeers.map { peerID, displayName in
             let status: PeerStatus
@@ -238,16 +278,26 @@ final class MultipeerService: NSObject {
             return Peer(id: getStableUUID(for: peerID),
                         displayName: displayName,
                         status: status,
-                        lastSeen: Date())
+                        lastSeen: Date(),
+                        rssi: peerRSSI[peerID],
+                        distance: peerDistances[peerID])
         }
-        peerStreamContinuation?.yield(peers)
+        // Сортировка обязательна: `discoveredPeers` — словарь, порядок его
+        // обхода меняется от вызова к вызову. Без стабильного порядка список
+        // «дёргается» в UI, а `removeDuplicates` на стороне потребителя не
+        // может опознать два одинаковых по сути обновления.
+        .sorted { $0.displayName < $1.displayName }
+
+        peerBroadcast.yield(peers)
     }
     
+    /// `deinit` вызывается вне главного актора, поэтому изолированный стейт
+    /// здесь трогать нельзя. Закрывать потоки руками и не нужно: вместе с
+    /// сервисом освобождаются броадкастеры, а `AsyncStream` завершается сам,
+    /// когда его continuation деаллоцируется.
+    /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
     deinit {
-        stopDeviceDiscovery()
-        peerStreamContinuation?.finish()
-        messageStreamContinuation?.finish()
-        typingStreamContinuation?.finish()
+        print("[lifecycle] MultipeerService deinit")
     }
 }
 
@@ -256,11 +306,16 @@ final class MultipeerService: NSObject {
 extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
     
     /// Кто-то нашёл нас и хочет подключиться (invite).
-    func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didReceiveInvitationFromPeer peerID: MCPeerID,
                                 withContext context: Data?,
                                 invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        // Замыкание из MultipeerConnectivity не помечено `@Sendable`, но
+        // фреймворк гарантирует, что вызвать его можно ровно один раз
+        // с любой очереди. Оборачиваем явно, чтобы протащить на главный актор.
+        let respond = UncheckedSendableBox(invitationHandler)
         Task { @MainActor in
+            let invitationHandler = respond.value
             print("[Advertiser] Received invite from '\(peerID.displayName)'")
             guard let session = session else {
                 invitationHandler(false, nil)
@@ -272,8 +327,8 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
                 discoveredPeerIDs[peerID.displayName] = peerID
             }
             
-            if let delegate = invitationDelegate {
-                let shouldAccept = await delegate.shouldAcceptInvitation(from: peerID.displayName)
+            if let delegate = approvalDelegate {
+                let shouldAccept = await delegate.shouldAcceptConnection(from: peerID.displayName)
                 
                 if shouldAccept {
                     connectingPeers.insert(peerID)
@@ -293,7 +348,7 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
         }
     }
     
-    func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
+    nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didNotStartAdvertisingPeer error: any Error) {
         Task { @MainActor in
             print("[Advertiser] Failed to start: \(error.localizedDescription)")
@@ -306,7 +361,7 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
 extension MultipeerService: MCNearbyServiceBrowserDelegate {
     
     /// Устройство найдено.
-    func browser(_ browser: MCNearbyServiceBrowser,
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              foundPeer peerID: MCPeerID,
                              withDiscoveryInfo info: [String: String]?) {
         Task { @MainActor in
@@ -314,23 +369,34 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             discoveredPeers[peerID] = peerID.displayName
             discoveredPeerIDs[peerID.displayName] = peerID
             
+            if let rssiString = info?["RSSI"],
+               let rssi = Int(rssiString) {
+                peerRSSI[peerID] = rssi
+                peerDistances[peerID] = calculateDistance(from: rssi)
+                print("[MultipeerService] RSSI for \(peerID.displayName): \(rssi) dBm (~\(Int(peerDistances[peerID] ?? 0))m)")
+            }
+            
             emitPeers()
         }
     }
     
     /// Устройство пропало из радиуса.
-    func browser(_ browser: MCNearbyServiceBrowser,
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              lostPeer peerID: MCPeerID) {
         Task { @MainActor in
             print("[Browser] Lost peer: '\(peerID.displayName)'")
             discoveredPeers.removeValue(forKey: peerID)
             discoveredPeerIDs.removeValue(forKey: peerID.displayName)
             connectedPeers.remove(peerID)
+            
+            peerRSSI.removeValue(forKey: peerID)
+            peerDistances.removeValue(forKey: peerID)
+            
             emitPeers()
         }
     }
     
-    func browser(_ browser: MCNearbyServiceBrowser,
+    nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              didNotStartBrowsingForPeers error: any Error) {
         Task { @MainActor in
             print("[Browser] Failed to start: \(error.localizedDescription)")
@@ -343,7 +409,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
 extension MultipeerService: MCSessionDelegate {
         
     // Состояние подключения изменилось
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  peer peerID: MCPeerID,
                  didChange state: MCSessionState) {
         Task { @MainActor in
@@ -376,7 +442,7 @@ extension MultipeerService: MCSessionDelegate {
     }
     
     // Получили данные
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didReceive data: Data,
                  fromPeer peerID: MCPeerID) {
         Task { @MainActor in
@@ -389,12 +455,12 @@ extension MultipeerService: MCSessionDelegate {
                 case .message:
                     print("[Session] Recived message from '\(peerID.displayName)")
                     let payload = try packet.decodeMessage()
-                    messageStreamContinuation?.yield(payload)
+                    messageBroadcast.yield(payload)
                     
                 case .typing:
                     print("[Session] Recived typing event from '\(peerID.displayName)")
                     let event = try packet.decodeTypingEvent()
-                    typingStreamContinuation?.yield(event)
+                    typingBroadcast.yield(event)
                 }
                 
             } catch {
@@ -405,21 +471,21 @@ extension MultipeerService: MCSessionDelegate {
     
     // MARK: — Unused MCSessionDelegate methods
     
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didReceive stream: InputStream,
                  withName streamName: String,
                  fromPeer peerID: MCPeerID) {
         // Не используется streams
     }
     
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didStartReceivingResourceWithName resourceName: String,
                  fromPeer peerID: MCPeerID,
                  with progress: Progress) {
         // Не используется file transfers
     }
     
-    func session(_ session: MCSession,
+    nonisolated func session(_ session: MCSession,
                  didFinishReceivingResourceWithName resourceName: String,
                  fromPeer peerID: MCPeerID,
                  at localURL: URL?,

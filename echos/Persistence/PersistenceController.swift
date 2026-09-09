@@ -1,0 +1,72 @@
+//
+//  PersistenceController.swift
+//  echos
+//
+//  Created by Artem Rodionov on 26.02.2026.
+//
+
+import CoreData
+
+/// Стек Core Data живёт на главном акторе: наружу отдаётся только
+/// `container.viewContext` (main-queue контекст), поэтому изоляция
+/// на `@MainActor` — самое честное описание того, как класс уже используется.
+/// Это же снимает предупреждения strict concurrency про глобальное
+/// изменяемое состояние в `shared` / `preview` / `managedObjectModel`.
+@MainActor
+final class PersistenceController {
+    
+    static let shared = PersistenceController()
+    
+    let container: NSPersistentContainer
+    
+    static let preview: PersistenceController = {
+        let controller = PersistenceController(inMemory: true)
+        
+        let viewContext = controller.container.viewContext
+        
+        for i in 0..<10 {
+            let message = MessageEntity(context: viewContext)
+            message.id = UUID()
+            message.text = "Test message \(i)"
+            message.isFromMe = i % 2 == 0
+            message.timestamp = Date()
+            message.status = 1
+        }
+        
+        try? viewContext.save()
+        return controller
+    }()
+    
+    /// Модель грузится из бандла ОДИН раз на процесс.
+    ///
+    /// `NSPersistentContainer(name:)` при каждом вызове создаёт новый
+    /// `NSManagedObjectModel`. В приложении контроллер один, и это незаметно,
+    /// но в тестах стеков много — и Core Data начинает ругаться
+    /// «Failed to find a unique match for an NSEntityDescription».
+    private static let managedObjectModel: NSManagedObjectModel = {
+        guard let url = Bundle(for: PersistenceController.self).url(forResource: "echos", withExtension: "momd"),
+              let model = NSManagedObjectModel(contentsOf: url) else {
+            fatalError("CoreData: не найдена модель echos.momd")
+        }
+        return model
+    }()
+    
+    init(inMemory: Bool = false) {
+        container = NSPersistentContainer(name: "echos",
+                                          managedObjectModel: Self.managedObjectModel)
+        
+        if inMemory {
+            container.persistentStoreDescriptions.first?.url = URL(filePath: "/dev/null")
+        }
+        
+        container.loadPersistentStores { description, error in
+            if let error = error {
+                fatalError("CoreData failed to load: \(error.localizedDescription)")
+            }
+            print("Core Data loaded successfully")
+        }
+        
+        container.viewContext.automaticallyMergesChangesFromParent = true
+        container.viewContext.mergePolicy = NSMergePolicy.mergeByPropertyStoreTrump
+    }
+}
