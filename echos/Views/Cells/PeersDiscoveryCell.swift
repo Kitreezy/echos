@@ -103,9 +103,15 @@ final class PeerDiscoveryCell: UITableViewCell {
 
     // MARK: - Configure
 
-    func configure(with peer: Peer) {
+    /// - Parameter recognition: узнаём ли мы этого собеседника. Приписка идёт
+    ///   в ту же строку, что и состояние связи: отдельной строки этот случай
+    ///   не заслуживает, а знать о нём надо.
+    func configure(with peer: Peer, recognition: PeerRecognition = .known) {
         nameLabel.setTracked(peer.displayName, tracking: Typography.narrow)
-        statusLabel.text = peer.statusLabel
+        statusLabel.text = [peer.statusLabel, recognition.note]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        statusLabel.textColor = recognition.deservesAttention ? .lost : .inkMuted
         statusDot.backgroundColor = UIColor(peer.statusColor)
 
         // Недоступный собеседник не кричит, а тускнеет.

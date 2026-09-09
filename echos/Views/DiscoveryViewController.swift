@@ -367,7 +367,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
         
         let peer = displayedPeers[indexPath.row]
         
-        cell.configure(with: peer)
+        cell.configure(with: peer, recognition: viewModel.recognition(for: peer))
         return cell
     }
     

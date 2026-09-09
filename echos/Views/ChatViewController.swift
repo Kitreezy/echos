@@ -218,6 +218,10 @@ final class ChatViewController: UIViewController {
         // не говорит.
         if let peerName = viewModel.currentConversationName {
             title = peerName
+            // Приписка над заголовком — если собеседника мы не узнаём.
+            // Именно здесь она нужнее всего: обмануть можно того, кто пишет,
+            // а не того, кто смотрит на список.
+            navigationItem.prompt = conversationNote()
         } else {
             title = "echos"
         }
@@ -649,6 +653,17 @@ final class ChatViewController: UIViewController {
     }
     
     /// Стена: своя (`owner == nil`) или собеседника.
+    /// Что сказать о собеседнике над заголовком. `nil` — говорить нечего.
+    private func conversationNote() -> String? {
+        guard let address = viewModel.currentConversationPeer,
+              let name = viewModel.currentConversationName else {
+            return nil
+        }
+
+        let recognition = viewModel.recognizer.recognize(address: address, name: name)
+        return recognition.deservesAttention ? recognition.note : nil
+    }
+
     /// `owner` — адрес владельца стены, `nil` для своей.
     private func showWall(of owner: String?) {
         guard let transport = viewModel.multipeerService else {

@@ -53,6 +53,13 @@ final class ChatViewModel {
     /// Своя стена. Живёт здесь, а не на экране: росчерки приходят и тогда,
     /// когда стена закрыта.
     var strokeStore: any StrokeStoring = StrokeStore()
+
+    /// Кого мы уже знаем.
+    var knownPeerStore: any KnownPeerStoring = KnownPeerStore()
+
+    /// Сопоставление того, кого видим, с теми, с кем разговаривали.
+    /// Пересобирается при каждом изменении списка знакомых.
+    private(set) var recognizer = PeerRecognizer(known: [])
     
     // MARK: - Typing State
     
@@ -269,6 +276,37 @@ final class ChatViewModel {
         }
     }
     
+    // MARK: - Recognition
+
+    /// Узнаём ли мы этого собеседника.
+    func recognition(for peer: Peer) -> PeerRecognition {
+        recognizer.recognize(peer)
+    }
+
+    func loadKnownPeers() async {
+        do {
+            recognizer = PeerRecognizer(known: try await knownPeerStore.loadKnownPeers())
+        }
+        catch {
+            print("[ChatViewModel] Failed to load known peers: \(error)")
+        }
+    }
+
+    /// Запомнить собеседника.
+    ///
+    /// Вызывается, когда вы ему написали, а не когда увидели рядом: иначе
+    /// знакомыми стали бы все, кто когда-либо попал в список, и отличать
+    /// тёзку было бы не от кого.
+    private func remember(address: String, name: String?) async {
+        do {
+            try await knownPeerStore.remember(address: address, name: name ?? address)
+            await loadKnownPeers()
+        }
+        catch {
+            print("[ChatViewModel] Failed to remember \(address): \(error)")
+        }
+    }
+
     // MARK: - Listening
     
     /// Один цикл на три потока.
@@ -447,6 +485,10 @@ final class ChatViewModel {
         }
         isDiscovering = true
         connectionStatus = "Ищем устройства..."
+
+        // Список знакомых нужен до того, как придёт первое присутствие:
+        // иначе первые пол-секунды все выглядят незнакомцами.
+        await loadKnownPeers()
         
         multipeerService.startDeviceDiscovery()
     }
@@ -543,6 +585,7 @@ final class ChatViewModel {
             try await multipeerService.sendMessage(playLoad, to: address)
             
             updateStatus(.sent, for: message.id)
+            await remember(address: address, name: currentConversationName)
             print("[ChatViewModel] Message sent successfully")
         } catch {
             updateStatus(.failed, for: message.id)

@@ -15,12 +15,14 @@ final class ChatViewModelStreamTests: XCTestCase {
     /// иначе каждая проверка стоила бы несколько секунд ожидания.
     private func makeViewModel(
         transport: LoopbackTransport,
-        store: SpyMessageStore = SpyMessageStore()
+        store: SpyMessageStore = SpyMessageStore(),
+        knownPeers: SpyKnownPeerStore = SpyKnownPeerStore()
     ) async -> ChatViewModel {
         let viewModel = ChatViewModel()
         viewModel.typingStartDelay = .milliseconds(50)
         viewModel.typingIdleTimeout = .milliseconds(250)
         viewModel.persistenceFlushInterval = .milliseconds(50)
+        viewModel.knownPeerStore = knownPeers
         viewModel.initialize(transport: transport, store: store)
 
         // Подписка встаёт внутри Task, а не синхронно в initialize().
@@ -34,10 +36,15 @@ final class ChatViewModelStreamTests: XCTestCase {
     private func makeViewModelInConversation(
         transport: LoopbackTransport,
         store: SpyMessageStore = SpyMessageStore(),
-        with peer: String = "Bob"
+        knownPeers: SpyKnownPeerStore = SpyKnownPeerStore(),
+        with peer: String = "Bob",
+        named name: String? = nil
     ) async -> ChatViewModel {
-        let viewModel = await makeViewModel(transport: transport, store: store)
+        let viewModel = await makeViewModel(transport: transport,
+                                            store: store,
+                                            knownPeers: knownPeers)
         viewModel.currentConversationPeer = peer
+        viewModel.currentConversationName = name
         return viewModel
     }
 
@@ -262,5 +269,68 @@ final class ChatViewModelStreamTests: XCTestCase {
         }
 
         XCTAssertFalse(cleared, "Погасить чужой индикатор, назвавшись тем же именем, нельзя")
+    }
+
+    // MARK: - Узнавание
+
+    /// Знакомство заводится разговором, а не встречей: иначе знакомыми стали
+    /// бы все, кто попал в список, и отличать тёзку было бы не от кого.
+    func test_seeingAPeer_doesNotMakeItKnown() async {
+        let transport = LoopbackTransport()
+        let knownPeers = SpyKnownPeerStore()
+        let viewModel = await makeViewModel(transport: transport, knownPeers: knownPeers)
+
+        transport.emit(peers: [Peer(address: "bob-address", displayName: "Bob")])
+        _ = await waitUntil { !viewModel.peers.isEmpty }
+
+        XCTAssertTrue(knownPeers.remembered.isEmpty)
+    }
+
+    func test_sendingAMessage_remembersTheRecipient() async {
+        let transport = LoopbackTransport()
+        let knownPeers = SpyKnownPeerStore()
+        let viewModel = await makeViewModelInConversation(transport: transport,
+                                                          knownPeers: knownPeers,
+                                                          with: "bob-address",
+                                                          named: "Bob")
+
+        await viewModel.sendMessage("привет")
+
+        XCTAssertEqual(knownPeers.remembered.map(\.address), ["bob-address"])
+        XCTAssertEqual(knownPeers.remembered.map(\.name), ["Bob"])
+    }
+
+    func test_afterTalking_thePeerIsRecognized() async {
+        let transport = LoopbackTransport()
+        let knownPeers = SpyKnownPeerStore()
+        let viewModel = await makeViewModelInConversation(transport: transport,
+                                                          knownPeers: knownPeers,
+                                                          with: "bob-address",
+                                                          named: "Bob")
+
+        await viewModel.sendMessage("привет")
+
+        let bob = Peer(address: "bob-address", displayName: "Bob")
+        let namesake = Peer(address: "someone-else", displayName: "Bob")
+
+        XCTAssertEqual(viewModel.recognition(for: bob), .known)
+        XCTAssertEqual(viewModel.recognition(for: namesake), .namesake)
+    }
+
+    /// Список знакомых поднимается до первого присутствия, иначе первые
+    /// доли секунды все выглядели бы незнакомцами.
+    func test_startingDiscovery_loadsKnownPeersFirst() async {
+        let transport = LoopbackTransport()
+        let knownPeers = SpyKnownPeerStore()
+        knownPeers.preloaded = [KnownPeer(address: "bob-address",
+                                          name: "Bob",
+                                          firstSeen: Date(),
+                                          lastSeen: Date())]
+
+        let viewModel = await makeViewModel(transport: transport, knownPeers: knownPeers)
+        await viewModel.startDeviceDiscovery()
+
+        let bob = Peer(address: "bob-address", displayName: "Bob")
+        XCTAssertEqual(viewModel.recognition(for: bob), .known)
     }
 }

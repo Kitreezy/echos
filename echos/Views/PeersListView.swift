@@ -39,7 +39,8 @@ struct PeersListView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(viewModel.peers) { peer in
-                    PeerRow(peer: peer) {
+                    PeerRow(peer: peer,
+                            recognition: viewModel.recognition(for: peer)) {
                         disconnect(from: peer)
                     }
                     .contentShape(Rectangle())
@@ -84,6 +85,7 @@ struct PeersListView: View {
 struct PeerRow: View {
 
     let peer: Peer
+    var recognition: PeerRecognition = .known
     var onDisconnect: (() -> Void)?
 
     var body: some View {
@@ -100,9 +102,13 @@ struct PeerRow: View {
                         .tracking(Typography.narrow)
                         .foregroundStyle(Color.ink)
 
-                    Text(peer.statusLabel)
+                    Text([peer.statusLabel, recognition.note]
+                        .compactMap { $0 }
+                        .joined(separator: " · "))
                         .font(Font(Typography.caption))
-                        .foregroundStyle(Color.inkMuted)
+                        .foregroundStyle(recognition.deservesAttention
+                                         ? Color.lost
+                                         : Color.inkMuted)
                 }
 
                 Spacer(minLength: Space.step)
