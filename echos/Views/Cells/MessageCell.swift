@@ -7,168 +7,164 @@
 
 import UIKit
 
-/// step 11 заменить на красивые кастомные bubbles с Lottie.
+/// Сообщение без пузыря.
+///
+/// Было: скруглённый контейнер с заливкой, цветная полоса слева, время и
+/// статус капсом внутри — «SENT», «RECEIVED». Стало: текст и время под ним.
+///
+/// Кто написал, видно по цвету и стороне: своё золотом справа, чужое лиловым
+/// слева. Подпись «RECEIVED» под входящим сообщением не сообщала ничего —
+/// раз оно на экране, значит получено. Статус остался только у своих и только
+/// пока он что-то значит: отправляется или не ушло.
 final class MessageCell: UITableViewCell {
-    
+
     static let reuseID = "MessageCell"
-    
+
     // MARK: - UI
-    
-    private let bubbleView: UIView = {
-        let view = UIView()
-        view.layer.cornerRadius = 16
-        view.clipsToBounds = true
-        view.translatesAutoresizingMaskIntoConstraints = false
-        
-        return view
+
+    private let senderNameLabel: UILabel = {
+        let label = UILabel()
+        label.font = Typography.micro
+        label.textColor = .inkMuted
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isHidden = true
+        return label
     }()
-    
+
     private let messageLabel: UILabel = {
         let label = UILabel()
         label.numberOfLines = 0
-        label.font = .systemFont(ofSize: 16, weight: .regular)
+        label.font = Typography.body
         label.translatesAutoresizingMaskIntoConstraints = false
-        
         return label
     }()
-    
-    private let timeLabel: UILabel = {
+
+    private let footnoteLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 10, weight: .regular)
-        label.textColor = .tertiaryLabel
+        label.font = Typography.micro
+        label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
-        
         return label
     }()
-    
-    private let statusIcon: UIImageView = {
-        let imageView = UIImageView()
-        imageView.contentMode = .scaleAspectFit
-        imageView.tintColor = .systemBlue
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        
-        return imageView
-    }()
-    
-    // Dynamic constraints (меняются в configure)
-    private var bubbleLeadingConstraint: NSLayoutConstraint?
-    private var bubbleTrailingConstraint: NSLayoutConstraint?
-    private var timeLabelLeadingConstraint: NSLayoutConstraint?
-    private var timeLabelTrailingConstraint: NSLayoutConstraint?
-    private var statusIconTrailingConstraint: NSLayoutConstraint?
-    
+
+    private let column = UIView()
+
+    private var columnLeading: NSLayoutConstraint?
+    private var columnTrailing: NSLayoutConstraint?
+
     // MARK: - Init
-    
+
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        
         setupLayout()
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     // MARK: - Layout
-    
-    private lazy var layoutConstraints: [NSLayoutConstraint] = {
-        [
-            // Bubble
-            bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-            bubbleView.bottomAnchor.constraint(equalTo: timeLabel.topAnchor, constant: -4),
-            bubbleView.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, multiplier: 0.72),
-            
-            // Text in bubble
-            messageLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 10),
-            messageLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -10),
-            messageLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 12),
-            messageLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12),
-            
-            // Time and status
-            timeLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
-            statusIcon.widthAnchor.constraint(equalToConstant: 12),
-            statusIcon.heightAnchor.constraint(equalToConstant: 12),
-            statusIcon.centerYAnchor.constraint(equalTo: timeLabel.centerYAnchor)
-        ]
-    }()
-    
+
     private func setupLayout() {
         backgroundColor = .clear
         selectionStyle = .none
-        
-        contentView.addSubview(bubbleView)
-        bubbleView.addSubview(messageLabel)
-        contentView.addSubview(timeLabel)
-        contentView.addSubview(statusIcon)
-        
-        bubbleLeadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
-                                                                      constant: 12)
-        bubbleTrailingConstraint = bubbleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
-                                                                        constant: -12)
-        timeLabelLeadingConstraint = timeLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
-                                                                        constant: 16)
-        timeLabelTrailingConstraint = timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
-                                                                          constant: -16)
-        statusIconTrailingConstraint = statusIcon.trailingAnchor.constraint(equalTo: timeLabel.leadingAnchor,
-                                                                            constant: -4)
-        
-        NSLayoutConstraint.activate(layoutConstraints)
+
+        column.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(column)
+        column.addSubview(senderNameLabel)
+        column.addSubview(messageLabel)
+        column.addSubview(footnoteLabel)
+
+        columnLeading = column.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
+                                                        constant: Space.margin)
+        columnTrailing = column.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
+                                                          constant: -Space.margin)
+
+        NSLayoutConstraint.activate([
+            column.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Space.tight),
+            column.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Space.tight),
+            column.widthAnchor.constraint(lessThanOrEqualTo: contentView.widthAnchor, multiplier: 0.8),
+
+            senderNameLabel.topAnchor.constraint(equalTo: column.topAnchor),
+            senderNameLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            senderNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
+
+            messageLabel.topAnchor.constraint(equalTo: senderNameLabel.bottomAnchor, constant: Space.hair),
+            messageLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            messageLabel.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+
+            footnoteLabel.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: Space.tight),
+            footnoteLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            footnoteLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
+            footnoteLabel.bottomAnchor.constraint(equalTo: column.bottomAnchor)
+        ])
     }
-    
+
     // MARK: - Configure
-    
+
     func configure(with message: Message) {
         messageLabel.text = message.text
-        
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        timeLabel.text = formatter.string(from: message.timestamp)
-        
+
+        let time = Self.timeFormatter.string(from: message.timestamp)
+
         if message.isFromMe {
-            // Cообщение — справа
-            bubbleView.backgroundColor = .systemBlue
-            messageLabel.textColor = .white
-            
-            bubbleLeadingConstraint?.isActive = false
-            bubbleTrailingConstraint?.isActive = true
-            
-            timeLabelLeadingConstraint?.isActive = false
-            timeLabelTrailingConstraint?.isActive = true
-            
-            statusIcon.isHidden = false
-            statusIconTrailingConstraint?.isActive = true
-            
-            switch message.status {
-            case .sending:
-                statusIcon.image = UIImage(systemName: "arrow.triangle.2.circlepath")
-                
-            case .sent:
-                statusIcon.image = UIImage(systemName: "checkmark")
-                
-            case .failed:
-                statusIcon.image = UIImage(systemName: "exclamationmark.circle")
-                statusIcon.tintColor = .systemRed
-            }
+            alignRight()
+            messageLabel.textColor = .own
+            senderNameLabel.isHidden = true
+            footnoteLabel.text = footnote(time: time, status: message.status)
+            footnoteLabel.textColor = message.status == .failed ? .lost : .inkMuted
         } else {
-            // Cообщение — слева
-            bubbleView.backgroundColor = .secondarySystemBackground
-            messageLabel.textColor = .label
-            
-            bubbleTrailingConstraint?.isActive = false
-            bubbleLeadingConstraint?.isActive = true
-            
-            timeLabelTrailingConstraint?.isActive = false
-            timeLabelLeadingConstraint?.isActive = true
-            
-            statusIcon.isHidden = true
-            statusIconTrailingConstraint?.isActive = false
+            alignLeft()
+            messageLabel.textColor = .other
+            footnoteLabel.text = time
+            footnoteLabel.textColor = .inkMuted
+
+            senderNameLabel.text = message.senderName
+            senderNameLabel.isHidden = message.senderName == nil
         }
     }
-    
+
+    /// Время говорит всегда, статус — только когда он новость.
+    private func footnote(time: String, status: MessageStatus) -> String {
+        switch status {
+        case .sending:
+            return "\(time) · отправляется"
+
+        case .sent:
+            return time
+
+        case .failed:
+            return "\(time) · не отправлено"
+        }
+    }
+
+    private func alignLeft() {
+        columnTrailing?.isActive = false
+        columnLeading?.isActive = true
+        messageLabel.textAlignment = .left
+        footnoteLabel.textAlignment = .left
+    }
+
+    private func alignRight() {
+        columnLeading?.isActive = false
+        columnTrailing?.isActive = true
+        messageLabel.textAlignment = .right
+        footnoteLabel.textAlignment = .right
+    }
+
+    // MARK: - Reuse
+
     override func prepareForReuse() {
         super.prepareForReuse()
-        
-        statusIcon.tintColor = .systemBlue
-        statusIcon.isHidden = false
+
+        senderNameLabel.isHidden = true
+        columnLeading?.isActive = false
+        columnTrailing?.isActive = false
     }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 }
