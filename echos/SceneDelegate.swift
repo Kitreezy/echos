@@ -22,13 +22,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //        navigationController.setNavigationBarHidden(true, animated: false)
         
         navigationController.navigationBar.prefersLargeTitles = false
-        navigationController.navigationBar.tintColor = UIColor(hex: "#39FF14")
+        navigationController.navigationBar.tintColor = UIColor.alive
         
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(hex: "#0D0F14")
+        appearance.backgroundColor = UIColor.surface
         appearance.titleTextAttributes = [
-            .foregroundColor: UIColor(hex: "#39FF14"),
+            .foregroundColor: UIColor.alive,
             .font: UIFont.monospacedSystemFont(ofSize: 16, weight: .medium)
         ]
         
