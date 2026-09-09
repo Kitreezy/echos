@@ -12,7 +12,13 @@
 import Foundation
 
 enum RelayEnvelopeKind: String, Codable, Sendable {
+    /// Сервер → клиент: случайная строка, которую нужно подписать.
+    /// Приходит первой, сразу после установки соединения.
+    case challenge
     /// Клиент → сервер: представиться и войти в комнату.
+    ///
+    /// В payload — открытый ключ и подпись под вызовом. Одного имени мало:
+    /// назваться можно кем угодно, а подписать чужим ключом — нет.
     case hello
     /// Сервер → клиент: актуальный список тех, кто сейчас на релее.
     case presence
@@ -48,8 +54,15 @@ struct RelayEnvelope: Codable, Sendable {
 
     // MARK: - Constructors
 
-    static func hello(from sender: String) -> RelayEnvelope {
-        RelayEnvelope(kind: .hello, sender: sender, payload: nil)
+    static func hello(from sender: String,
+                      answering challenge: Data,
+                      as identity: DeviceIdentity) throws -> RelayEnvelope {
+        let proof = HelloPayload(publicKey: identity.publicKey,
+                                 signature: try identity.signature(for: challenge))
+
+        return RelayEnvelope(kind: .hello,
+                             sender: sender,
+                             payload: try JSONEncoder().encode(proof))
     }
 
     static func presence(_ names: [String]) throws -> RelayEnvelope {
@@ -86,6 +99,15 @@ struct RelayEnvelope: Codable, Sendable {
     }
 
     // MARK: - Decoding
+
+    /// Вызов лежит в payload как есть: это просто набор байтов,
+    /// разбирать в нём нечего.
+    func decodeChallenge() throws -> Data {
+        guard let payload else {
+            throw RelayError.emptyPayload
+        }
+        return payload
+    }
 
     func decodePresence() throws -> [String] {
         try decode([String].self)
@@ -125,6 +147,12 @@ struct RelayEnvelope: Codable, Sendable {
     func stamped(sender: String) -> RelayEnvelope {
         RelayEnvelope(kind: kind, sender: sender, recipient: recipient, payload: payload)
     }
+}
+
+/// Чем клиент подтверждает право на имя.
+struct HelloPayload: Codable, Sendable {
+    let publicKey: Data
+    let signature: Data
 }
 
 enum RelayError: Error, LocalizedError, Equatable {

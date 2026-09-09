@@ -63,9 +63,12 @@ final class RelayEnvelopeTests: XCTestCase {
     // MARK: - Ошибки
 
     func test_decodingEmptyPayload_throws() throws {
-        let hello = RelayEnvelope.hello(from: "Alice")
+        // Конверт без payload — то, что реально приходит по проводу,
+        // если сервер прислал один заголовок.
+        let json = #"{"kind":"hello","sender":"Alice"}"#
+        let empty = try RelayEnvelope.decode(from: Data(json.utf8))
 
-        XCTAssertThrowsError(try hello.decodeMessage()) { error in
+        XCTAssertThrowsError(try empty.decodeMessage()) { error in
             XCTAssertEqual(error as? RelayError, .emptyPayload)
         }
     }

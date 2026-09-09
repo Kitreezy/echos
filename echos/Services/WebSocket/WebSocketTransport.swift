@@ -71,6 +71,14 @@ final class WebSocketTransport: NSObject {
     private var peerIdentifiers: [String: UUID] = [:]
     private var knownPeerNames: [String] = []
 
+    /// Вызов, пришедший раньше, чем его успели дождаться.
+    ///
+    /// Порядок здесь не гарантирован: сервер шлёт вызов сразу после
+    /// установки соединения, а хук `onConnected` выполняется отдельной
+    /// задачей и может опоздать.
+    private var pendingChallenge: Data?
+    private var challengeWaiter: CheckedContinuation<Data?, Never>?
+
     // MARK: - Init
 
     init(url: URL,
@@ -153,9 +161,9 @@ final class WebSocketTransport: NSObject {
 
         // Представиться надо при каждом подключении, а не только при первом:
         // после реконнекта сервер о нас ничего не помнит. Хук клиента
-        // гарантирует, что hello уйдёт до отложенной очереди.
+        // гарантирует, что рукопожатие пройдёт до отложенной очереди.
         client.onConnected = { [weak self] in
-            await self?.sayHello()
+            await self?.performHandshake()
         }
 
         // Пока связи нет, список собеседников недостоверен — чистим его.
@@ -180,6 +188,9 @@ final class WebSocketTransport: NSObject {
 
         stateTask?.cancel()
         stateTask = nil
+
+        resumeChallengeWaiter(with: nil)
+        pendingChallenge = nil
 
         client.disconnect()
         clearPeers()
@@ -224,8 +235,57 @@ final class WebSocketTransport: NSObject {
         await client.send(try envelope.encoded())
     }
 
-    private func sayHello() async {
-        try? await send(.hello(from: myDisplayName))
+    // MARK: - Handshake
+
+    /// Дождаться вызова сервера и ответить на него подписью.
+    ///
+    /// Отправить hello сразу нельзя: подписывать нечего, пока сервер не
+    /// прислал свою случайную строку. Зато и подслушанная подпись ничего не
+    /// даёт — она годится ровно для одного подключения.
+    private func performHandshake() async {
+        guard let challenge = await awaitChallenge() else {
+            print("[WebSocketTransport] No challenge from the relay, giving up on this connection")
+            return
+        }
+
+        do {
+            let identity = try DeviceIdentity.current()
+            try await send(.hello(from: myDisplayName,
+                                  answering: challenge,
+                                  as: identity))
+        }
+        catch {
+            print("[WebSocketTransport] Handshake failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func awaitChallenge() async -> Data? {
+        if let challenge = pendingChallenge {
+            pendingChallenge = nil
+            return challenge
+        }
+
+        return await withCheckedContinuation { continuation in
+            challengeWaiter = continuation
+
+            // Страховка от вечного ожидания: если вызов не пришёл, соединение
+            // всё равно закроется по таймауту на сервере, и клиент попробует
+            // снова. Ждать здесь дольше смысла нет.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                self?.resumeChallengeWaiter(with: nil)
+            }
+        }
+    }
+
+    private func resumeChallengeWaiter(with challenge: Data?) {
+        guard let waiter = challengeWaiter else {
+            pendingChallenge = challenge
+            return
+        }
+
+        challengeWaiter = nil
+        waiter.resume(returning: challenge)
     }
 
     // MARK: - Incoming
@@ -246,6 +306,9 @@ final class WebSocketTransport: NSObject {
 
             case .stroke:
                 strokeBroadcast.yield(try envelope.decodeStroke())
+
+            case .challenge:
+                resumeChallengeWaiter(with: try envelope.decodeChallenge())
 
             case .hello:
                 break  // сервер такое не шлёт

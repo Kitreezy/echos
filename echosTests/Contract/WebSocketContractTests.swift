@@ -59,12 +59,7 @@ class WebSocketContractTests: XCTestCase {
         client.maxReconnectDelay = .milliseconds(300)
 
         if let name {
-            client.onConnected = { [weak client] in
-                guard let hello = try? RelayEnvelope.hello(from: name).encoded() else {
-                    return
-                }
-                await client?.send(hello)
-            }
+            RelayHandshake.install(on: client, as: name)
         }
 
         return client

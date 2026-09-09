@@ -9,6 +9,7 @@
 //  всем присутствие → всё остальное переслал остальным.
 //
 
+import CryptoKit
 import Foundation
 import Network
 @testable import echos
@@ -22,8 +23,13 @@ final class RelayServer {
         let connection: NWConnection
         var displayName: String?
 
+        /// Что этот клиент должен подписать. Своя строка на каждое
+        /// подключение — иначе подпись годилась бы повторно.
+        let nonce: Data
+
         init(connection: NWConnection) {
             self.connection = connection
+            self.nonce = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) })
         }
     }
 
@@ -185,6 +191,20 @@ final class RelayServer {
 
         connection.start(queue: .main)
         receive(on: connection)
+
+        // Вызов уходит первым: клиенту нечего подписывать, пока он его не
+        // получил. Настоящий релей ведёт себя так же.
+        if let challenge = try? challengeEnvelope(for: client).encoded() {
+            send(challenge, over: connection)
+        }
+    }
+
+    private func challengeEnvelope(for client: Client) throws -> RelayEnvelope {
+        let json: [String: Any] = ["kind": "challenge",
+                                   "sender": "",
+                                   "payload": client.nonce.base64EncodedString()]
+
+        return try RelayEnvelope.decode(from: JSONSerialization.data(withJSONObject: json))
     }
 
     private func remove(_ connection: NWConnection) {
@@ -237,6 +257,11 @@ final class RelayServer {
 
         switch envelope.kind {
         case .hello:
+            guard verify(envelope, from: client) else {
+                print("[RelayServer] '\(envelope.sender)' failed the challenge")
+                return
+            }
+
             client.displayName = envelope.sender
             print("[RelayServer] '\(envelope.sender)' joined")
             broadcastPresence()
@@ -249,9 +274,22 @@ final class RelayServer {
             // доверять нельзя, он может назваться кем угодно.
             relay(envelope.stamped(sender: sender), excluding: connection)
 
-        case .presence:
-            break  // присутствие рассылает только сервер
+        case .presence, .challenge:
+            break  // и то и другое рассылает только сервер
         }
+    }
+
+    /// Подпись под выданным вызовом — то же, что проверяет настоящий релей.
+    private func verify(_ envelope: RelayEnvelope, from client: Client) -> Bool {
+        guard !envelope.sender.isEmpty,
+              let payload = envelope.payload,
+              let proof = try? JSONDecoder().decode(HelloPayload.self, from: payload),
+              let publicKey = try? Curve25519.Signing.PublicKey(
+                  rawRepresentation: proof.publicKey) else {
+            return false
+        }
+
+        return publicKey.isValidSignature(proof.signature, for: client.nonce)
     }
 
     private func broadcastPresence() {

@@ -196,12 +196,7 @@ final class NetworkAwarenessTests: XCTestCase {
         let client = makeClient()
         defer { client.disconnect() }
 
-        client.onConnected = { [weak client] in
-            guard let hello = try? RelayEnvelope.hello(from: "Alice").encoded() else {
-                return
-            }
-            await client?.send(hello)
-        }
+        RelayHandshake.install(on: client, as: "Alice")
 
         client.connect()
         _ = await waitUntil { self.server.connectedClientCount == 1 }

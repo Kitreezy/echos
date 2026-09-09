@@ -36,12 +36,7 @@ final class WebSocketClientTests: XCTestCase {
     private func makeClient(named name: String) -> WebSocketClient {
         let client = makeClient()
 
-        client.onConnected = { [weak client] in
-            guard let hello = try? RelayEnvelope.hello(from: name).encoded() else {
-                return
-            }
-            await client?.send(hello)
-        }
+        RelayHandshake.install(on: client, as: name)
 
         return client
     }
