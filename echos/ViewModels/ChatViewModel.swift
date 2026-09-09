@@ -288,13 +288,16 @@ final class ChatViewModel {
     private func handlePeers(_ discoveredPeers: [Peer]) async {
         peers = discoveredPeers
         appliedPeerUpdates += 1
-        updateConnectionStatus()
         
         if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
             if currentConversationPeer != connected.displayName {
                 await switchToConversation(with: connected.displayName)
             }
         }
+        
+        // Строго после switchToConversation: статус смотрит на то, чей чат
+        // открыт, а до переключения это значение ещё старое.
+        updateConnectionStatus()
     }
     
     func handleTypingEvent(_ event: TypingEvent) {
@@ -421,12 +424,15 @@ final class ChatViewModel {
         let discoveredCount = peers.count
         
         if connectedCount > 0 {
-            let names = connectedPeers.map { $0.displayName }.joined(separator: ", ")
-              connectionStatus = ">_< \(names)"
+            let names = connectedPeers.map { $0.displayName }
+            // В открытом чате имя собеседника уже стоит в заголовке —
+            // повторять его строкой ниже незачем.
+            let isCurrentConversation = names == [currentConversationPeer]
+            connectionStatus = isCurrentConversation ? "" : names.joined(separator: ", ")
         } else if discoveredCount > 0 {
-            connectionStatus = "Найдено: \(discoveredCount) устройства."
+            connectionStatus = "Рядом: \(discoveredCount)"
         } else {
-            connectionStatus = "Нет устройств рядом"
+            connectionStatus = ""
         }
     }
     

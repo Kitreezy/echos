@@ -18,70 +18,22 @@ final class DiscoveryViewController: UIViewController {
     
     // MARK: - UI Components
     
-    private let scanlinesView: UIView = {
-        let view = UIView()
-        view.isUserInteractionEnabled = false
-        view.alpha = 0.1
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-    
-    private let headerContainer: UIView = {
-        let view = UIView()
-        view.backgroundColor = UIColor.surface.withAlphaComponent(0.8)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-    
-    private let radarIcon: UIImageView = {
-        let imageView = UIImageView(image: UIImage(systemName: "dot.radiowaves.left.and.right"))
-        imageView.tintColor = UIColor.alive
-        imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        
-        imageView.layer.shadowColor = UIColor.alive.cgColor
-        imageView.layer.shadowRadius = 8
-        imageView.layer.shadowOpacity = 0.8
-        imageView.layer.shadowOffset = .zero
-        
-        return imageView
-    }()
-    
-    private let headerLabel: UILabel = {
+    private let titleLabel: UILabel = {
         let label = UILabel()
-        label.text = "ECHOS // SIGNAL: STRONG"
-        label.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-        label.textColor = UIColor.alive
+        label.font = Typography.micro
+        label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
-        
-        label.layer.shadowColor = UIColor.alive.cgColor
-        label.layer.shadowRadius = 5
-        label.layer.shadowOpacity = 0.8
-        label.layer.shadowOffset = .zero
-        
+        label.setTracked("echos", tracking: Typography.wide)
         return label
     }()
-    
+
+    /// Сколько рядом. Пусто — значит ноль, и говорить об этом незачем.
     private let peerCountLabel: UILabel = {
         let label = UILabel()
-        label.text = "PEER: 0 CONN"
-        label.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-        label.textColor = UIColor.alive
+        label.font = Typography.micro
+        label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
-        
-        label.layer.shadowColor = UIColor.alive.cgColor
-        label.layer.shadowRadius = 5
-        label.layer.shadowOpacity = 0.8
-        label.layer.shadowOffset = .zero
-        
         return label
-    }()
-    
-    private let separatorLine: UIView = {
-        let view = UIView()
-        view.backgroundColor = UIColor.alive.withAlphaComponent(0.3)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
     }()
     
     private lazy var radarView: UIView = {
@@ -94,39 +46,14 @@ final class DiscoveryViewController: UIViewController {
         return hosting.view
     }()
     
-    private let scanningContainer: UIView = {
-        let view = UIView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        return view
-    }()
-    
-    private let scanningIcon: UIImageView = {
-        let imageView = UIImageView(image: UIImage(systemName: "arrow.triangle.2.circlepath"))
-        imageView.tintColor = UIColor.other
-        imageView.contentMode = .scaleAspectFit
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        
-        imageView.layer.shadowColor = UIColor.other.cgColor
-        imageView.layer.shadowRadius = 4
-        imageView.layer.shadowOpacity = 0.6
-        imageView.layer.shadowOffset = .zero
-        
-        return imageView
-    }()
-    
-    private let scanningLabel: UILabel = {
+    /// Одна строка вместо крутящейся иконки с надписью капсом.
+    /// Показывается, только когда сказать действительно есть что.
+    private let statusLabel: UILabel = {
         let label = UILabel()
-        label.text = "SCANNING FREQUENCIES..."
-        label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        label.textColor = UIColor.other
+        label.font = Typography.caption
+        label.textColor = .inkMuted
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
-        
-        label.layer.shadowColor = UIColor.other.cgColor
-        label.layer.shadowRadius = 4
-        label.layer.shadowOpacity = 0.6
-        label.layer.shadowOffset = .zero
-        
         return label
     }()
     
@@ -242,52 +169,24 @@ final class DiscoveryViewController: UIViewController {
 
     private lazy var layoutConstraints: [NSLayoutConstraint] = {
         [
-            headerContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            headerContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            headerContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            headerContainer.heightAnchor.constraint(equalToConstant: 48),
-            
-            // Radar icon
-            radarIcon.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor, constant: 16),
-            radarIcon.centerYAnchor.constraint(equalTo: headerContainer.centerYAnchor),
-            radarIcon.widthAnchor.constraint(equalToConstant: 18),
-            radarIcon.heightAnchor.constraint(equalToConstant: 18),
-            
-            // Header label
-            headerLabel.leadingAnchor.constraint(equalTo: radarIcon.trailingAnchor, constant: 6),
-            headerLabel.centerYAnchor.constraint(equalTo: radarIcon.centerYAnchor),
-            
-            // Peer count
-            peerCountLabel.trailingAnchor.constraint(equalTo: headerContainer.trailingAnchor, constant: -16),
-            peerCountLabel.centerYAnchor.constraint(equalTo: radarIcon.centerYAnchor),
-            
-            // Separator
-            separatorLine.topAnchor.constraint(equalTo: headerContainer.bottomAnchor),
-            separatorLine.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            separatorLine.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            separatorLine.heightAnchor.constraint(equalToConstant: 1),
-            
-            radarView.topAnchor.constraint(equalTo: separatorLine.bottomAnchor, constant: 24),
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor,
+                                            constant: Space.room),
+            titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
+                                                constant: Space.margin),
+
+            peerCountLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            peerCountLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
+                                                     constant: -Space.margin),
+
+            radarView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: Space.ma),
             radarView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            radarView.widthAnchor.constraint(equalToConstant: 256),
-            radarView.heightAnchor.constraint(equalToConstant: 256),
-            
-            scanningContainer.topAnchor.constraint(equalTo: radarView.bottomAnchor, constant: 20),
-            scanningContainer.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            scanningContainer.heightAnchor.constraint(equalToConstant: 24),
-            
-            // Scanning icon
-            scanningIcon.leadingAnchor.constraint(equalTo: scanningContainer.leadingAnchor),
-            scanningIcon.centerYAnchor.constraint(equalTo: scanningContainer.centerYAnchor),
-            scanningIcon.widthAnchor.constraint(equalToConstant: 16),
-            scanningIcon.heightAnchor.constraint(equalToConstant: 16),
-            
-            // Scanning label
-            scanningLabel.leadingAnchor.constraint(equalTo: scanningIcon.trailingAnchor, constant: 8),
-            scanningLabel.trailingAnchor.constraint(equalTo: scanningContainer.trailingAnchor),
-            scanningLabel.centerYAnchor.constraint(equalTo: scanningContainer.centerYAnchor),
-            
-            tableView.topAnchor.constraint(equalTo: scanningContainer.bottomAnchor, constant: 20),
+            radarView.widthAnchor.constraint(equalToConstant: 240),
+            radarView.heightAnchor.constraint(equalToConstant: 240),
+
+            statusLabel.topAnchor.constraint(equalTo: radarView.bottomAnchor, constant: Space.room),
+            statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
@@ -299,47 +198,14 @@ final class DiscoveryViewController: UIViewController {
     private func setupUI() {
         view.backgroundColor = UIColor.surface
         
-        setupScanlines()
-        
         setupLayout()
     }
     
-    private func setupScanlines() {
-        view.addSubview(scanlinesView)
-        
-        NSLayoutConstraint.activate([
-            scanlinesView.topAnchor.constraint(equalTo: view.topAnchor),
-            scanlinesView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scanlinesView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scanlinesView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        
-        let lineHeight: CGFloat = 4
-        let lineLayer = CALayer()
-        lineLayer.backgroundColor = UIColor.black.cgColor
-        lineLayer.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: lineHeight / 2)
-        
-        let patternImage = UIGraphicsImageRenderer(size: CGSize(width: 1, height: lineHeight)).image { context in
-            UIColor.clear.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 1, height: lineHeight))
-            UIColor.black.setFill()
-            context.fill(CGRect(x: 0, y: lineHeight / 2, width: 1, height: lineHeight / 2))
-        }
-        
-        scanlinesView.backgroundColor = UIColor(patternImage: patternImage)
-    }
-    
     private func setupLayout() {
-        view.addSubview(headerContainer)
-        headerContainer.addSubview(radarIcon)
-        headerContainer.addSubview(headerLabel)
-        headerContainer.addSubview(peerCountLabel)
-        view.addSubview(separatorLine)
+        view.addSubview(titleLabel)
+        view.addSubview(peerCountLabel)
         view.addSubview(radarView)
-        
-        scanningContainer.addSubview(scanningIcon)
-        scanningContainer.addSubview(scanningLabel)
-        view.addSubview(scanningContainer)
+        view.addSubview(statusLabel)
         view.addSubview(tableView)
         
         NSLayoutConstraint.activate(layoutConstraints)
@@ -352,41 +218,17 @@ final class DiscoveryViewController: UIViewController {
     }
     
     // MARK: - Animations
-    
-    private func startAnimations() {
-        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-        rotation.fromValue = 0
-        rotation.toValue = CGFloat.pi * 2
-        rotation.duration = 2.0
-        rotation.repeatCount = .infinity
-        scanningIcon.layer.add(rotation, forKey: "rotation")
-        rotationAnimation = rotation
-        
-        startPulseAnimation()
-    }
-    
-    private func startPulseAnimation() {
-        pulseTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            // Таймер живёт на главном run loop, а UIView.animate изолирован
-            // главным актором — подтверждаем это компилятору явно.
-            MainActor.assumeIsolated {
-                UIView.animate(withDuration: 0.5, delay: 0, options: [.autoreverse, .repeat], animations: {
-                    self?.scanningLabel.alpha = 0.4
-                    self?.scanningIcon.alpha = 0.4
-                }, completion: nil)
-            }
-        }
-    }
-    
-    private func stopAnimations() {
-        pulseTimer?.invalidate()
-        pulseTimer = nil
-        scanningIcon.layer.removeAnimation(forKey: "rotation")
-    }
+
+    /// Вращение и пульсация ушли вместе с иконкой: единственное движение
+    /// на экране — круг на воде в RadarView.
+    private func startAnimations() {}
+
+    private func stopAnimations() {}
     
     // MARK: - Binding
     
     private func bindViewModel() {
+        updateUI()
         scheduleObservation()
     }
     
@@ -407,13 +249,11 @@ final class DiscoveryViewController: UIViewController {
     private func updateUI() {
         let displayPeers = viewModel.peers.isEmpty ? mockPeers() : viewModel.peers
         
-        let connectedCount = displayPeers.filter { $0.status == .connected }.count
-        peerCountLabel.text = "PEER: \(connectedCount) CONN"
-        
-        let averageSignal = calculateAverageSignal(from: displayPeers)
-        let signalStatus = getSignalStatus(averageSignal)
-        headerLabel.text = "ECHOS // SIGNAL: \(signalStatus)"
-        
+        peerCountLabel.text = displayPeers.isEmpty ? "" : "\(displayPeers.count)"
+
+        // Когда рядом кто-то есть, список говорит сам за себя — строка молчит.
+        statusLabel.text = displayPeers.isEmpty ? "Пока никого рядом" : ""
+
         tableView.reloadData()
     }
     
@@ -501,15 +341,6 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
         let peer = peers[indexPath.row]
         
         cell.configure(with: peer)
-        
-        if viewModel.peers.isEmpty {
-            cell.onConnect = nil
-        } else {
-            cell.onConnect = { [weak self] in
-                self?.connectToPeer(peer)
-            }
-        }
-        
         return cell
     }
     
@@ -541,7 +372,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     }
     
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        80
+        UITableView.automaticDimension
     }
 }
 

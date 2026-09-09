@@ -7,232 +7,112 @@
 
 import SwiftUI
 
+/// Общая картина связей: кто на связи, кто рядом, с кем связь потеряна.
+///
+/// Было: шапка «EKKO // PEER_NETWORK» с шестерёнкой, секции «ACTIVE
+/// TRANSMISSIONS» и «KNOWN FREQUENCY», карточки с цветной полосой, рамкой и
+/// иконкой в квадрате, выдуманные подписи «SYNC: 100% // 12M AWAY» и залитая
+/// кнопка «START NEW SCAN» во всю ширину.
+///
+/// Стало: три группы строк с тихими заголовками. Сами строки — те же, что
+/// в списке рядом: `PeerRow`.
 struct PeersNetworkView: View {
-    
+
     @Bindable var viewModel: ChatViewModel
-    @Environment(\.dismiss) private var dismiss
-    
-    var activePeers: [Peer] {
+
+    /// Экран живёт в стеке навигации UIKit, поэтому уход с него —
+    /// дело вызывающей стороны: `dismiss()` отсюда ничего не закроет.
+    var onOpenChat: () -> Void = {}
+    var onNewScan: () -> Void = {}
+
+    private var activePeers: [Peer] {
         viewModel.peers.filter { $0.status == .connected }
     }
-    
-    var lostPeers: [Peer] {
-        // TODO: Добавить логику для "потерянных" peers
-        []
-    }
-    
-    var knownPeers: [Peer] {
+
+    private var knownPeers: [Peer] {
         viewModel.peers.filter { $0.status == .notConnected }
     }
-    
+
+    private var lostPeers: [Peer] {
+        viewModel.peers.filter { $0.status == .failed }
+    }
+
     var body: some View {
         ZStack {
             Color.surface.ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .foregroundColor(Color.own)
-                    
-                    Text("EKKO // PEER_NETWORK")
-                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                        .foregroundColor(Color.own)
-                    
+
+            VStack(alignment: .leading, spacing: 0) {
+                if viewModel.peers.isEmpty {
                     Spacer()
-                    
-                    Button {
-                        // Settings
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .foregroundColor(Color.own)
-                    }
-                }
-                .padding()
-                .background(Color.surface)
-                
-                Divider()
-                    .background(Color.own.opacity(0.3))
-                
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Active Transmissions
-                        if !activePeers.isEmpty {
-                            SectionHeader(
-                                icon: "■",
-                                title: "ACTIVE TRANSMISSIONS",
-                                color: Color.own
-                            )
-                            
-                            VStack(spacing: 12) {
-                                ForEach(activePeers) { peer in
-                                    PeerNetworkCard(
-                                        peer: peer,
-                                        type: .active,
-                                        onTap: {
-                                            openChat(with: peer)
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        
-                        // Lost Contacts
-                        if !lostPeers.isEmpty {
-                            SectionHeader(
-                                icon: "■",
-                                title: "LOST CONTACTS",
-                                color: Color.lost
-                            )
-                            
-                            VStack(spacing: 12) {
-                                ForEach(lostPeers) { peer in
-                                    PeerNetworkCard(
-                                        peer: peer,
-                                        type: .lost,
-                                        onTap: {}
-                                    )
-                                }
-                            }
-                        }
-                        
-                        // Known Frequency
-                        if !knownPeers.isEmpty {
-                            SectionHeader(
-                                icon: "■",
-                                title: "KNOWN FREQUENCY",
-                                color: Color.inkMuted
-                            )
-                            
-                            VStack(spacing: 12) {
-                                ForEach(knownPeers) { peer in
-                                    PeerNetworkCard(
-                                        peer: peer,
-                                        type: .known,
-                                        onTap: {}
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    .padding()
-                }
-                
-                // Bottom Button
-                Button {
-                    dismiss()
-                } label: {
-                    Text("START NEW SCAN")
-                        .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Color.surface)
+                    Text("Пока никого рядом")
+                        .font(Font(Typography.caption))
+                        .foregroundStyle(Color.inkMuted)
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.own)
+                    Spacer()
+                } else {
+                    groups
                 }
-                .padding()
+
+                // Не `action`: Blue 072 — тёмный пантон, на почти чёрном фоне
+                // он не читается. Синий ждёт места, где станет заливкой,
+                // а не текстом.
+                Button("Искать заново", action: onNewScan)
+                .font(Font(Typography.caption))
+                .foregroundStyle(Color.inkMuted)
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Space.room)
             }
         }
-        .navigationBarHidden(true)
+        .navigationTitle("Связи")
+        .navigationBarTitleDisplayMode(.inline)
     }
-    
+
+    // MARK: - Groups
+
+    private var groups: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                group("на связи", peers: activePeers)
+                group("рядом", peers: knownPeers)
+                group("потеряны", peers: lostPeers)
+            }
+            .padding(.top, Space.room)
+        }
+    }
+
+    @ViewBuilder
+    private func group(_ title: String, peers: [Peer]) -> some View {
+        if !peers.isEmpty {
+            Text(title)
+                .font(Font(Typography.micro))
+                .tracking(Typography.narrow)
+                .foregroundStyle(Color.inkMuted)
+                .padding(.horizontal, Space.margin)
+                .padding(.bottom, Space.tight)
+
+            ForEach(peers) { peer in
+                PeerRow(peer: peer)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard peer.status == .connected else {
+                            return
+                        }
+                        openChat(with: peer)
+                    }
+            }
+            .padding(.bottom, Space.room)
+        }
+    }
+
     private func openChat(with peer: Peer) {
         Task {
             await viewModel.switchToConversation(with: peer.displayName)
-            dismiss()
+            onOpenChat()
         }
     }
 }
 
-// MARK: - Section Header
-
-struct SectionHeader: View {
-    let icon: String
-    let title: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(icon)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(color)
-            
-            Text(title)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(color)
-        }
-        .padding(.top, 8)
-    }
-}
-
-// MARK: - Peer Network Card
-
-enum PeerCardType {
-    case active
-    case lost
-    case known
-    
-    var color: Color {
-        switch self {
-        case .active: return Color.own
-        case .lost: return Color.lost
-        case .known: return Color.inkMuted
-        }
-    }
-}
-
-struct PeerNetworkCard: View {
-    let peer: Peer
-    let type: PeerCardType
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 0) {
-                // Side bar
-                Rectangle()
-                    .fill(type.color)
-                    .frame(width: 4)
-                
-                HStack {
-                    // Icon
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(type.color, lineWidth: 1)
-                            .frame(width: 44, height: 44)
-                        
-                        Image(systemName: "person.fill")
-                            .foregroundColor(type.color)
-                    }
-                    .padding(.leading, 12)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(peer.displayName.uppercased())
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .foregroundColor(type.color)
-                        
-                        Text(type == .active ? "SYNC: 100% // 12M AWAY" : "OFFLINE // ENCRYPTED HISTORY ONLY")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(type.color.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    if type == .active {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14))
-                            .foregroundColor(type.color)
-                            .padding(.trailing, 12)
-                    }
-                }
-                .frame(height: 68)
-            }
-            .background(Color.surfaceRaised)
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(type.color.opacity(0.3), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
+#Preview {
+    PeersNetworkView(viewModel: ChatViewModel())
 }
