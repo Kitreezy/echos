@@ -361,9 +361,7 @@ final class ChatViewModelStreamTests: XCTestCase {
                                                           with: "bob-address",
                                                           named: "Bob")
 
-        // Carol намеренно не на связи: подключённый собеседник сейчас
-        // перетягивает открытый чат на себя — см. KNOWN_ISSUE ниже.
-        transport.emit(peers: [peer("someone-else", "Carol", .notConnected)])
+        transport.emit(peers: [peer("someone-else", "Carol")])
         _ = await waitUntil { !viewModel.peers.isEmpty }
 
         XCTAssertEqual(viewModel.connectionStatus, "не на связи")
@@ -397,26 +395,34 @@ final class ChatViewModelStreamTests: XCTestCase {
         XCTAssertEqual(viewModel.connectionStatus, "Рядом: 2")
     }
 
-    // MARK: - Зафиксированные дефекты
-    //
-    // Тест ниже описывает ТЕКУЩЕЕ поведение, а не желаемое. Он зелёный — и
-    // держит баг под наблюдением, пока его не починят.
+    // MARK: - Автопереход
 
-    /// ДЕФЕКТ: очередное присутствие открывает чат с первым подключённым
-    /// собеседником, даже если у вас уже открыт другой. У Multipeer это было
-    /// незаметно — подключение там одно. Через релей «на связи» сразу все, и
-    /// первым оказывается кто угодно: открытый чат перебрасывает на чужой.
-    /// Чинится тем, что автопереход нужен, только когда чат не открыт.
-    func test_KNOWN_ISSUE_incomingPresence_hijacksTheOpenConversation() async {
+    /// Раньше очередное присутствие открывало чат с первым подключённым
+    /// собеседником поверх уже открытого. Через релей на связи сразу все, и
+    /// первым оказывается кто угодно.
+    func test_incomingPresence_leavesTheOpenConversationAlone() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport,
                                                           with: "bob-address",
                                                           named: "Bob")
 
         transport.emit(peers: [peer("someone-else", "Carol")])
-        _ = await waitUntil { viewModel.currentConversationPeer != "bob-address" }
+        _ = await waitUntil { !viewModel.peers.isEmpty }
 
-        XCTAssertEqual(viewModel.currentConversationPeer, "someone-else",
-                       "Сейчас чат перебрасывает на первого подключённого")
+        XCTAssertEqual(viewModel.currentConversationPeer, "bob-address")
+        XCTAssertEqual(viewModel.currentConversationName, "Bob")
+    }
+
+    /// Но когда чат не открыт, подключившийся собеседник его открывает —
+    /// у Multipeer это момент, когда приглашение приняли.
+    func test_withoutAConversation_connectedPeerOpensOne() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModel(transport: transport)
+
+        transport.emit(peers: [peer("bob-address", "Bob")])
+        _ = await waitUntil { viewModel.currentConversationPeer != nil }
+
+        XCTAssertEqual(viewModel.currentConversationPeer, "bob-address")
+        XCTAssertEqual(viewModel.currentConversationName, "Bob")
     }
 }

@@ -389,11 +389,17 @@ final class ChatViewModel {
         peers = discoveredPeers
         appliedPeerUpdates += 1
         
-        if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
-            if currentConversationPeer != connected.address {
-                await switchToConversation(with: connected.address,
-                                           named: connected.displayName)
-            }
+        // Сам открыть чат имеет смысл, только когда не открыт никакой: у
+        // Multipeer это тот момент, когда собеседник принял приглашение.
+        //
+        // Раньше условие было другим — «первый подключённый не тот, чей чат
+        // открыт», — и через релей оно ломалось: там на связи сразу все, и
+        // первым оказывается кто угодно. Открытый чат перебрасывало на чужой,
+        // причём тем охотнее, чем больше народу в комнате.
+        if currentConversationPeer == nil,
+           let connected = discoveredPeers.first(where: { $0.status == .connected }) {
+            await switchToConversation(with: connected.address,
+                                       named: connected.displayName)
         }
         
         // Строго после switchToConversation: статус смотрит на то, чей чат
