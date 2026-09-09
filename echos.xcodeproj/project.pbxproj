@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		AA3300000000000000000003 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = AA3300000000000000000002 /* AsyncAlgorithms */; };
 		AA3300000000000000000005 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = AA3300000000000000000004 /* AsyncAlgorithms */; };
+		AA4400000000000000000003 /* Starscream in Frameworks */ = {isa = PBXBuildFile; productRef = AA4400000000000000000002 /* Starscream */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -71,6 +72,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA3300000000000000000003 /* AsyncAlgorithms in Frameworks */,
+				AA4400000000000000000003 /* Starscream in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +135,7 @@
 			name = echos;
 			packageProductDependencies = (
 				AA3300000000000000000002 /* AsyncAlgorithms */,
+				AA4400000000000000000002 /* Starscream */,
 			);
 			productName = echos;
 			productReference = 577A75CE2F4362CB0072CE59 /* echos.app */;
@@ -220,6 +223,7 @@
 			preferredProjectObjectVersion = 77;
 			packageReferences = (
 				AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
+				AA4400000000000000000001 /* XCRemoteSwiftPackageReference "Starscream" */,
 			);
 			productRefGroup = 577A75CF2F4362CB0072CE59 /* Products */;
 			projectDirPath = "";
@@ -597,6 +601,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		AA4400000000000000000001 /* XCRemoteSwiftPackageReference "Starscream" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/daltoniam/Starscream.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.0.6;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -609,6 +621,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */;
 			productName = AsyncAlgorithms;
+		};
+		AA4400000000000000000002 /* Starscream */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA4400000000000000000001 /* XCRemoteSwiftPackageReference "Starscream" */;
+			productName = Starscream;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
