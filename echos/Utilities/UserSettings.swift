@@ -11,6 +11,7 @@ enum UserSettings {
     
     private static let userNameKey = "echos_user_name"
     private static let relayURLKey = "echos_relay_url"
+    private static let demoPeersKey = "echos_demo_peers"
     
     static var userName: String? {
         get {
@@ -41,6 +42,17 @@ enum UserSettings {
         }
     }
     
+    /// Показывать выдуманный список устройств, когда рядом никого нет.
+    ///
+    /// Нужен, чтобы смотреть вёрстку экрана поиска без второго телефона.
+    /// В обычном запуске выключен: на боевом релее четыре несуществующих
+    /// собеседника выглядят как поломка, а не как демонстрация.
+    ///
+    /// Включается аргументом запуска в схеме: `-echos_demo_peers YES`.
+    static var showsDemoPeers: Bool {
+        UserDefaults.standard.bool(forKey: demoPeersKey)
+    }
+    
     @MainActor
     static var displayName: String {
         if let customName = userName, !customName.isEmpty {
@@ -53,5 +65,6 @@ enum UserSettings {
     static func rest() {
         UserDefaults.standard.removeObject(forKey: userNameKey)
         UserDefaults.standard.removeObject(forKey: relayURLKey)
+        UserDefaults.standard.removeObject(forKey: demoPeersKey)
     }
 }
