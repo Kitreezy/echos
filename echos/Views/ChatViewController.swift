@@ -23,7 +23,7 @@ final class ChatViewController: UIViewController {
     private let tableView: UITableView = {
         let table = UITableView()
         table.separatorStyle = .none
-        table.backgroundColor = UIColor(named: "Background") ?? .systemBackground
+        table.backgroundColor = .surface
         table.keyboardDismissMode = .interactive
         table.allowsSelection = false
         table.translatesAutoresizingMaskIntoConstraints = false
@@ -89,26 +89,38 @@ final class ChatViewController: UIViewController {
     }()
     
     private let inputContainer: UIView = {
+        // Панель отделена от переписки волосяной линией, а не тенью:
+        // тень на чёрном всё равно не видна, зато добавляет слой.
         let view = UIView()
-        view.backgroundColor = .systemBackground
-        view.layer.shadowColor = UIColor.black.cgColor
-        view.layer.shadowOpacity = 0.06
-        view.layer.shadowOffset = CGSize(width: 0, height: -2)
+        view.backgroundColor = .surface
         view.translatesAutoresizingMaskIntoConstraints = false
-        
+
+        let hairline = UIView()
+        hairline.backgroundColor = .hairline
+        hairline.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hairline)
+
+        NSLayoutConstraint.activate([
+            hairline.topAnchor.constraint(equalTo: view.topAnchor),
+            hairline.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hairline.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hairline.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale)
+        ])
+
         return view
     }()
     
     private let textField: UITextField = {
         let textField = UITextField()
-        textField.placeholder = "Сообщение..."
+        textField.attributedPlaceholder = NSAttributedString(
+            string: "Сообщение",
+            attributes: [.foregroundColor: UIColor.inkMuted]
+        )
         textField.borderStyle = .none
-        textField.backgroundColor = .secondarySystemBackground
-        textField.layer.cornerRadius = 18
-        textField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 0))
-        textField.leftViewMode = .always
-        textField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 0))
-        textField.rightViewMode = .always
+        textField.backgroundColor = .clear
+        textField.textColor = .ink
+        textField.font = Typography.body
+        textField.tintColor = .own
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.returnKeyType = .send
         
@@ -116,10 +128,9 @@ final class ChatViewController: UIViewController {
     }()
     
     private let sendButton: UIButton = {
-        var config = UIButton.Configuration.filled()
-        config.image = UIImage(systemName: "arrow.uturn.up")
-        config.cornerStyle = .capsule
-        config.baseBackgroundColor = .action
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "arrow.up")
+        config.baseForegroundColor = .own
         let button = UIButton(configuration: config)
         button.translatesAutoresizingMaskIntoConstraints = false
         
@@ -156,7 +167,7 @@ final class ChatViewController: UIViewController {
         super.viewDidLoad()
         
         title = "echos"
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .surface
         
         setupNavigationBar()
         setupLayout()
@@ -204,9 +215,9 @@ final class ChatViewController: UIViewController {
         )
         
         if let peerName = viewModel.currentConversationPeer {
-            title = peerName.uppercased()
+            title = peerName
         } else {
-            title = "ECHOS"
+            title = "echos"
         }
         
         let menuButton = UIBarButtonItem(
@@ -328,6 +339,9 @@ final class ChatViewController: UIViewController {
     /// Подписка на @Observable ViewModel через withObservationTracking.
     /// При каждом изменении observed-свойства вызывается onChange -  перегружаем UI.
     private func bindViewModel() {
+        // Первый показ: без этого вызова заглушка «Нет сообщений» висит
+        // поверх уже загруженной переписки, пока что-нибудь не изменится.
+        updateUI()
         scheduleObservation()
     }
     
@@ -473,6 +487,13 @@ final class ChatViewController: UIViewController {
                 image: UIImage(systemName: "antenna.radiowaves.left.and.right")
             ) { [weak self] _ in
                 self?.showPeersList()
+            },
+
+            UIAction(
+                title: "Связи",
+                image: UIImage(systemName: "point.3.connected.trianglepath.dotted")
+            ) { [weak self] _ in
+                self?.showPeersNetwork()
             }
         ])
         
@@ -695,6 +716,23 @@ final class ChatViewController: UIViewController {
         navigationController?.pushViewController(hostingVC, animated: true)
     }
     
+    /// Общая картина: кто на связи, кто рядом, с кем связь потеряна.
+    /// В отличие от «Устройств поблизости», сгруппировано по состоянию.
+    @objc
+    private func showPeersNetwork() {
+        let networkView = PeersNetworkView(
+            viewModel: viewModel,
+            onOpenChat: { [weak self] in
+                self?.navigationController?.popViewController(animated: true)
+            },
+            onNewScan: { [weak self] in
+                self?.navigationController?.popToRootViewController(animated: true)
+            }
+        )
+        let hostingVC = UIHostingController(rootView: networkView)
+        navigationController?.pushViewController(hostingVC, animated: true)
+    }
+
     @objc
     private func showConversationsList() {
         let conversationsView = ConversationsListView(viewModel: viewModel)

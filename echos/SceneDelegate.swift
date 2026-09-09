@@ -22,15 +22,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 //        navigationController.setNavigationBarHidden(true, animated: false)
         
         navigationController.navigationBar.prefersLargeTitles = false
-        navigationController.navigationBar.tintColor = UIColor.alive
+        navigationController.navigationBar.tintColor = UIColor.inkMuted
         
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = UIColor.surface
         appearance.titleTextAttributes = [
-            .foregroundColor: UIColor.alive,
-            .font: UIFont.monospacedSystemFont(ofSize: 16, weight: .medium)
+            .foregroundColor: UIColor.ink,
+            .font: UIFont.systemFont(ofSize: 16, weight: .light),
+            .kern: Typography.narrow
         ]
+        // Полоса под шапкой — тоже рамка. Убираем.
+        appearance.shadowColor = .clear
         
         navigationController.navigationBar.standardAppearance = appearance
         navigationController.navigationBar.scrollEdgeAppearance = appearance
