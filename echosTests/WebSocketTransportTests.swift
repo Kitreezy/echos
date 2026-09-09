@@ -29,8 +29,13 @@ final class WebSocketTransportTests: XCTestCase {
         try await super.tearDown()
     }
 
+    /// У каждого транспорта свой ключ: на одном устройстве их два, а для
+    /// релея это должны быть двое разных людей.
     private func makeTransport(named name: String) -> WebSocketTransport {
-        WebSocketTransport(url: server.url, displayName: name, networkMonitor: monitor)
+        WebSocketTransport(url: server.url,
+                           displayName: name,
+                           identity: DeviceIdentity(),
+                           networkMonitor: monitor)
     }
 
     /// Поднимает оба транспорта и ждёт, пока сервер увидит обоих.
@@ -110,12 +115,14 @@ final class WebSocketTransportTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "привет из сети", isFromMe: true),
                                      senderName: "Alice")
-        try await alice.sendMessage(payload, to: "Bob")
+        try await alice.sendMessage(payload, to: bob.myAddress)
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
 
-        XCTAssertEqual(received.first?.text, "привет из сети")
-        XCTAssertEqual(received.first?.senderName, "Alice")
+        XCTAssertEqual(received.first?.value.text, "привет из сети")
+        XCTAssertEqual(received.first?.value.senderName, "Alice")
+        XCTAssertEqual(received.first?.sender, alice.myAddress,
+                       "Отправителя проставляет релей, из ключа")
     }
 
     func test_typingEvent_isDeliveredToTheOtherTransport() async throws {
@@ -127,12 +134,13 @@ final class WebSocketTransportTests: XCTestCase {
 
         let incoming = bob.typingStream
 
-        try await alice.sendTypingEvent(TypingEvent(type: .start, peerName: "Alice"), to: "Bob")
+        try await alice.sendTypingEvent(TypingEvent(type: .start, peerName: "Alice"), to: bob.myAddress)
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
 
-        XCTAssertEqual(received.first?.type, .start)
-        XCTAssertEqual(received.first?.peerName, "Alice")
+        XCTAssertEqual(received.first?.value.type, .start)
+        XCTAssertEqual(received.first?.value.peerName, "Alice")
+        XCTAssertEqual(received.first?.sender, alice.myAddress)
     }
 
     /// Отправитель не должен получать собственное сообщение обратно.
@@ -147,7 +155,7 @@ final class WebSocketTransportTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "эхо", isFromMe: true),
                                      senderName: "Alice")
-        try await alice.sendMessage(payload, to: "Bob")
+        try await alice.sendMessage(payload, to: bob.myAddress)
 
         _ = await collect(bob.messageStream, count: 1, timeout: .seconds(5))
         let ownMessages = await collect(echoed, count: 1, timeout: .milliseconds(300))
@@ -187,7 +195,7 @@ final class WebSocketTransportTests: XCTestCase {
         _ = await waitUntil { self.server.connectedClientCount == 1 }
 
         do {
-            try await alice.connectToPeer(displayName: "Никого")
+            try await alice.connectToPeer(address: "никого-нет")
             XCTFail("Подключение к отсутствующему собеседнику должно падать")
         }
         catch {

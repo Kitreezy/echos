@@ -16,6 +16,11 @@ final class LoopbackTransport: PeerTransport {
     // MARK: - Identity
 
     var myDisplayName: String = "Tester"
+
+    /// По умолчанию совпадает с именем — так тесты, которым адресация
+    /// безразлична, читаются как раньше. Где важна разница между именем и
+    /// адресом, тест выставляет его сам.
+    var myAddress: String = "Tester"
     var approvalDelegate: PeerConnectionApproving?
 
     // MARK: - Streams
@@ -23,9 +28,9 @@ final class LoopbackTransport: PeerTransport {
     /// Те же броадкастеры, что и в проде, — иначе тест не проверял бы
     /// мультикаст, который и является предметом проверки.
     private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
-    private let messageBroadcast = AsyncBroadcast<MessagePayload>()
-    private let typingBroadcast = AsyncBroadcast<TypingEvent>()
-    private let strokeBroadcast = AsyncBroadcast<Stroke>()
+    private let messageBroadcast = AsyncBroadcast<Addressed<MessagePayload>>()
+    private let typingBroadcast = AsyncBroadcast<Addressed<TypingEvent>>()
+    private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
 
     /// Сколько раз у потоков запрашивали подписку. Тесту нужно дождаться, пока
     /// конвейер ViewModel действительно встанет на потоки: события, отправленные
@@ -37,17 +42,17 @@ final class LoopbackTransport: PeerTransport {
         return peerBroadcast.stream
     }
 
-    var messageStream: AsyncStream<MessagePayload> {
+    var messageStream: AsyncStream<Addressed<MessagePayload>> {
         subscriptionsCreated += 1
         return messageBroadcast.stream
     }
 
-    var typingStream: AsyncStream<TypingEvent> {
+    var typingStream: AsyncStream<Addressed<TypingEvent>> {
         subscriptionsCreated += 1
         return typingBroadcast.stream
     }
 
-    var strokeStream: AsyncStream<Stroke> {
+    var strokeStream: AsyncStream<Addressed<Stroke>> {
         strokeBroadcast.stream
     }
 
@@ -79,16 +84,19 @@ final class LoopbackTransport: PeerTransport {
         peerBroadcast.yield(peers)
     }
 
-    func emit(message: MessagePayload) {
-        messageBroadcast.yield(message)
+    /// Отправитель по умолчанию — имя внутри события. Так тесты, писавшиеся
+    /// до появления адресов, продолжают означать ровно то же самое.
+    func emit(message: MessagePayload, from sender: String? = nil) {
+        messageBroadcast.yield(Addressed(sender: sender ?? message.senderName,
+                                         value: message))
     }
 
-    func emit(typing: TypingEvent) {
-        typingBroadcast.yield(typing)
+    func emit(typing: TypingEvent, from sender: String? = nil) {
+        typingBroadcast.yield(Addressed(sender: sender ?? typing.peerName, value: typing))
     }
 
-    func emit(stroke: Stroke) {
-        strokeBroadcast.yield(stroke)
+    func emit(stroke: Stroke, from sender: String? = nil) {
+        strokeBroadcast.yield(Addressed(sender: sender ?? stroke.author, value: stroke))
     }
 
     // MARK: - PeerTransport
@@ -101,25 +109,25 @@ final class LoopbackTransport: PeerTransport {
         isDiscovering = false
     }
 
-    func connectToPeer(displayName: String) async throws {}
+    func connectToPeer(address: String) async throws {}
 
     private(set) var disconnectedPeers: [String] = []
 
-    func disconnect(from displayName: String) {
-        disconnectedPeers.append(displayName)
+    func disconnect(from address: String) {
+        disconnectedPeers.append(address)
     }
 
     func disconnectAll() {}
 
-    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
-        sentMessages.append((payload, peerName))
+    func sendMessage(_ payload: MessagePayload, to address: String) async throws {
+        sentMessages.append((payload, address))
     }
 
-    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
-        sentTypingEvents.append((event, peerName))
+    func sendTypingEvent(_ event: TypingEvent, to address: String) async throws {
+        sentTypingEvents.append((event, address))
     }
 
-    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
-        sentStrokes.append((stroke, peerName))
+    func sendStroke(_ stroke: Stroke, to address: String) async throws {
+        sentStrokes.append((stroke, address))
     }
 }

@@ -18,6 +18,15 @@ enum PeerStatus: Equatable {
 
 struct Peer: Identifiable, Equatable {
     let id: UUID
+
+    /// Как до него достучаться.
+    ///
+    /// Отдельно от имени намеренно. Имя человек выбирает сам, оно может
+    /// повторяться и меняться; адрес уникален и задаётся транспортом: на
+    /// релее это отпечаток ключа, у Multipeer — имя устройства, другого
+    /// идентификатора там нет.
+    let address: String
+
     let displayName: String
     let status: PeerStatus
     let lastSeen: Date
@@ -25,6 +34,7 @@ struct Peer: Identifiable, Equatable {
     let distance: Double?
     
     init(id: UUID = UUID(),
+         address: String? = nil,
          displayName: String,
          status: PeerStatus = .notConnected,
          lastSeen: Date = Date(),
@@ -32,6 +42,7 @@ struct Peer: Identifiable, Equatable {
          distance: Double? = nil
     ) {
         self.id = id
+        self.address = address ?? displayName
         self.displayName = displayName
         self.status = status
         self.lastSeen = lastSeen
@@ -119,6 +130,7 @@ struct Peer: Identifiable, Equatable {
     /// обновления — а именно такие и генерирует периодическая симуляция RSSI.
     func hasSameState(as other: Peer) -> Bool {
         id == other.id
+        && address == other.address
         && displayName == other.displayName
         && status == other.status
         && rssi == other.rssi

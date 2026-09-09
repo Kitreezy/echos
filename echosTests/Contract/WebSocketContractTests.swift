@@ -44,6 +44,20 @@ class WebSocketContractTests: XCTestCase {
         try await super.tearDown()
     }
 
+    /// Ключ на имя: тесту нужен не только сам клиент, но и его адрес —
+    /// адресовать по имени релей больше не умеет.
+    private var identities: [String: DeviceIdentity] = [:]
+
+    private func identity(for name: String) -> DeviceIdentity {
+        if let existing = identities[name] {
+            return existing
+        }
+
+        let created = DeviceIdentity()
+        identities[name] = created
+        return created
+    }
+
     private func makeClient(named name: String? = nil) -> WebSocketClient {
         let url = server.url
 
@@ -59,7 +73,7 @@ class WebSocketContractTests: XCTestCase {
         client.maxReconnectDelay = .milliseconds(300)
 
         if let name {
-            RelayHandshake.install(on: client, as: name)
+            RelayHandshake.install(on: client, as: name, using: identity(for: name))
         }
 
         return client
@@ -107,7 +121,9 @@ class WebSocketContractTests: XCTestCase {
 
         let payload = MessagePayload(from: Message(text: "контракт", isFromMe: true),
                                      senderName: "Alice")
-        await alice.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
+        await alice.send(try RelayEnvelope.message(payload,
+                                                   from: "Alice",
+                                                   to: identity(for: "Bob").fingerprint).encoded())
 
         let delivered = await firstElement(of: incoming, timeout: .seconds(5)) { data in
             guard let envelope = try? RelayEnvelope.decode(from: data) else {

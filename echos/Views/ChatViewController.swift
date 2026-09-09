@@ -214,7 +214,9 @@ final class ChatViewController: UIViewController {
             action: #selector(backToDiscovery)
         )
         
-        if let peerName = viewModel.currentConversationPeer {
+        // В заголовке имя, а не адрес: отпечаток ключа человеку ни о чём
+        // не говорит.
+        if let peerName = viewModel.currentConversationName {
             title = peerName
         } else {
             title = "echos"
@@ -462,13 +464,14 @@ final class ChatViewController: UIViewController {
         ])
         
         var chatSection: UIMenu?
-        if let peerName = viewModel.currentConversationPeer {
+        if let address = viewModel.currentConversationPeer {
+            let peerName = viewModel.currentConversationName ?? address
             chatSection = UIMenu(title: "Чат с '\(peerName)'", options: .displayInline, children: [
                 UIAction(
                     title: "Стена '\(peerName)'",
                     image: UIImage(systemName: "scribble.variable")
                 ) { [weak self] _ in
-                    self?.showWall(of: peerName)
+                    self?.showWall(of: address)
                 },
 
                 UIAction(
@@ -521,7 +524,8 @@ final class ChatViewController: UIViewController {
     // MARK: - Disconnect Confirmation
     
     private func confirmDisconnect() {
-        guard let peerName = viewModel.currentConversationPeer else {
+        guard let peerName = viewModel.currentConversationName
+                ?? viewModel.currentConversationPeer else {
             return
         }
         
@@ -546,7 +550,8 @@ final class ChatViewController: UIViewController {
     // MARK: - Clear Confirmations
     
     private func confirmClearCurrentConversation() {
-        guard let peerName = viewModel.currentConversationPeer else {
+        guard let peerName = viewModel.currentConversationName
+                ?? viewModel.currentConversationPeer else {
             return
         }
         
@@ -644,6 +649,7 @@ final class ChatViewController: UIViewController {
     }
     
     /// Стена: своя (`owner == nil`) или собеседника.
+    /// `owner` — адрес владельца стены, `nil` для своей.
     private func showWall(of owner: String?) {
         guard let transport = viewModel.multipeerService else {
             return
@@ -651,7 +657,7 @@ final class ChatViewController: UIViewController {
 
         let wall = WallView(
             viewModel: WallViewModel(owner: owner, transport: transport),
-            ownName: transport.myDisplayName
+            ownAddress: transport.myAddress
         )
         navigationController?.pushViewController(UIHostingController(rootView: wall),
                                                  animated: true)

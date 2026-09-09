@@ -13,9 +13,9 @@ import Observation
 /// слить оператором `merge` и читать одним циклом.
 enum TransportEvent: Sendable {
     case peers([Peer])
-    case message(MessagePayload)
-    case typing(TypingEvent)
-    case stroke(Stroke)
+    case message(Addressed<MessagePayload>)
+    case typing(Addressed<TypingEvent>)
+    case stroke(Addressed<Stroke>)
 }
 
 @Observable
@@ -29,8 +29,20 @@ final class ChatViewModel {
     var connectionStatus: String = "Не подключён"
     var isDiscovering: Bool = false
     var typingPeerName: String? = nil  // nil - никто не печатает
+
+    /// Адрес того, кто печатает. Отдельно от имени: гасить индикатор надо по
+    /// тому же адресу, с которого он зажёгся, а имена могут совпадать.
+    private var typingPeer: String? = nil
     
+    /// Адрес собеседника, чей чат открыт.
+    ///
+    /// Именно адрес, а не имя: тёзка — это другой человек, и его сообщения
+    /// не должны попадать в чужую переписку.
     var currentConversationPeer: String? = nil
+
+    /// Имя собеседника для заголовка. Держится отдельно, потому что адрес
+    /// показывать человеку незачем, а имени в адресе нет.
+    var currentConversationName: String? = nil
     
     // MARK: - Services
     
@@ -142,15 +154,21 @@ final class ChatViewModel {
     
     // MARK: - Persistence
     
-    func switchToConversation(with peerName: String) async {
+    func switchToConversation(with address: String, named name: String? = nil) async {
         guard let messageStore = messageStore else {
             return
         }
         do {
-            let filtered = try await messageStore.loadMessages(with: peerName)
+            let filtered = try await messageStore.loadMessages(with: address)
             messages = filtered
-            currentConversationPeer = peerName
-            print("[ChatViewModel] Showing conversation with '\(peerName)': \(filtered.count) messages")
+            currentConversationPeer = address
+            // Имя ищем по порядку: что передали, кто сейчас на связи, что
+            // осталось в истории. Собеседника может не быть рядом, а чат
+            // всё равно открывается.
+            currentConversationName = name
+                ?? peers.first { $0.address == address }?.displayName
+                ?? filtered.last { !$0.isFromMe }?.senderName
+            print("[ChatViewModel] Showing conversation with \(address): \(filtered.count) messages")
         }
         catch {
             print("[ChatViewModel] Failed to switch: \(error)")
@@ -165,23 +183,30 @@ final class ChatViewModel {
             let allMessages = try await messageStore.loadMessages()
             var conversations: [String: [Message]] = [:]
             
+            // Группируем по адресу, а не по имени: у двух тёзок переписки
+            // разные, и сливать их в одну нельзя.
             for message in allMessages {
-                if message.isFromMe {
-                    continue
-                } else if let sender = message.senderName {
-                    conversations[sender, default: []].append(message)
+                if let address = message.peerAddress {
+                    conversations[address, default: []].append(message)
                 }
             }
-            let summaries = conversations.map { peerName, messages in
+            let summaries = conversations.map { address, messages in
                 let lastMessage = messages.max(by: { $0.timestamp < $1.timestamp })
                 let unreadCount = 0
-                
-                return ConversationSummary(peerName: peerName,
+
+                // Имя берём то, под которым собеседник известен сейчас, а
+                // если его нет рядом — то, под которым он писал в последний раз.
+                let name = peers.first { $0.address == address }?.displayName
+                    ?? messages.last { !$0.isFromMe }?.senderName
+                    ?? address
+
+                return ConversationSummary(peerAddress: address,
+                                           peerName: name,
                                            lastMessage: lastMessage?.text ?? "",
                                            lastMessageTime: lastMessage?.timestamp ?? Date(),
                                            messageCount: messages.count,
                                            unreadCount: unreadCount,
-                                           isActive: peers.contains(where:  { $0.displayName == peerName  && $0.status == .connected }))
+                                           isActive: peers.contains { $0.address == address && $0.status == .connected })
                 
             }
             return summaries.sorted { $0.lastMessageTime > $1.lastMessageTime }
@@ -194,13 +219,14 @@ final class ChatViewModel {
     
     func clearCurrentConversation() async throws {
         guard let messageStore = messageStore,
-              let peerName = currentConversationPeer else {
+              let address = currentConversationPeer else {
             return
         }
-        try await messageStore.deleteConverstaion(with: peerName)
+        try await messageStore.deleteConverstaion(with: address)
         messages = []
         currentConversationPeer = nil
-        print("[ChatViewModel] Cleared conversation with '\(peerName)'")
+        currentConversationName = nil
+        print("[ChatViewModel] Cleared conversation with \(address)")
     }
     
     func clearAllMessages() async throws {
@@ -217,14 +243,15 @@ final class ChatViewModel {
     
     func disconnectFromCurrentPeer() {
         guard let multipeerService = multipeerService,
-              let peerName = currentConversationPeer else {
+              let address = currentConversationPeer else {
             return
         }
         
-        multipeerService.disconnect(from: peerName)
+        multipeerService.disconnect(from: address)
         messages = []
         currentConversationPeer = nil
-        print("[ChatViewModel] Disconnected from '\(peerName)'")
+        currentConversationName = nil
+        print("[ChatViewModel] Disconnected from \(address)")
     }
     
     func showAllMessages() async {
@@ -273,14 +300,14 @@ final class ChatViewModel {
             case .peers(let discoveredPeers):
                 await handlePeers(discoveredPeers)
                 
-            case .message(let payload):
-                handleIncomingMessage(payload)
+            case .message(let incoming):
+                handleIncomingMessage(incoming)
                 
-            case .typing(let typingEvent):
-                handleTypingEvent(typingEvent)
+            case .typing(let incoming):
+                handleTypingEvent(incoming)
                 
-            case .stroke(let stroke):
-                await handleIncomingStroke(stroke)
+            case .stroke(let incoming):
+                await handleIncomingStroke(incoming)
             }
         }
     }
@@ -290,24 +317,31 @@ final class ChatViewModel {
     /// Иначе рисунок, сделанный пока вы смотрите в другое место, пропадал бы
     /// бесследно — а стена нужна ровно для обратного: чтобы след оставался,
     /// когда вас нет.
-    private func handleIncomingStroke(_ stroke: Stroke) async {
+    private func handleIncomingStroke(_ incoming: Addressed<Stroke>) async {
+        // Автора берём у транспорта, а не из росчерка: внутри он от
+        // отправителя, и подписаться там можно кем угодно.
+        let stroke = incoming.value.by(incoming.sender)
+
         do {
             try await strokeStore.saveStroke(stroke, wallOwner: nil)
-            print("[ChatViewModel] Stroke from '\(stroke.author)' saved to own wall")
+            print("[ChatViewModel] Stroke from \(stroke.author) saved to own wall")
         }
         catch {
             print("[ChatViewModel] Failed to save stroke: \(error)")
         }
     }
     
-    private func handleIncomingMessage(_ payload: MessagePayload) {
-        let message = payload.toMessage()
+    private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
+        let message = incoming.value.toMessage(from: incoming.sender)
         
-        if currentConversationPeer == nil || message.senderName == currentConversationPeer {
+        // Сравниваем адреса. По имени было нельзя: тёзка попадал бы в чужую
+        // переписку, а при адресации по ключу — и вовсе кто угодно, назвавшись
+        // как надо.
+        if currentConversationPeer == nil || incoming.sender == currentConversationPeer {
             messages.append(message)
-            print("[ChatViewModel] Received from '\(message.senderName ?? "unknown")': \(message.text.prefix(20))...")
+            print("[ChatViewModel] Received from \(incoming.sender): \(message.text.prefix(20))...")
         } else {
-            print("[ChatViewModel] Silently saved message from '\(message.senderName ?? "unknown")' (different conversation)")
+            print("[ChatViewModel] Silently saved message from \(incoming.sender) (different conversation)")
         }
         
         persist(message)
@@ -318,8 +352,9 @@ final class ChatViewModel {
         appliedPeerUpdates += 1
         
         if let connected = discoveredPeers.first(where: { $0.status == .connected }) {
-            if currentConversationPeer != connected.displayName {
-                await switchToConversation(with: connected.displayName)
+            if currentConversationPeer != connected.address {
+                await switchToConversation(with: connected.address,
+                                           named: connected.displayName)
             }
         }
         
@@ -328,16 +363,23 @@ final class ChatViewModel {
         updateConnectionStatus()
     }
     
-    func handleTypingEvent(_ event: TypingEvent) {
-        switch event.type {
+    func handleTypingEvent(_ incoming: Addressed<TypingEvent>) {
+        // Печатает тот, от кого пришло событие. Имя внутри — только для показа.
+        let sender = incoming.sender
+        let name = peers.first { $0.address == sender }?.displayName
+            ?? incoming.value.peerName
+
+        switch incoming.value.type {
         case .start:
-            typingPeerName = event.peerName
-            print("[ChatViewModel] '\(event.peerName)' started typing...")
+            typingPeer = sender
+            typingPeerName = name
+            print("[ChatViewModel] \(sender) started typing...")
             
         case .stop:
-            if typingPeerName == event.peerName {
+            if typingPeer == sender {
+                typingPeer = nil
                 typingPeerName = nil
-                print("[ChatViewModel] '\(event.peerName)' stopped typing")
+                print("[ChatViewModel] \(sender) stopped typing")
             }
         }
     }
@@ -452,11 +494,12 @@ final class ChatViewModel {
         let discoveredCount = peers.count
         
         if connectedCount > 0 {
-            let names = connectedPeers.map { $0.displayName }
             // В открытом чате имя собеседника уже стоит в заголовке —
             // повторять его строкой ниже незачем.
-            let isCurrentConversation = names == [currentConversationPeer]
-            connectionStatus = isCurrentConversation ? "" : names.joined(separator: ", ")
+            let isCurrentConversation = connectedPeers.map(\.address) == [currentConversationPeer]
+            connectionStatus = isCurrentConversation
+                ? ""
+                : connectedPeers.map(\.displayName).joined(separator: ", ")
         } else if discoveredCount > 0 {
             connectionStatus = "Рядом: \(discoveredCount)"
         } else {
@@ -475,8 +518,11 @@ final class ChatViewModel {
         guard !trimmed.isEmpty else {
             return
         }
+        // Адрес проставляется сразу: без него сообщение не принадлежит ни
+        // одной переписке и в чате собеседника не покажется.
         let message = Message(text: trimmed,
                               senderName: nil,
+                              peerAddress: currentConversationPeer,
                               isFromMe: true,
                               status: .sending)
         messages.append(message)
@@ -485,7 +531,7 @@ final class ChatViewModel {
         
         // Сообщение адресное, и без собеседника отправлять его некому.
         // Раньше в этом случае оно уходило всем подряд.
-        guard let peerName = currentConversationPeer else {
+        guard let address = currentConversationPeer else {
             updateStatus(.failed, for: message.id)
             print("[ChatViewModel] No conversation selected, message not sent")
             return
@@ -494,7 +540,7 @@ final class ChatViewModel {
         let playLoad = MessagePayload(from: message, senderName: multipeerService.myDisplayName)
         
         do {
-            try await multipeerService.sendMessage(playLoad, to: peerName)
+            try await multipeerService.sendMessage(playLoad, to: address)
             
             updateStatus(.sent, for: message.id)
             print("[ChatViewModel] Message sent successfully")
@@ -551,7 +597,7 @@ final class ChatViewModel {
     
     private func sendTypingStart() async {
         guard let multipeerService = multipeerService,
-              let peerName = currentConversationPeer,
+              let address = currentConversationPeer,
               !isCurrentlyTyping else {
             return
         }
@@ -559,13 +605,13 @@ final class ChatViewModel {
         isCurrentlyTyping = true
         
         let event = TypingEvent(type: .start, peerName: multipeerService.myDisplayName)
-        try? await multipeerService.sendTypingEvent(event, to: peerName)
+        try? await multipeerService.sendTypingEvent(event, to: address)
         print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
     }
     
     private func sendTypingStop() async {
         guard let multipeerService = multipeerService,
-              let peerName = currentConversationPeer,
+              let address = currentConversationPeer,
               isCurrentlyTyping else {
             return
         }
@@ -573,7 +619,7 @@ final class ChatViewModel {
         isCurrentlyTyping = false
         
         let event = TypingEvent(type: .stop, peerName: multipeerService.myDisplayName)
-        try? await multipeerService.sendTypingEvent(event, to: peerName)
+        try? await multipeerService.sendTypingEvent(event, to: address)
         print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
     }
     

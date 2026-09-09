@@ -64,7 +64,8 @@ struct ConversationsListView: View {
     
     private func openConversation(_ conversation: ConversationSummary) {
         Task {
-            await viewModel.switchToConversation(with: conversation.peerName)
+            await viewModel.switchToConversation(with: conversation.peerAddress,
+                                                 named: conversation.peerName)
             dismiss()
         }
     }

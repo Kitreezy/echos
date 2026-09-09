@@ -17,7 +17,13 @@ import Foundation
 enum RelayHandshake {
 
     /// Повесить рукопожатие на каждое подключение клиента.
-    static func install(on client: WebSocketClient, as name: String) {
+    ///
+    /// - Parameter identity: чем подписываться. Тесту, которому нужен адрес
+    ///   собеседника, ключ приходится завести самому — отпечаток берётся
+    ///   оттуда же.
+    static func install(on client: WebSocketClient,
+                        as name: String,
+                        using identity: DeviceIdentity = DeviceIdentity()) {
         let inbox = ChallengeInbox(messages: client.incomingMessages)
 
         // Замыкание держит `inbox` — вызывающему хранить его не нужно.
@@ -28,7 +34,7 @@ enum RelayHandshake {
 
             guard let hello = try? RelayEnvelope.hello(from: name,
                                                        answering: challenge,
-                                                       as: DeviceIdentity()).encoded() else {
+                                                       as: identity).encoded() else {
                 return
             }
 

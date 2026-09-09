@@ -23,6 +23,9 @@ final class RelayServer {
         let connection: NWConnection
         var displayName: String?
 
+        /// Адрес — отпечаток ключа, которым клиент подтвердил подключение.
+        var fingerprint: String?
+
         /// Что этот клиент должен подписать. Своя строка на каждое
         /// подключение — иначе подпись годилась бы повторно.
         let nonce: Data
@@ -262,16 +265,15 @@ final class RelayServer {
                 return
             }
 
-            client.displayName = envelope.sender
             print("[RelayServer] '\(envelope.sender)' joined")
             broadcastPresence()
 
         case .message, .typing, .stroke:
-            guard let sender = client.displayName else {
+            guard let sender = client.fingerprint else {
                 return  // не представился — не обслуживаем
             }
-            // Отправителя проставляет сервер: содержимому конверта от клиента
-            // доверять нельзя, он может назваться кем угодно.
+            // Отправителя проставляет сервер, отпечатком: содержимому
+            // конверта от клиента доверять нельзя.
             relay(envelope.stamped(sender: sender), excluding: connection)
 
         case .presence, .challenge:
@@ -289,18 +291,36 @@ final class RelayServer {
             return false
         }
 
-        return publicKey.isValidSignature(proof.signature, for: client.nonce)
+        guard publicKey.isValidSignature(proof.signature, for: client.nonce) else {
+            return false
+        }
+
+        client.displayName = envelope.sender
+        client.fingerprint = Self.fingerprint(of: proof.publicKey)
+        return true
+    }
+
+    /// Тот же отпечаток, что считают релей и `DeviceIdentity`.
+    private static func fingerprint(of publicKey: Data) -> String {
+        SHA256.hash(data: publicKey).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     private func broadcastPresence() {
-        let names = clients.values.compactMap(\.displayName).sorted()
+        let participants = clients.values
+            .compactMap { client -> RelayParticipant? in
+                guard let fingerprint = client.fingerprint else {
+                    return nil
+                }
+                return RelayParticipant(id: fingerprint, name: client.displayName ?? "")
+            }
+            .sorted { $0.id < $1.id }
 
-        guard let envelope = try? RelayEnvelope.presence(names),
+        guard let envelope = try? RelayEnvelope.presence(participants),
               let data = try? envelope.encoded() else {
             return
         }
 
-        for client in clients.values where client.displayName != nil {
+        for client in clients.values where client.fingerprint != nil {
             send(data, over: client.connection)
         }
     }
@@ -311,6 +331,11 @@ final class RelayServer {
         }
 
         for client in clients.values where client.connection !== sender {
+            // Адресный конверт уходит одному — по отпечатку, а не по имени.
+            if let recipient = envelope.recipient, client.fingerprint != recipient {
+                continue
+            }
+
             send(data, over: client.connection)
         }
     }

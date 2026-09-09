@@ -209,4 +209,58 @@ final class ChatViewModelStreamTests: XCTestCase {
         XCTAssertTrue(transport.sentMessages.isEmpty)
         XCTAssertEqual(viewModel.messages.last?.status, .failed)
     }
+
+    // MARK: - Адресация
+
+    /// Ради этого вся адресация по ключу и затевалась.
+    func test_messageFromANamesake_doesNotEnterTheOpenConversation() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModelInConversation(transport: transport, with: "bob-address")
+
+        _ = await waitUntil { transport.pipelinesConnected >= 1 }
+
+        // Самозванец подписывается именем Bob, но приходит с другого адреса.
+        transport.emit(message: payload("я Bob, честно", from: "Bob"),
+                       from: "impostor-address")
+
+        let leaked = await waitUntil(timeout: .milliseconds(300)) {
+            viewModel.messages.contains { $0.text == "я Bob, честно" }
+        }
+
+        XCTAssertFalse(leaked, "В открытую переписку попадает только то, что пришло с её адреса")
+    }
+
+    func test_messageFromTheConversationAddress_isShown() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModelInConversation(transport: transport, with: "bob-address")
+
+        _ = await waitUntil { transport.pipelinesConnected >= 1 }
+
+        transport.emit(message: payload("настоящий Bob", from: "Bob"), from: "bob-address")
+
+        let shown = await waitUntil {
+            viewModel.messages.contains { $0.text == "настоящий Bob" }
+        }
+
+        XCTAssertTrue(shown)
+    }
+
+    /// Индикатор набора гасит тот же, кто его зажёг.
+    func test_typingStopFromAnotherAddress_doesNotClearTheIndicator() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModel(transport: transport)
+
+        _ = await waitUntil { transport.pipelinesConnected >= 1 }
+
+        transport.emit(typing: TypingEvent(type: .start, peerName: "Bob"), from: "bob-address")
+        _ = await waitUntil { viewModel.typingPeerName == "Bob" }
+
+        transport.emit(typing: TypingEvent(type: .stop, peerName: "Bob"), from: "impostor-address")
+
+        let cleared = await waitUntil(timeout: .milliseconds(300)) {
+            viewModel.typingPeerName == nil
+        }
+
+        XCTAssertFalse(cleared, "Погасить чужой индикатор, назвавшись тем же именем, нельзя")
+    }
 }

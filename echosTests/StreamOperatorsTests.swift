@@ -64,8 +64,8 @@ final class StreamOperatorsTests: XCTestCase {
 
     func test_merge_deliversElementsFromAllSources() async {
         let (peers, peersContinuation) = AsyncStream.makeStream(of: [Peer].self)
-        let (messages, messagesContinuation) = AsyncStream.makeStream(of: MessagePayload.self)
-        let (typing, typingContinuation) = AsyncStream.makeStream(of: TypingEvent.self)
+        let (messages, messagesContinuation) = AsyncStream.makeStream(of: Addressed<MessagePayload>.self)
+        let (typing, typingContinuation) = AsyncStream.makeStream(of: Addressed<TypingEvent>.self)
 
         let merged = merge(
             peers.map(TransportEvent.peers),
@@ -76,10 +76,12 @@ final class StreamOperatorsTests: XCTestCase {
         async let collected = collect(merged, count: 3)
 
         peersContinuation.yield([Peer(displayName: "Alice")])
-        messagesContinuation.yield(
-            MessagePayload(from: Message(text: "hi", isFromMe: false), senderName: "Alice")
-        )
-        typingContinuation.yield(TypingEvent(type: .start, peerName: "Alice"))
+        messagesContinuation.yield(Addressed(
+            sender: "alice-address",
+            value: MessagePayload(from: Message(text: "hi", isFromMe: false), senderName: "Alice")
+        ))
+        typingContinuation.yield(Addressed(sender: "alice-address",
+                                           value: TypingEvent(type: .start, peerName: "Alice")))
 
         let received = await collected
 

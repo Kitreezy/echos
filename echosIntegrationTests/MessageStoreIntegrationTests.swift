@@ -161,37 +161,47 @@ final class MessageStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(alice, ["от Алисы"])
     }
     
-    // MARK: - Зафиксированные дефекты
-    //
-    // Тесты ниже описывают ТЕКУЩЕЕ поведение, а не желаемое.
-    // Они зелёные — и держат баг под наблюдением, пока его не починят.
-    // Когда дойдут руки: инвертировать ожидание -> тест краснеет -> чинить код.
-    
-    /// ДЕФЕКТ: предикат в `loadMessages(with:)` — это
-    /// `isFromMe == YES OR senderName == peer`, а у исходящих сообщений
-    /// `senderName == nil`, то есть они не привязаны к диалогу.
-    /// Результат: открыв чат с Бобом, видишь свои реплики, адресованные Алисе.
-    func test_KNOWN_ISSUE_loadMessagesWithPeer_leaksAllOutgoingMessages() async throws {
-        try await store.saveMessage(CoreDataTestStack.message("привет, Боб", isFromMe: true, status: .sent))
+    /// Раньше выборка была «всё моё плюс входящее с таким именем», и своя
+    /// половина переписки была общей для всех чатов.
+    func test_loadMessagesWithPeer_keepsOutgoingInTheirOwnConversation() async throws {
+        try await store.saveMessage(
+            CoreDataTestStack.message("привет, Боб", peer: "Bob", isFromMe: true))
         try await store.saveMessage(CoreDataTestStack.message("ответ Боба", from: "Bob"))
-        
-        let aliceConversation = try await store.loadMessages(with: "Alice").map(\.text)
-        
-        XCTAssertEqual(aliceConversation, ["привет, Боб"],
-                       "Сейчас в чат с Alice протекают все исходящие сообщения. "
-                       + "Чинится привязкой исходящих к собеседнику (поле recipientName).")
+        try await store.saveMessage(
+            CoreDataTestStack.message("привет, Алиса", peer: "Alice", isFromMe: true))
+
+        let withBob = try await store.loadMessages(with: "Bob").map(\.text)
+        let withAlice = try await store.loadMessages(with: "Alice").map(\.text)
+
+        XCTAssertEqual(withBob, ["привет, Боб", "ответ Боба"])
+        XCTAssertEqual(withAlice, ["привет, Алиса"])
     }
-    
-    /// ДЕФЕКТ: `deleteConverstaion(with:)` удаляет по `senderName == peer`,
-    /// то есть только входящие. Свои реплики остаются в базе навсегда.
-    func test_KNOWN_ISSUE_deleteConversation_leavesOutgoingMessagesBehind() async throws {
-        try await store.saveMessage(CoreDataTestStack.message("мой вопрос", isFromMe: true, status: .sent))
+
+    /// Удаление диалога раньше убирало только входящие: свои реплики
+    /// оставались в базе навсегда, ни к чему не привязанные.
+    func test_deleteConversation_removesBothHalves() async throws {
+        try await store.saveMessage(
+            CoreDataTestStack.message("мой вопрос", peer: "Bob", isFromMe: true))
         try await store.saveMessage(CoreDataTestStack.message("ответ Боба", from: "Bob"))
-        
+        try await store.saveMessage(
+            CoreDataTestStack.message("вопрос Алисе", peer: "Alice", isFromMe: true))
+
         try await store.deleteConverstaion(with: "Bob")
-        
+
         let remaining = try await store.loadMessages().map(\.text)
-        XCTAssertEqual(remaining, ["мой вопрос"],
-                       "Удаление диалога не трогает исходящие — они осиротевают в базе.")
+        XCTAssertEqual(remaining, ["вопрос Алисе"])
+    }
+
+    /// Тёзка — другой человек, и переписка с ним отдельная.
+    func test_loadMessagesWithPeer_keepsNamesakesApart() async throws {
+        try await store.saveMessage(
+            CoreDataTestStack.message("от первого", from: "Bob", peer: "a1b2"))
+        try await store.saveMessage(
+            CoreDataTestStack.message("от второго", from: "Bob", peer: "c3d4"))
+
+        let first = try await store.loadMessages(with: "a1b2").map(\.text)
+
+        XCTAssertEqual(first, ["от первого"],
+                       "Раскладка по имени слила бы двух Бобов в одну переписку")
     }
 }

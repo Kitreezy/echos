@@ -21,6 +21,19 @@ protocol PeerConnectionApproving: AnyObject {
     func shouldAcceptConnection(from peerName: String) async -> Bool
 }
 
+/// Входящее вместе с адресом отправителя.
+///
+/// Адрес здесь — тот, что подтвердил транспорт, а не тот, который отправитель
+/// написал о себе внутри payload. Разница принципиальная: имя в `MessagePayload`
+/// заполняет сам отправитель, и назваться там можно кем угодно. Раскладывать
+/// переписку по такому имени значит верить на слово.
+struct Addressed<Value> {
+    let sender: String
+    let value: Value
+}
+
+extension Addressed: Sendable where Value: Sendable {}
+
 /// Состояние связи транспорта — в терминах, одинаковых для Multipeer и релея.
 enum TransportConnectionState: Sendable, Equatable {
     case offline
@@ -37,6 +50,9 @@ protocol PeerTransport: AnyObject {
     // MARK: - Identity
     
     var myDisplayName: String { get }
+
+    /// Собственный адрес — то, что собеседники увидят как отправителя.
+    var myAddress: String { get }
     
     // MARK: - Delegation
     
@@ -51,9 +67,9 @@ protocol PeerTransport: AnyObject {
     /// между собой вместо того чтобы каждый получил все.
     
     var peerStream: AsyncStream<[Peer]> { get }
-    var messageStream: AsyncStream<MessagePayload> { get }
-    var typingStream: AsyncStream<TypingEvent> { get }
-    var strokeStream: AsyncStream<Stroke> { get }
+    var messageStream: AsyncStream<Addressed<MessagePayload>> { get }
+    var typingStream: AsyncStream<Addressed<TypingEvent>> { get }
+    var strokeStream: AsyncStream<Addressed<Stroke>> { get }
     
     /// Состояние связи. Транспорту, у которого нет единого соединения
     /// (Multipeer), сообщать нечего — для него работает пустая реализация
@@ -64,28 +80,33 @@ protocol PeerTransport: AnyObject {
     
     func startDeviceDiscovery()
     func stopDeviceDiscovery()
-    func connectToPeer(displayName: String) async throws
+    func connectToPeer(address: String) async throws
     
     // MARK: - Connection Management
     
-    /// Пир адресуется отображаемым именем, а не транспортным идентификатором.
+    /// Пир адресуется адресом, а не транспортным идентификатором.
     /// Было `getPeerID(for:) -> MCPeerID?` плюс `disconnect(from: MCPeerID)` —
     /// связка, из-за которой тип из MultipeerConnectivity протекал и в
     /// протокол, и во все вызывающие места.
-    func disconnect(from displayName: String)
+    func disconnect(from address: String)
     func disconnectAll()
     
     // MARK: - Messaging
     
     /// Всё адресное: переписка один на один и есть один на один, а не
     /// рассылка всем, кто оказался рядом.
-    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws
-    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws
+    func sendMessage(_ payload: MessagePayload, to address: String) async throws
+    func sendTypingEvent(_ event: TypingEvent, to address: String) async throws
     /// Росчерк адресный: он предназначен владельцу стены, а не всем вокруг.
-    func sendStroke(_ stroke: Stroke, to peerName: String) async throws
+    func sendStroke(_ stroke: Stroke, to address: String) async throws
 }
 
 extension PeerTransport {
+
+    /// Транспорту, у которого нет собственного адресного пространства,
+    /// адресом служит имя: у MultipeerConnectivity ничего другого и нет,
+    /// `MCPeerID` за пределы устройства не выходит.
+    var myAddress: String { myDisplayName }
 
     /// У Multipeer нет одного соединения, состояние которого можно показать:
     /// связь устанавливается с каждым устройством отдельно и уже отражена

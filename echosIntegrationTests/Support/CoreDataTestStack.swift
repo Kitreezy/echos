@@ -24,14 +24,19 @@ enum CoreDataTestStack {
     
     /// Хелпер: сообщение с фиксированным временем, чтобы тесты
     /// не зависели от порядка выполнения и скорости машины.
+    /// - Parameter peer: адрес собеседника, к чьей переписке относится
+    ///   сообщение. По умолчанию совпадает с именем отправителя — в тестах,
+    ///   где разница между именем и адресом не важна, так короче.
     static func message(_ text: String,
                         from senderName: String? = nil,
+                        peer: String? = nil,
                         isFromMe: Bool = false,
                         daysAgo: Int = 0,
                         status: MessageStatus = .sent) -> Message {
         let timestamp = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
         return Message(text: text,
                        senderName: senderName,
+                       peerAddress: peer ?? senderName,
                        isFromMe: isFromMe,
                        timestamp: timestamp,
                        status: status)

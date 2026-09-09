@@ -15,8 +15,9 @@ struct Stroke: Identifiable, Codable, Sendable, Equatable {
 
     let id: UUID
 
-    /// Кто нарисовал. Для своих штрихов имя тоже проставляется: стена
-    /// переживает перезапуск, и через день «своё» надо как-то отличать.
+    /// Кто нарисовал — адрес, а не имя. Для своих штрихов он тоже
+    /// проставляется: стена переживает перезапуск, и через день «своё» надо
+    /// как-то отличать.
     let author: String
 
     /// Точки в долях ширины и высоты стены.
@@ -29,6 +30,14 @@ struct Stroke: Identifiable, Codable, Sendable, Equatable {
         self.author = author
         self.points = points
         self.createdAt = createdAt
+    }
+
+    /// Копия с проставленным автором.
+    ///
+    /// Нужна на приёме: автор внутри росчерка приходит от отправителя, а
+    /// доверять можно только адресу, который подтвердил транспорт.
+    func by(_ author: String) -> Stroke {
+        Stroke(id: id, author: author, points: points, createdAt: createdAt)
     }
 
     struct Point: Codable, Sendable, Equatable {

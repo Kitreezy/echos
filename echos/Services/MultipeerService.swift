@@ -68,16 +68,16 @@ final class MultipeerService: NSObject {
     var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
     
     /// Для входящих сообщений
-    private let messageBroadcast = AsyncBroadcast<MessagePayload>()
-    var messageStream: AsyncStream<MessagePayload> { messageBroadcast.stream }
+    private let messageBroadcast = AsyncBroadcast<Addressed<MessagePayload>>()
+    var messageStream: AsyncStream<Addressed<MessagePayload>> { messageBroadcast.stream }
     
     /// Для typing-событий
-    private let typingBroadcast = AsyncBroadcast<TypingEvent>()
-    var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
+    private let typingBroadcast = AsyncBroadcast<Addressed<TypingEvent>>()
+    var typingStream: AsyncStream<Addressed<TypingEvent>> { typingBroadcast.stream }
     
     /// Для росчерков на стене
-    private let strokeBroadcast = AsyncBroadcast<Stroke>()
-    var strokeStream: AsyncStream<Stroke> { strokeBroadcast.stream }
+    private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
+    var strokeStream: AsyncStream<Addressed<Stroke>> { strokeBroadcast.stream }
     
     // MARK: - Init
     
@@ -156,8 +156,8 @@ final class MultipeerService: NSObject {
     
     // MARK: - Manual Connection
     
-    func connectToPeer(displayName: String) async throws {
-        guard let peerID = discoveredPeerIDs[displayName] else {
+    func connectToPeer(address: String) async throws {
+        guard let peerID = discoveredPeerIDs[address] else {
             throw MultipeerError.peerNotFound
         }
         
@@ -168,7 +168,7 @@ final class MultipeerService: NSObject {
         connectingPeers.insert(peerID)
         emitPeers()
         
-        print("[Browser] Manually connecting to '\(displayName)'")
+        print("[Browser] Manually connecting to '\(address)'")
         browser.invitePeer(peerID,
                            to: session,
                            withContext: nil,
@@ -189,9 +189,9 @@ final class MultipeerService: NSObject {
     
     // MARK: - Connection Managment
     
-    func disconnect(from displayName: String) {
+    func disconnect(from address: String) {
         guard let session = session,
-              let peerID = discoveredPeerIDs[displayName] else {
+              let peerID = discoveredPeerIDs[address] else {
             return
         }
         
@@ -218,24 +218,27 @@ final class MultipeerService: NSObject {
     
     // MARK: - Messaging
     
-    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
+    func sendMessage(_ payload: MessagePayload, to address: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
         
-        let peerID = try connectedPeerID(named: peerName)
+        let peerID = try connectedPeerID(named: address)
         
         let packet = try MultipeerPacket(message: payload)
         let data = try JSONEncoder().encode(packet)
         
         try session.send(data, toPeers: [peerID], with: .reliable)
         
-        print("[Session] Sent message to '\(peerName)'")
+        print("[Session] Sent message to '\(address)'")
     }
     
     /// Общая проверка для адресной отправки: собеседник найден и на связи.
-    private func connectedPeerID(named peerName: String) throws -> MCPeerID {
-        guard let peerID = discoveredPeerIDs[peerName],
+    ///
+    /// Адрес здесь — имя устройства: другого идентификатора у Multipeer нет,
+    /// `MCPeerID` за пределы устройства не выходит.
+    private func connectedPeerID(named address: String) throws -> MCPeerID {
+        guard let peerID = discoveredPeerIDs[address],
               connectedPeers.contains(peerID) else {
             throw MultipeerError.peerNotFound
         }
@@ -244,35 +247,35 @@ final class MultipeerService: NSObject {
     
     // MARK: - Typing
     
-    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
+    func sendTypingEvent(_ event: TypingEvent, to address: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
         
-        let peerID = try connectedPeerID(named: peerName)
+        let peerID = try connectedPeerID(named: address)
         
         let packet = try MultipeerPacket(typingEvent: event)
         let data = try JSONEncoder().encode(packet)
         
         try session.send(data, toPeers: [peerID], with: .unreliable)
-        print("[Session] Sent typing event to '\(peerName)': \(event.type)")
+        print("[Session] Sent typing event to '\(address)': \(event.type)")
     }
 
     /// Росчерк уходит одному — владельцу стены — и `.reliable`: индикатор
     /// набора можно потерять, а пропавший штрих оставит на стене дыру,
     /// которую нечем восполнить.
-    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
+    func sendStroke(_ stroke: Stroke, to address: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
         
-        let peerID = try connectedPeerID(named: peerName)
+        let peerID = try connectedPeerID(named: address)
         
         let packet = try MultipeerPacket(stroke: stroke)
         let data = try JSONEncoder().encode(packet)
         
         try session.send(data, toPeers: [peerID], with: .reliable)
-        print("[Session] Sent stroke to '\(peerName)' with \(stroke.points.count) points")
+        print("[Session] Sent stroke to '\(address)' with \(stroke.points.count) points")
     }
     
     // MARK: - Helpers
@@ -474,21 +477,25 @@ extension MultipeerService: MCSessionDelegate {
             do {
                 let packet = try decoder.decode(MultipeerPacket.self, from: data)
                 
+                // Отправитель — тот, от кого пришли байты, а не тот, кем он
+                // назвался внутри пакета.
+                let sender = peerID.displayName
+
                 switch packet.type {
                 case .message:
-                    print("[Session] Recived message from '\(peerID.displayName)")
+                    print("[Session] Recived message from '\(sender)")
                     let payload = try packet.decodeMessage()
-                    messageBroadcast.yield(payload)
+                    messageBroadcast.yield(Addressed(sender: sender, value: payload))
                     
                 case .typing:
-                    print("[Session] Recived typing event from '\(peerID.displayName)")
+                    print("[Session] Recived typing event from '\(sender)")
                     let event = try packet.decodeTypingEvent()
-                    typingBroadcast.yield(event)
+                    typingBroadcast.yield(Addressed(sender: sender, value: event))
                     
                 case .stroke:
-                    print("[Session] Recived stroke from '\(peerID.displayName)")
+                    print("[Session] Recived stroke from '\(sender)")
                     let stroke = try packet.decodeStroke()
-                    strokeBroadcast.yield(stroke)
+                    strokeBroadcast.yield(Addressed(sender: sender, value: stroke))
                 }
                 
             } catch {

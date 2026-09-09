@@ -29,6 +29,7 @@ final class MessageStore {
             entity.id = message.id
             entity.text = message.text
             entity.senderName = message.senderName
+            entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
             entity.timestamp = message.timestamp
             entity.status = Int16(message.status.rawValue)
@@ -56,6 +57,7 @@ final class MessageStore {
             Message(id: entity.id ?? UUID(),
                     text: entity.text ?? "",
                     senderName: entity.senderName,
+                    peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
                     status: MessageStatus(rawValue: Int(entity.status)) ?? .sent)
@@ -66,12 +68,15 @@ final class MessageStore {
     
     // MARK: - Load Filtered
     
-    func loadMessages(with peerName: String) async throws -> [Message] {
+    /// Переписка с одним собеседником — по его адресу.
+    ///
+    /// Раньше выборка была «всё моё плюс входящее с таким именем», и своя
+    /// половина переписки была общей для всех чатов: в чате с Bob висели
+    /// сообщения, отправленные Carol. Адрес есть у обеих половин, поэтому
+    /// условие теперь одно.
+    func loadMessages(with address: String) async throws -> [Message] {
         let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
-        fetchRequest.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
-            NSPredicate(format: "isFromMe == YES"),
-            NSPredicate(format: "senderName == %@", peerName)
-        ])
+        fetchRequest.predicate = NSPredicate(format: "peerAddress == %@", address)
         
         fetchRequest.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: true)]
         
@@ -81,12 +86,13 @@ final class MessageStore {
             Message(id: entity.id ?? UUID(),
                     text: entity.text ?? "",
                     senderName: entity.senderName,
+                    peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
                     status: MessageStatus(rawValue: Int(entity.status)) ?? .sent
             )
         }
-        print ("[MessageStore] Loaded \(messages.count) messages with '\(peerName)'")
+        print("[MessageStore] Loaded \(messages.count) messages with \(address)")
         return messages
     }
     
@@ -108,15 +114,15 @@ final class MessageStore {
         print("[MessageStore] Deleted messages older than \(days) days")
     }
     
-    func deleteConverstaion(with peerName: String) async throws {
+    func deleteConverstaion(with address: String) async throws {
         let fetchRequest: NSFetchRequest<NSFetchRequestResult> = MessageEntity.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "senderName == %@", peerName)
+        fetchRequest.predicate = NSPredicate(format: "peerAddress == %@", address)
         
         let batchDelete = NSBatchDeleteRequest(fetchRequest: fetchRequest)
         try viewContext.execute(batchDelete)
         try viewContext.save()
         
-        print("[MessageStore] Deleted conversation with '\(peerName)'")
+        print("[MessageStore] Deleted conversation with \(address)")
     }
     
     // MARK: - Clear All

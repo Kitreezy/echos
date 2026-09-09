@@ -94,10 +94,12 @@ final class WebSocketClientTests: XCTestCase {
         let bothPresent = await firstElement(of: incoming, timeout: .seconds(5)) { data in
             guard let envelope = try? RelayEnvelope.decode(from: data),
                   envelope.kind == .presence,
-                  let names = try? envelope.decodePresence() else {
+                  let participants = try? envelope.decodePresence() else {
                 return false
             }
-            return names == ["Alice", "Bob"]
+            // Имена, а не адреса: адреса тут случайные, а проверяем мы то,
+            // что оба клиента дошли до присутствия.
+            return participants.map(\.name).sorted() == ["Alice", "Bob"]
         }
 
         XCTAssertNotNil(bothPresent, "Оба клиента должны попасть в список присутствия")

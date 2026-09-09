@@ -14,7 +14,7 @@ final class MessagePayloadTests: XCTestCase {
         let original = Message(text: "yo", isFromMe: true, status: .sending)
         let payload = MessagePayload(from: original, senderName: "Alice")
         
-        let restored = payload.toMessage()
+        let restored = payload.toMessage(from: "peer-address")
         
         // Payload всегда приходит от кого-то другого:
         XCTAssertFalse(restored.isFromMe)
@@ -37,10 +37,10 @@ final class MessagePayloadTests: XCTestCase {
             """.data(using: .utf8)!
         )
         
-        let restored = broken.toMessage()
+        let restored = broken.toMessage(from: "peer-address")
         
         XCTAssertNotEqual(restored.id.uuidString, "not-a-uuid")
-        XCTAssertNotEqual(restored.id, payload.toMessage().id)
+        XCTAssertNotEqual(restored.id, payload.toMessage(from: "peer-address").id)
         XCTAssertEqual(restored.text, "x")
     }
     
@@ -49,6 +49,6 @@ final class MessagePayloadTests: XCTestCase {
         let payload = MessagePayload(from: Message(text: "t", isFromMe: true, timestamp: sent),
                                      senderName: "Alice")
         
-        XCTAssertEqual(payload.toMessage().timestamp, sent)
+        XCTAssertEqual(payload.toMessage(from: "peer-address").timestamp, sent)
     }
 }

@@ -30,12 +30,24 @@ enum RelayEnvelopeKind: String, Codable, Sendable {
     case stroke
 }
 
+/// Один человек в комнате.
+///
+/// Имя и адрес разделены намеренно. Имя человек выбирает сам, оно может
+/// повторяться и меняться; `id` — отпечаток ключа, он уникален, и подделать
+/// его нельзя, не имея закрытой части.
+struct RelayParticipant: Codable, Sendable {
+    let id: String
+    let name: String
+}
+
 struct RelayEnvelope: Codable, Sendable {
 
     let kind: RelayEnvelopeKind
-    /// Кто отправил. Сервер проставляет его сам, клиенту доверять нельзя.
+    /// Отпечаток ключа отправителя. Сервер проставляет его сам, из ключа,
+    /// которым клиент подтвердил подключение: содержимому конверта верить
+    /// нельзя.
     let sender: String
-    /// Кому предназначено. `nil` — всем, кроме отправителя.
+    /// Отпечаток получателя. `nil` — всем, кроме отправителя.
     ///
     /// Нужен для стены: росчерк адресован одному человеку, и при трёх
     /// участниках рассылать его всем неправильно.
@@ -65,10 +77,10 @@ struct RelayEnvelope: Codable, Sendable {
                              payload: try JSONEncoder().encode(proof))
     }
 
-    static func presence(_ names: [String]) throws -> RelayEnvelope {
+    static func presence(_ participants: [RelayParticipant]) throws -> RelayEnvelope {
         RelayEnvelope(kind: .presence,
                       sender: "",
-                      payload: try JSONEncoder().encode(names))
+                      payload: try JSONEncoder().encode(participants))
     }
 
     static func message(_ payload: MessagePayload,
@@ -109,8 +121,8 @@ struct RelayEnvelope: Codable, Sendable {
         return payload
     }
 
-    func decodePresence() throws -> [String] {
-        try decode([String].self)
+    func decodePresence() throws -> [RelayParticipant] {
+        try decode([RelayParticipant].self)
     }
 
     func decodeMessage() throws -> MessagePayload {

@@ -59,7 +59,7 @@ struct PeersListView: View {
     private func connect(to peer: Peer) {
         Task {
             do {
-                try await viewModel.multipeerService?.connectToPeer(displayName: peer.displayName)
+                try await viewModel.multipeerService?.connectToPeer(address: peer.address)
                 print("[PeersListView] Sent invite to '\(peer.displayName)'")
             } catch {
                 print("[PeersListView] Failed to connect: \(error)")
@@ -68,10 +68,10 @@ struct PeersListView: View {
     }
 
     private func disconnect(from peer: Peer) {
-        if viewModel.currentConversationPeer == peer.displayName {
+        if viewModel.currentConversationPeer == peer.address {
             viewModel.disconnectFromCurrentPeer()
         } else {
-            viewModel.multipeerService?.disconnect(from: peer.displayName)
+            viewModel.multipeerService?.disconnect(from: peer.address)
         }
         print("[PeersListView] Disconnected from '\(peer.displayName)'")
     }

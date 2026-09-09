@@ -17,11 +17,11 @@ struct WallView: View {
     @State var viewModel: WallViewModel
     @State private var canvasSize: CGSize = .zero
 
-    private let ownName: String
+    private let ownAddress: String
 
-    init(viewModel: WallViewModel, ownName: String) {
+    init(viewModel: WallViewModel, ownAddress: String) {
         _viewModel = State(initialValue: viewModel)
-        self.ownName = ownName
+        self.ownAddress = ownAddress
     }
 
     var body: some View {
@@ -90,7 +90,7 @@ struct WallView: View {
 
         context.stroke(
             path,
-            with: .color(stroke.author == ownName ? Color.own : Color.other),
+            with: .color(stroke.author == ownAddress ? Color.own : Color.other),
             style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
         )
     }

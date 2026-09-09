@@ -252,7 +252,7 @@ final class DiscoveryViewController: UIViewController {
 
         let wall = WallView(
             viewModel: WallViewModel(owner: nil, transport: transport),
-            ownName: transport.myDisplayName
+            ownAddress: transport.myAddress
         )
 
         // Радар прячет панель навигации в viewWillAppear, и стена без этой
@@ -317,7 +317,7 @@ final class DiscoveryViewController: UIViewController {
     private func connectToPeer(_ peer: Peer) {
         Task {
             do {
-                try await viewModel.multipeerService?.connectToPeer(displayName: peer.displayName)
+                try await viewModel.multipeerService?.connectToPeer(address: peer.address)
             } catch {
                 print("Failed to connect: \(error)")
             }
@@ -326,7 +326,8 @@ final class DiscoveryViewController: UIViewController {
     
     private func openChat(with peer: Peer) {
         Task {
-            await viewModel.switchToConversation(with: peer.displayName)
+            await viewModel.switchToConversation(with: peer.address,
+                                                 named: peer.displayName)
             
             let chatVC = ChatViewController(viewModel: viewModel)
             await MainActor.run {

@@ -19,6 +19,12 @@ final class WebSocketTransport: NSObject {
 
     let myDisplayName: String
 
+    /// Адрес на релее — отпечаток собственного ключа.
+    ///
+    /// Пусто, если ключ недостать: подключиться в этом случае всё равно не
+    /// выйдет, а подставлять сюда имя значило бы делать вид, что адрес есть.
+    let myAddress: String
+
     // MARK: - Delegation
 
     /// Релей не спрашивает разрешения на подключение: соединение
@@ -28,14 +34,14 @@ final class WebSocketTransport: NSObject {
     // MARK: - Streams
 
     private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
-    private let messageBroadcast = AsyncBroadcast<MessagePayload>()
-    private let typingBroadcast = AsyncBroadcast<TypingEvent>()
-    private let strokeBroadcast = AsyncBroadcast<Stroke>()
+    private let messageBroadcast = AsyncBroadcast<Addressed<MessagePayload>>()
+    private let typingBroadcast = AsyncBroadcast<Addressed<TypingEvent>>()
+    private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
 
     var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
-    var messageStream: AsyncStream<MessagePayload> { messageBroadcast.stream }
-    var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
-    var strokeStream: AsyncStream<Stroke> { strokeBroadcast.stream }
+    var messageStream: AsyncStream<Addressed<MessagePayload>> { messageBroadcast.stream }
+    var typingStream: AsyncStream<Addressed<TypingEvent>> { typingBroadcast.stream }
+    var strokeStream: AsyncStream<Addressed<Stroke>> { strokeBroadcast.stream }
 
     /// Состояние соединения с релеем — для индикатора в UI.
     var connectionState: WebSocketClient.State { client.state }
@@ -58,6 +64,9 @@ final class WebSocketTransport: NSObject {
     // MARK: - Private
 
     private let client: WebSocketClient
+
+    /// Ключ, которым подписывается рукопожатие.
+    private let identity: DeviceIdentity?
     private var readerTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
 
@@ -66,10 +75,11 @@ final class WebSocketTransport: NSObject {
     /// надо, а если поиск остановлен явно — не надо.
     private var isActive = false
 
-    /// Имя → идентификатор. Релей оперирует именами, а `Peer` требует
-    /// стабильный `id`, иначе SwiftUI будет пересоздавать строки списка.
+    /// Адрес → идентификатор. `Peer` требует стабильный `id`, иначе SwiftUI
+    /// будет пересоздавать строки списка. Ключ именно адрес, а не имя: имена
+    /// могут совпадать, и два человека слились бы в одну строку.
     private var peerIdentifiers: [String: UUID] = [:]
-    private var knownPeerNames: [String] = []
+    private var knownAddresses: Set<String> = []
 
     /// Вызов, пришедший раньше, чем его успели дождаться.
     ///
@@ -81,10 +91,17 @@ final class WebSocketTransport: NSObject {
 
     // MARK: - Init
 
+    /// - Parameter identity: чем подписываться. По умолчанию — ключ
+    ///   устройства. Задаётся снаружи ради тестов: два транспорта в одном
+    ///   процессе иначе делили бы одну личность на двоих и оказывались бы
+    ///   для релея одним человеком.
     init(url: URL,
          displayName: String = UserSettings.displayName,
+         identity: DeviceIdentity? = nil,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
         self.myDisplayName = displayName
+        self.identity = identity ?? (try? DeviceIdentity.current())
+        self.myAddress = self.identity?.fingerprint ?? ""
         self.client = WebSocketClient(url: url, networkMonitor: networkMonitor)
         super.init()
         observeAppLifecycle()
@@ -198,8 +215,8 @@ final class WebSocketTransport: NSObject {
 
     /// У релея нет пер-пирового подключения: если собеседник в списке
     /// присутствия, ему уже можно писать.
-    func connectToPeer(displayName: String) async throws {
-        guard knownPeerNames.contains(displayName) else {
+    func connectToPeer(address: String) async throws {
+        guard knownAddresses.contains(address) else {
             throw RelayError.notConnected
         }
     }
@@ -208,7 +225,7 @@ final class WebSocketTransport: NSObject {
 
     /// Разорвать связь с одним собеседником релей не позволяет — рвётся
     /// только соединение с сервером целиком.
-    func disconnect(from displayName: String) {
+    func disconnect(from address: String) {
         print("[WebSocketTransport] Per-peer disconnect is not supported by the relay")
     }
 
@@ -219,16 +236,16 @@ final class WebSocketTransport: NSObject {
 
     // MARK: - Messaging
 
-    func sendMessage(_ payload: MessagePayload, to peerName: String) async throws {
-        try await send(.message(payload, from: myDisplayName, to: peerName))
+    func sendMessage(_ payload: MessagePayload, to address: String) async throws {
+        try await send(.message(payload, from: myDisplayName, to: address))
     }
 
-    func sendTypingEvent(_ event: TypingEvent, to peerName: String) async throws {
-        try await send(.typing(event, from: myDisplayName, to: peerName))
+    func sendTypingEvent(_ event: TypingEvent, to address: String) async throws {
+        try await send(.typing(event, from: myDisplayName, to: address))
     }
 
-    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
-        try await send(.stroke(stroke, from: myDisplayName, to: peerName))
+    func sendStroke(_ stroke: Stroke, to address: String) async throws {
+        try await send(.stroke(stroke, from: myDisplayName, to: address))
     }
 
     private func send(_ envelope: RelayEnvelope) async throws {
@@ -248,8 +265,12 @@ final class WebSocketTransport: NSObject {
             return
         }
 
+        guard let identity else {
+            print("[WebSocketTransport] No device key, cannot introduce myself")
+            return
+        }
+
         do {
-            let identity = try DeviceIdentity.current()
             try await send(.hello(from: myDisplayName,
                                   answering: challenge,
                                   as: identity))
@@ -296,16 +317,19 @@ final class WebSocketTransport: NSObject {
 
             switch envelope.kind {
             case .presence:
-                updatePeers(names: try envelope.decodePresence())
+                updatePeers(try envelope.decodePresence())
 
             case .message:
-                messageBroadcast.yield(try envelope.decodeMessage())
+                messageBroadcast.yield(
+                    Addressed(sender: envelope.sender, value: try envelope.decodeMessage()))
 
             case .typing:
-                typingBroadcast.yield(try envelope.decodeTyping())
+                typingBroadcast.yield(
+                    Addressed(sender: envelope.sender, value: try envelope.decodeTyping()))
 
             case .stroke:
-                strokeBroadcast.yield(try envelope.decodeStroke())
+                strokeBroadcast.yield(
+                    Addressed(sender: envelope.sender, value: try envelope.decodeStroke()))
 
             case .challenge:
                 resumeChallengeWaiter(with: try envelope.decodeChallenge())
@@ -319,37 +343,44 @@ final class WebSocketTransport: NSObject {
         }
     }
 
-    private func updatePeers(names: [String]) {
-        // Себя в списке собеседников быть не должно.
-        let others = names.filter { $0 != myDisplayName }.sorted()
-        knownPeerNames = others
+    private func updatePeers(_ participants: [RelayParticipant]) {
+        // Себя в списке собеседников быть не должно. Отличаем по адресу:
+        // тёзка на другом устройстве — это другой человек, и он в списке
+        // остаться должен.
+        let others = participants.filter { $0.id != myAddress }
+        knownAddresses = Set(others.map(\.id))
 
-        let peers = others.map { name in
-            Peer(id: identifier(for: name),
-                 displayName: name,
-                 status: .connected,
-                 lastSeen: Date())
-        }
+        // Порядок задаёт релей — по отпечатку. Для глаза он произволен,
+        // поэтому сортируем по имени, а совпавшие имена разводим адресом.
+        let peers = others
+            .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+            .map { participant in
+                Peer(id: identifier(for: participant.id),
+                     address: participant.id,
+                     displayName: participant.name,
+                     status: .connected,
+                     lastSeen: Date())
+            }
 
         peerBroadcast.yield(peers)
     }
 
     private func clearPeers() {
-        guard !knownPeerNames.isEmpty else {
+        guard !knownAddresses.isEmpty else {
             return
         }
 
-        knownPeerNames = []
+        knownAddresses = []
         peerBroadcast.yield([])
     }
 
-    private func identifier(for name: String) -> UUID {
-        if let existing = peerIdentifiers[name] {
+    private func identifier(for address: String) -> UUID {
+        if let existing = peerIdentifiers[address] {
             return existing
         }
 
         let identifier = UUID()
-        peerIdentifiers[name] = identifier
+        peerIdentifiers[address] = identifier
         return identifier
     }
 }

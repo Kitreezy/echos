@@ -36,12 +36,30 @@ final class RelayEnvelopeTests: XCTestCase {
         XCTAssertEqual(try restored.decodeTyping().type, .stop)
     }
 
-    func test_presenceEnvelope_roundTrip_preservesNames() throws {
+    func test_presenceEnvelope_roundTrip_preservesParticipants() throws {
+        let participants = [RelayParticipant(id: "a1b2", name: "Alice"),
+                            RelayParticipant(id: "c3d4", name: "Bob")]
+
         let restored = try RelayEnvelope.decode(
-            from: try RelayEnvelope.presence(["Alice", "Bob"]).encoded()
+            from: try RelayEnvelope.presence(participants).encoded()
         )
 
-        XCTAssertEqual(try restored.decodePresence(), ["Alice", "Bob"])
+        let decoded = try restored.decodePresence()
+
+        XCTAssertEqual(decoded.map(\.id), ["a1b2", "c3d4"])
+        XCTAssertEqual(decoded.map(\.name), ["Alice", "Bob"])
+    }
+
+    /// Тёзки — разные люди, и присутствие должно их различать.
+    func test_presenceEnvelope_keepsNamesakesApart() throws {
+        let participants = [RelayParticipant(id: "a1b2", name: "Bob"),
+                            RelayParticipant(id: "c3d4", name: "Bob")]
+
+        let restored = try RelayEnvelope.decode(
+            from: try RelayEnvelope.presence(participants).encoded()
+        )
+
+        XCTAssertEqual(try restored.decodePresence().map(\.id), ["a1b2", "c3d4"])
     }
 
     // MARK: - Подмена отправителя

@@ -14,7 +14,7 @@ import Observation
 @MainActor
 final class WallViewModel {
 
-    /// Чья стена открыта. `nil` — своя.
+    /// Чья стена открыта — адрес владельца. `nil` — своя.
     let owner: String?
 
     private(set) var strokes: [Stroke] = []
@@ -71,8 +71,8 @@ final class WallViewModel {
                 return
             }
 
-            for await stroke in strokes {
-                await self?.receive(stroke)
+            for await incoming in strokes {
+                await self?.receive(incoming.value.by(incoming.sender))
             }
         }
     }
@@ -90,7 +90,7 @@ final class WallViewModel {
     // MARK: - Drawing
 
     func beginStroke(at point: Stroke.Point) {
-        pending = Stroke(author: transport.myDisplayName, points: [point])
+        pending = Stroke(author: transport.myAddress, points: [point])
     }
 
     func extendStroke(to point: Stroke.Point) {
