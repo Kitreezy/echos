@@ -531,22 +531,22 @@ final class ChatViewModel {
             break
         }
         
-        let connectedPeers = peers.filter { $0.status == .connected }
-        let connectedCount = connectedPeers.count
-        let discoveredCount = peers.count
-        
-        if connectedCount > 0 {
-            // В открытом чате имя собеседника уже стоит в заголовке —
-            // повторять его строкой ниже незачем.
-            let isCurrentConversation = connectedPeers.map(\.address) == [currentConversationPeer]
-            connectionStatus = isCurrentConversation
-                ? ""
-                : connectedPeers.map(\.displayName).joined(separator: ", ")
-        } else if discoveredCount > 0 {
-            connectionStatus = "Рядом: \(discoveredCount)"
-        } else {
-            connectionStatus = ""
+        // Строка под заголовком чата относится к собеседнику, а не ко всей
+        // комнате. Раньше она перечисляла всех, кто на связи, — через релей,
+        // где «на связи» сразу все, это превращалось в список имён, а с
+        // тёзками читалось буквально как «Bob, Bob».
+        if let address = currentConversationPeer {
+            let isReachable = peers.contains {
+                $0.address == address && $0.status == .connected
+            }
+
+            // Имя собеседника уже стоит в заголовке — повторять его незачем.
+            // Сказать есть что, только когда его нет рядом.
+            connectionStatus = isReachable ? "" : "не на связи"
+            return
         }
+        
+        connectionStatus = peers.isEmpty ? "" : "Рядом: \(peers.count)"
     }
     
     // MARK: - Messaging

@@ -333,4 +333,90 @@ final class ChatViewModelStreamTests: XCTestCase {
         let bob = Peer(address: "bob-address", displayName: "Bob")
         XCTAssertEqual(viewModel.recognition(for: bob), .known)
     }
+
+    // MARK: - Строка под заголовком
+
+    private func peer(_ address: String,
+                      _ name: String,
+                      _ status: PeerStatus = .connected) -> Peer {
+        Peer(address: address, displayName: name, status: status)
+    }
+
+    func test_reachablePeer_saysNothing() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModelInConversation(transport: transport,
+                                                          with: "bob-address",
+                                                          named: "Bob")
+
+        transport.emit(peers: [peer("bob-address", "Bob")])
+        _ = await waitUntil { !viewModel.peers.isEmpty }
+
+        XCTAssertEqual(viewModel.connectionStatus, "",
+                       "Имя собеседника уже стоит в заголовке")
+    }
+
+    func test_peerNotInTheRoom_saysSo() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModelInConversation(transport: transport,
+                                                          with: "bob-address",
+                                                          named: "Bob")
+
+        // Carol намеренно не на связи: подключённый собеседник сейчас
+        // перетягивает открытый чат на себя — см. KNOWN_ISSUE ниже.
+        transport.emit(peers: [peer("someone-else", "Carol", .notConnected)])
+        _ = await waitUntil { !viewModel.peers.isEmpty }
+
+        XCTAssertEqual(viewModel.connectionStatus, "не на связи")
+    }
+
+    /// Раньше строка перечисляла всех, кто на связи, и с тёзками читалась
+    /// буквально как «Bob, Bob».
+    func test_namesakeInTheRoom_doesNotLeakIntoTheSubtitle() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModelInConversation(transport: transport,
+                                                          with: "bob-address",
+                                                          named: "Bob")
+
+        transport.emit(peers: [peer("bob-address", "Bob"),
+                               peer("impostor-address", "Bob")])
+        _ = await waitUntil { viewModel.peers.count == 2 }
+
+        XCTAssertEqual(viewModel.connectionStatus, "")
+    }
+
+    /// Вне чата сказать можно только сколько рядом: перечислять имена
+    /// там некому и незачем.
+    func test_withoutAConversation_countsInstead() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModel(transport: transport)
+
+        transport.emit(peers: [peer("a", "Bob", .notConnected),
+                               peer("b", "Carol", .notConnected)])
+        _ = await waitUntil { viewModel.peers.count == 2 }
+
+        XCTAssertEqual(viewModel.connectionStatus, "Рядом: 2")
+    }
+
+    // MARK: - Зафиксированные дефекты
+    //
+    // Тест ниже описывает ТЕКУЩЕЕ поведение, а не желаемое. Он зелёный — и
+    // держит баг под наблюдением, пока его не починят.
+
+    /// ДЕФЕКТ: очередное присутствие открывает чат с первым подключённым
+    /// собеседником, даже если у вас уже открыт другой. У Multipeer это было
+    /// незаметно — подключение там одно. Через релей «на связи» сразу все, и
+    /// первым оказывается кто угодно: открытый чат перебрасывает на чужой.
+    /// Чинится тем, что автопереход нужен, только когда чат не открыт.
+    func test_KNOWN_ISSUE_incomingPresence_hijacksTheOpenConversation() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModelInConversation(transport: transport,
+                                                          with: "bob-address",
+                                                          named: "Bob")
+
+        transport.emit(peers: [peer("someone-else", "Carol")])
+        _ = await waitUntil { viewModel.currentConversationPeer != "bob-address" }
+
+        XCTAssertEqual(viewModel.currentConversationPeer, "someone-else",
+                       "Сейчас чат перебрасывает на первого подключённого")
+    }
 }
