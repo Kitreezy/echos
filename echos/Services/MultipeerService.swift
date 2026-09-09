@@ -75,6 +75,10 @@ final class MultipeerService: NSObject {
     private let typingBroadcast = AsyncBroadcast<TypingEvent>()
     var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
     
+    /// Для росчерков на стене
+    private let strokeBroadcast = AsyncBroadcast<Stroke>()
+    var strokeStream: AsyncStream<Stroke> { strokeBroadcast.stream }
+    
     // MARK: - Init
     
     override init() {
@@ -250,6 +254,25 @@ final class MultipeerService: NSObject {
         
         try session.send(data, toPeers: Array(connectedPeers), with: .unreliable)
         print("[Session] Sent typing event: \(event.type)")
+    }
+
+    /// Росчерк уходит `.reliable`: индикатор набора можно потерять,
+    /// а пропавший штрих оставит на стене дыру, которую нечем восполнить.
+    func sendStroke(_ stroke: Stroke) async throws {
+        guard let session = session else {
+            throw MultipeerError.noSession
+        }
+        
+        let connectedPeers = self.connectedPeers
+        guard !connectedPeers.isEmpty else {
+            throw MultipeerError.noPeers
+        }
+        
+        let packet = try MultipeerPacket(stroke: stroke)
+        let data = try JSONEncoder().encode(packet)
+        
+        try session.send(data, toPeers: Array(connectedPeers), with: .reliable)
+        print("[Session] Sent stroke with \(stroke.points.count) points")
     }
     
     // MARK: - Helpers
@@ -461,6 +484,11 @@ extension MultipeerService: MCSessionDelegate {
                     print("[Session] Recived typing event from '\(peerID.displayName)")
                     let event = try packet.decodeTypingEvent()
                     typingBroadcast.yield(event)
+                    
+                case .stroke:
+                    print("[Session] Recived stroke from '\(peerID.displayName)")
+                    let stroke = try packet.decodeStroke()
+                    strokeBroadcast.yield(stroke)
                 }
                 
             } catch {

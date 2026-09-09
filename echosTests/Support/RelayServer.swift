@@ -241,7 +241,7 @@ final class RelayServer {
             print("[RelayServer] '\(envelope.sender)' joined")
             broadcastPresence()
 
-        case .message, .typing:
+        case .message, .typing, .stroke:
             guard let sender = client.displayName else {
                 return  // не представился — не обслуживаем
             }

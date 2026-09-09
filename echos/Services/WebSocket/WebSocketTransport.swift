@@ -30,10 +30,12 @@ final class WebSocketTransport: NSObject {
     private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
     private let messageBroadcast = AsyncBroadcast<MessagePayload>()
     private let typingBroadcast = AsyncBroadcast<TypingEvent>()
+    private let strokeBroadcast = AsyncBroadcast<Stroke>()
 
     var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
     var messageStream: AsyncStream<MessagePayload> { messageBroadcast.stream }
     var typingStream: AsyncStream<TypingEvent> { typingBroadcast.stream }
+    var strokeStream: AsyncStream<Stroke> { strokeBroadcast.stream }
 
     /// Состояние соединения с релеем — для индикатора в UI.
     var connectionState: WebSocketClient.State { client.state }
@@ -214,6 +216,10 @@ final class WebSocketTransport: NSObject {
         try await send(.typing(event, from: myDisplayName))
     }
 
+    func sendStroke(_ stroke: Stroke) async throws {
+        try await send(.stroke(stroke, from: myDisplayName))
+    }
+
     private func send(_ envelope: RelayEnvelope) async throws {
         await client.send(try envelope.encoded())
     }
@@ -237,6 +243,9 @@ final class WebSocketTransport: NSObject {
 
             case .typing:
                 typingBroadcast.yield(try envelope.decodeTyping())
+
+            case .stroke:
+                strokeBroadcast.yield(try envelope.decodeStroke())
 
             case .hello:
                 break  // сервер такое не шлёт

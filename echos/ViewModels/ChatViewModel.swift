@@ -15,6 +15,7 @@ enum TransportEvent: Sendable {
     case peers([Peer])
     case message(MessagePayload)
     case typing(TypingEvent)
+    case stroke(Stroke)
 }
 
 @Observable
@@ -36,6 +37,10 @@ final class ChatViewModel {
     /// Тип — протокол, а не конкретный класс: в тестах сюда подставляется фейк.
     var multipeerService: (any PeerTransport)?
     var messageStore: (any MessageStoring)?
+    
+    /// Своя стена. Живёт здесь, а не на экране: росчерки приходят и тогда,
+    /// когда стена закрыта.
+    var strokeStore: any StrokeStoring = StrokeStore()
     
     // MARK: - Typing State
     
@@ -99,7 +104,11 @@ final class ChatViewModel {
     /// Прод вызывает без аргументов и получает реальные Multipeer + Core Data,
     /// тест передаёт свои реализации.
     func initialize(transport: (any PeerTransport)? = nil,
-                    store: (any MessageStoring)? = nil) {
+                    store: (any MessageStoring)? = nil,
+                    strokes: (any StrokeStoring)? = nil) {
+        if let strokes {
+            strokeStore = strokes
+        }
         // `initialize()` вызывается повторно (возврат из фона, смена экрана),
         // поэтому старые подписки снимаются явно. Раньше каждый вызов добавлял
         // ещё три несфотменяемые Task.
@@ -257,8 +266,9 @@ final class ChatViewModel {
         
         let messages = multipeerService.messageStream.map(TransportEvent.message)
         let typing = multipeerService.typingStream.map(TransportEvent.typing)
+        let strokes = multipeerService.strokeStream.map(TransportEvent.stroke)
         
-        for await event in merge(peers, messages, typing) {
+        for await event in merge(merge(peers, messages), typing, strokes) {
             switch event {
             case .peers(let discoveredPeers):
                 await handlePeers(discoveredPeers)
@@ -268,7 +278,25 @@ final class ChatViewModel {
                 
             case .typing(let typingEvent):
                 handleTypingEvent(typingEvent)
+                
+            case .stroke(let stroke):
+                await handleIncomingStroke(stroke)
             }
+        }
+    }
+    
+    /// Росчерки принимает приложение, а не экран стены.
+    ///
+    /// Иначе рисунок, сделанный пока вы смотрите в другое место, пропадал бы
+    /// бесследно — а стена нужна ровно для обратного: чтобы след оставался,
+    /// когда вас нет.
+    private func handleIncomingStroke(_ stroke: Stroke) async {
+        do {
+            try await strokeStore.saveStroke(stroke, wallOwner: nil)
+            print("[ChatViewModel] Stroke from '\(stroke.author)' saved to own wall")
+        }
+        catch {
+            print("[ChatViewModel] Failed to save stroke: \(error)")
         }
     }
     

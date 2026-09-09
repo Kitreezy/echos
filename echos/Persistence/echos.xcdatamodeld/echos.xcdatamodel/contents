@@ -8,4 +8,11 @@
         <attribute name="text" optional="YES" attributeType="String"/>
         <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
+    <entity name="StrokeEntity" representedClassName="StrokeEntity" syncable="YES" codeGenerationType="class">
+        <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="author" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="points" optional="YES" attributeType="Binary"/>
+        <attribute name="wallOwner" optional="YES" attributeType="String"/>
+    </entity>
 </model>
