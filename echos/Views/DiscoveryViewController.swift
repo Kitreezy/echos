@@ -65,9 +65,6 @@ final class DiscoveryViewController: UIViewController {
         return table
     }()
     
-    private var pulseTimer: Timer?
-    private var rotationAnimation: CABasicAnimation?
-
     /// Возобновлять поиск при возврате из фона только если он реально шёл.
     private var shouldResumeDiscovery = false
     
@@ -264,34 +261,6 @@ final class DiscoveryViewController: UIViewController {
         statusLabel.text = displayPeers.isEmpty ? "Пока никого рядом" : ""
 
         tableView.reloadData()
-    }
-    
-    private func calculateAverageSignal(from peers: [Peer]) -> Int {
-        let connectedPeers = peers.filter { $0.status == .connected }
-        guard !connectedPeers.isEmpty else {
-            return 0
-        }
-        
-        let totalSignal = connectedPeers.reduce(0) { sum, peer in
-            sum + peer.signalPercentage
-        }
-        return totalSignal / connectedPeers.count
-    }
-    
-    private func getSignalStatus(_ percentage: Int) -> String {
-        switch percentage {
-        case 80...100:
-            return "STRONG"
-            
-        case 50..<80:
-            return "MEDIUM"
-            
-        case 20..<50:
-            return "WEAK"
-            
-        default:
-            return "LOST"
-        }
     }
     
     // MARK: - Actions
