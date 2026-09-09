@@ -2,11 +2,15 @@
 //  WebSocketClient.swift
 //  echos
 //
-//  Клиент WebSocket поверх `URLSessionWebSocketTask` — без сторонних библиотек.
+//  Политика живучести соединения — поверх любого транспорта.
 //
-//  Сам по себе API сокета маленький: `send`, `receive`, `sendPing`, `cancel`.
-//  Работы требует всё вокруг: превратить колбэки в поток, заметить обрыв,
-//  переподключиться не заваливая сервер, и не потерять то, что не успело уйти.
+//  Сам WebSocket API маленький: открыть, отправить, получить, пинг, закрыть.
+//  Он вынесен за `RawWebSocket`. Здесь остаётся всё, ради чего клиент вообще
+//  пишется: заметить обрыв, отличить «сервер упал» от «пропала сеть»,
+//  переподключиться не заваливая сервер, не потерять неотправленное.
+//
+//  Эта часть от выбора библиотеки не зависит — что и проверяется прогоном
+//  одних и тех же тестов против двух реализаций `RawWebSocket`.
 //
 
 import Foundation
@@ -73,15 +77,14 @@ final class WebSocketClient {
 
     // MARK: - Private
 
-    private let url: URL
-    private let sessionConfiguration: URLSessionConfiguration
-    private let delegate = SocketDelegate()
+    /// Фабрика транспорта. Сокет одноразовый: на каждое переподключение
+    /// создаётся новый, поэтому храним способ его создать, а не сам объект.
+    private let makeSocket: @MainActor () -> any RawWebSocket
     private let networkMonitor: any NetworkMonitoring
 
-    private var session: URLSession?
-    private var socket: URLSessionWebSocketTask?
+    private var socket: (any RawWebSocket)?
 
-    private var receiveTask: Task<Void, Never>?
+    private var eventsTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var networkTask: Task<Void, Never>?
@@ -102,14 +105,16 @@ final class WebSocketClient {
     init(url: URL,
          configuration: URLSessionConfiguration = .ephemeral,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
-        self.url = url
-        self.sessionConfiguration = configuration
+        self.makeSocket = { URLSessionRawSocket(url: url, configuration: configuration) }
         self.networkMonitor = networkMonitor
-        delegate.client = self
     }
 
-    deinit {
-        socket?.cancel(with: .goingAway, reason: nil)
+    /// Точка подмены транспорта — для контрактных тестов и для любой
+    /// следующей реализации `RawWebSocket`.
+    init(networkMonitor: any NetworkMonitoring = NetworkMonitor.shared,
+         makeSocket: @escaping @MainActor () -> any RawWebSocket) {
+        self.makeSocket = makeSocket
+        self.networkMonitor = networkMonitor
     }
 
     // MARK: - Lifecycle
@@ -143,7 +148,7 @@ final class WebSocketClient {
         reconnectTask?.cancel()
         reconnectTask = nil
 
-        teardownSocket(closeCode: .normalClosure)
+        teardownSocket()
         state = .disconnected
     }
 
@@ -181,7 +186,7 @@ final class WebSocketClient {
 
             reconnectTask?.cancel()
             reconnectTask = nil
-            teardownSocket(closeCode: nil)
+            teardownSocket()
             connectedInterface = nil
             state = .waitingForNetwork
             return
@@ -195,7 +200,7 @@ final class WebSocketClient {
 
         if interfaceChanged {
             print("[WebSocketClient] Interface changed, reconnecting")
-            teardownSocket(closeCode: nil)
+            teardownSocket()
         }
 
         guard state != .connected || interfaceChanged else {
@@ -220,12 +225,12 @@ final class WebSocketClient {
         }
 
         do {
-            try await socket.send(.data(data))
+            try await socket.send(data)
         }
         catch {
             print("[WebSocketClient] Send failed: \(error.localizedDescription)")
             enqueue(data)
-            handleFailure(on: socket)
+            handleFailure()
         }
     }
 
@@ -249,11 +254,11 @@ final class WebSocketClient {
 
         for data in pending {
             do {
-                try await socket.send(.data(data))
+                try await socket.send(data)
             }
             catch {
                 enqueue(data)
-                handleFailure(on: socket)
+                handleFailure()
                 return
             }
         }
@@ -262,35 +267,48 @@ final class WebSocketClient {
     // MARK: - Connection
 
     private func openConnection() {
-        teardownSocket(closeCode: nil)
+        teardownSocket()
 
         state = .connecting
         connectionAttempts += 1
 
-        let session = URLSession(configuration: sessionConfiguration,
-                                 delegate: delegate,
-                                 delegateQueue: .main)
-        self.session = session
-
-        let socket = session.webSocketTask(with: url)
+        let socket = makeSocket()
         self.socket = socket
-        socket.resume()
 
-        receiveTask = Task { [weak self] in
-            await self?.receiveLoop(on: socket)
+        // Задача читает события ровно этого сокета и отменяется вместе с ним,
+        // поэтому «эхо» от предыдущего соединения прийти не может.
+        eventsTask = Task { [weak self] in
+            for await event in socket.events {
+                self?.handle(event: event)
+            }
+        }
+
+        socket.open()
+    }
+
+    private func handle(event: RawWebSocketEvent) {
+        switch event {
+        case .opened:
+            handleOpen()
+
+        case .message(let data):
+            incoming.yield(data)
+
+        case .closed(let code, _):
+            print("[WebSocketClient] Closed by peer, code \(code)")
+            handleFailure()
+
+        case .failed(let reason):
+            print("[WebSocketClient] Failed: \(reason)")
+            handleFailure()
         }
     }
 
-    /// Вызывается делегатом, когда handshake завершён.
-    fileprivate func handleOpen(_ openedSocket: URLSessionWebSocketTask) {
-        guard openedSocket === socket else {
-            return  // событие от предыдущего, уже закрытого сокета
-        }
-
+    private func handleOpen() {
         reconnectAttempt = 0
         connectedInterface = networkMonitor.currentPath?.interface
         state = .connected
-        startHeartbeat(on: openedSocket)
+        startHeartbeat()
 
         Task { [weak self] in
             await self?.onConnected?()
@@ -298,25 +316,10 @@ final class WebSocketClient {
         }
     }
 
-    /// Вызывается делегатом при штатном закрытии со стороны сервера.
-    fileprivate func handleClose(_ closedSocket: URLSessionWebSocketTask,
-                                 code: URLSessionWebSocketTask.CloseCode) {
-        guard closedSocket === socket else {
-            return
-        }
-
-        print("[WebSocketClient] Closed by peer, code \(code.rawValue)")
-        handleFailure(on: closedSocket)
-    }
-
     /// Единая точка обработки обрыва: и «receive бросил», и «pong не пришёл»,
     /// и «сервер закрыл соединение» приводят сюда.
-    private func handleFailure(on failedSocket: URLSessionWebSocketTask) {
-        guard failedSocket === socket else {
-            return
-        }
-
-        teardownSocket(closeCode: nil)
+    private func handleFailure() {
+        teardownSocket()
         connectedInterface = nil
 
         guard !isStopped else {
@@ -336,63 +339,20 @@ final class WebSocketClient {
         scheduleReconnect()
     }
 
-    private func teardownSocket(closeCode: URLSessionWebSocketTask.CloseCode?) {
-        receiveTask?.cancel()
-        receiveTask = nil
+    private func teardownSocket() {
+        eventsTask?.cancel()
+        eventsTask = nil
 
         heartbeatTask?.cancel()
         heartbeatTask = nil
 
-        if let closeCode {
-            socket?.cancel(with: closeCode, reason: nil)
-        } else {
-            socket?.cancel()
-        }
+        socket?.close()
         socket = nil
-
-        session?.invalidateAndCancel()
-        session = nil
-    }
-
-    // MARK: - Receiving
-
-    /// Мост от `receive()` к `AsyncStream`.
-    ///
-    /// `receive()` отдаёт ровно одно сообщение за вызов, поэтому его крутят в
-    /// цикле. Он же и сигнализирует об обрыве: как только соединение умерло,
-    /// вызов бросает — отдельного «onDisconnect» у сокета нет.
-    private func receiveLoop(on socket: URLSessionWebSocketTask) async {
-        while !Task.isCancelled {
-            do {
-                let message = try await socket.receive()
-
-                switch message {
-                case .data(let data):
-                    incoming.yield(data)
-
-                case .string(let text):
-                    if let data = text.data(using: .utf8) {
-                        incoming.yield(data)
-                    }
-
-                @unknown default:
-                    break
-                }
-            }
-            catch {
-                guard !Task.isCancelled else {
-                    return
-                }
-                print("[WebSocketClient] Receive failed: \(error.localizedDescription)")
-                handleFailure(on: socket)
-                return
-            }
-        }
     }
 
     // MARK: - Heartbeat
 
-    private func startHeartbeat(on socket: URLSessionWebSocketTask) {
+    private func startHeartbeat() {
         heartbeatTask?.cancel()
 
         heartbeatTask = Task { [weak self] in
@@ -405,13 +365,13 @@ final class WebSocketClient {
                     return
                 }
 
-                guard let alive = await self?.ping(socket), !Task.isCancelled else {
+                guard let alive = await self?.pingWithTimeout(), !Task.isCancelled else {
                     return
                 }
 
                 if !alive {
                     print("[WebSocketClient] No pong in time, assuming connection is dead")
-                    self?.handleFailure(on: socket)
+                    self?.handleFailure()
                     return
                 }
             }
@@ -421,15 +381,19 @@ final class WebSocketClient {
     /// Пинг с таймаутом.
     ///
     /// Без гонки с таймером это не работает: если соединение оборвалось
-    /// «тихо», колбэк pong не придёт никогда, и `await` повиснет навсегда —
-    /// вместе с обнаружением обрыва.
-    private func ping(_ socket: URLSessionWebSocketTask) async -> Bool {
+    /// «тихо», pong не придёт никогда, и `await` повиснет навсегда — вместе
+    /// с обнаружением обрыва.
+    private func pingWithTimeout() async -> Bool {
+        guard let socket else {
+            return false
+        }
+
         let boxed = UncheckedSendableBox(socket)
         let timeout = pongTimeout
 
         return await withTaskGroup(of: Bool.self) { group in
             group.addTask {
-                (try? await boxed.value.sendPing()) != nil
+                (try? await boxed.value.ping()) != nil
             }
 
             group.addTask {
@@ -479,51 +443,7 @@ final class WebSocketClient {
     }
 }
 
-// MARK: - URLSessionWebSocketDelegate
-
-/// Делегат отдельным объектом: `URLSession` держит его сильно, а замыкать
-/// эту ссылку на `@MainActor`-класс клиента нельзя — получится цикл.
-private final class SocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
-
-    weak var client: WebSocketClient?
-
-    func urlSession(_ session: URLSession,
-                    webSocketTask: URLSessionWebSocketTask,
-                    didOpenWithProtocol protocol: String?) {
-        // delegateQueue задан как `.main`, поэтому мы уже на главном потоке.
-        MainActor.assumeIsolated {
-            client?.handleOpen(webSocketTask)
-        }
-    }
-
-    func urlSession(_ session: URLSession,
-                    webSocketTask: URLSessionWebSocketTask,
-                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
-                    reason: Data?) {
-        MainActor.assumeIsolated {
-            client?.handleClose(webSocketTask, code: closeCode)
-        }
-    }
-}
-
 // MARK: - Helpers
-
-extension URLSessionWebSocketTask {
-
-    /// У `sendPing` нет async-варианта — только колбэк, поэтому мост строим
-    /// сами. Тот же приём, что и для любого legacy-API с завершающим блоком.
-    func sendPing() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            sendPing { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
-    }
-}
 
 extension Duration {
 
