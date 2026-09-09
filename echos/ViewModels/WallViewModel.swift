@@ -126,12 +126,12 @@ final class WallViewModel {
         }
 
         // На своей стене рисуют для себя — отправлять некому.
-        guard owner != nil else {
+        guard let owner else {
             return
         }
 
         do {
-            try await transport.sendStroke(stroke)
+            try await transport.sendStroke(stroke, to: owner)
         }
         catch {
             print("[WallViewModel] Failed to send stroke: \(error)")

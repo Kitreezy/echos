@@ -256,23 +256,24 @@ final class MultipeerService: NSObject {
         print("[Session] Sent typing event: \(event.type)")
     }
 
-    /// Росчерк уходит `.reliable`: индикатор набора можно потерять,
-    /// а пропавший штрих оставит на стене дыру, которую нечем восполнить.
-    func sendStroke(_ stroke: Stroke) async throws {
+    /// Росчерк уходит одному — владельцу стены — и `.reliable`: индикатор
+    /// набора можно потерять, а пропавший штрих оставит на стене дыру,
+    /// которую нечем восполнить.
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
         
-        let connectedPeers = self.connectedPeers
-        guard !connectedPeers.isEmpty else {
-            throw MultipeerError.noPeers
+        guard let peerID = discoveredPeerIDs[peerName],
+              connectedPeers.contains(peerID) else {
+            throw MultipeerError.peerNotFound
         }
         
         let packet = try MultipeerPacket(stroke: stroke)
         let data = try JSONEncoder().encode(packet)
         
-        try session.send(data, toPeers: Array(connectedPeers), with: .reliable)
-        print("[Session] Sent stroke with \(stroke.points.count) points")
+        try session.send(data, toPeers: [peerID], with: .reliable)
+        print("[Session] Sent stroke to '\(peerName)' with \(stroke.points.count) points")
     }
     
     // MARK: - Helpers

@@ -216,8 +216,8 @@ final class WebSocketTransport: NSObject {
         try await send(.typing(event, from: myDisplayName))
     }
 
-    func sendStroke(_ stroke: Stroke) async throws {
-        try await send(.stroke(stroke, from: myDisplayName))
+    func sendStroke(_ stroke: Stroke, to peerName: String) async throws {
+        try await send(.stroke(stroke, from: myDisplayName, to: peerName))
     }
 
     private func send(_ envelope: RelayEnvelope) async throws {
