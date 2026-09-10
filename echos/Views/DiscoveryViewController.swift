@@ -90,9 +90,21 @@ final class DiscoveryViewController: UIViewController {
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто рядом."
+        label.text = "Разговоров пока нет."
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }()
+
+    /// Чем держим связь. Раньше выбора не было вовсе: приложение работало
+    /// только с теми, кто рядом, а дальняя связь включалась аргументом
+    /// запуска в схеме Xcode — то есть была доступна одному человеку в мире.
+    private lazy var linkButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.baseForegroundColor = .inkMuted
+
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
     }()
 
     /// Одна строка вместо крутящейся иконки с надписью капсом.
@@ -151,6 +163,7 @@ final class DiscoveryViewController: UIViewController {
         setupAppLifecycleObservers()
 
         updateNameButton()
+        updateLinkButton()
 
         // Поиск не начинается, пока не спросили имя: иначе собеседники
         // увидят «Без имени», и переименование уже ничего не исправит —
@@ -164,6 +177,66 @@ final class DiscoveryViewController: UIViewController {
             }
 
             await startDiscovery()
+        }
+    }
+
+    // MARK: - Связь
+
+    private var usesRelay: Bool {
+        PeerTransportFactory.kind(usesRelay: UserSettings.usesRelay,
+                                  customURL: UserSettings.relayURL) != .nearby
+    }
+
+    private func updateLinkButton() {
+        linkButton.configuration?.attributedTitle = AttributedString(
+            usesRelay ? "связь · через сервер" : "связь · рядом",
+            attributes: AttributeContainer([
+                .font: Typography.micro,
+                .kern: Typography.narrow
+            ])
+        )
+    }
+
+    @objc
+    private func chooseLink() {
+        let sheet = UIAlertController(
+            title: "Как держать связь",
+            message: "Рядом — напрямую между устройствами, без интернета, "
+                   + "метров на сто. Через сервер — с кем угодно, где есть сеть.",
+            preferredStyle: .actionSheet
+        )
+
+        sheet.addAction(UIAlertAction(title: "Только рядом", style: .default) { [weak self] _ in
+            self?.setUsesRelay(false)
+        })
+
+        sheet.addAction(UIAlertAction(title: "Через сервер", style: .default) { [weak self] _ in
+            self?.setUsesRelay(true)
+        })
+
+        sheet.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+
+        // На широком экране лист привязывается к кнопке, иначе упадёт.
+        sheet.popoverPresentationController?.sourceView = linkButton
+        sheet.popoverPresentationController?.sourceRect = linkButton.bounds
+
+        present(sheet, animated: true)
+    }
+
+    private func setUsesRelay(_ enabled: Bool) {
+        guard enabled != UserSettings.usesRelay else {
+            return
+        }
+
+        UserSettings.usesRelay = enabled
+        updateLinkButton()
+
+        // Транспорт выбирается при создании, поэтому меняем не настройку
+        // на лету, а собираем его заново.
+        Task {
+            viewModel.multipeerService?.stopDeviceDiscovery()
+            await startDiscovery()
+            updateUI()
         }
     }
 
@@ -346,7 +419,11 @@ final class DiscoveryViewController: UIViewController {
             tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: linkButton.topAnchor),
+
+            linkButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            linkButton.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
+
 
             noConversationsLabel.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
             noConversationsLabel.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
@@ -377,9 +454,11 @@ final class DiscoveryViewController: UIViewController {
         view.addSubview(statusLabel)
         view.addSubview(tableView)
         view.addSubview(noConversationsLabel)
+        view.addSubview(linkButton)
         view.addSubview(wallButton)
 
         wallButton.addTarget(self, action: #selector(showOwnWall), for: .touchUpInside)
+        linkButton.addTarget(self, action: #selector(chooseLink), for: .touchUpInside)
         nameButton.addTarget(self, action: #selector(changeName), for: .touchUpInside)
 
         // Круг был украшением: он показывал, что поиск идёт, но нажать на
@@ -468,9 +547,14 @@ final class DiscoveryViewController: UIViewController {
 
         // Строка под кругом — про то, кто вокруг, и она же подсказывает, что
         // круг нажимается.
-        statusLabel.text = displayPeers.isEmpty
-            ? "Пока никого рядом"
-            : "Рядом \(displayPeers.count) — посмотреть"
+        // «Рядом» через сервер было бы неправдой: собеседник может быть в
+        // другом городе.
+        if displayPeers.isEmpty {
+            statusLabel.text = usesRelay ? "Пока никого на связи" : "Пока никого рядом"
+        } else {
+            let word = usesRelay ? "На связи" : "Рядом"
+            statusLabel.text = "\(word) \(displayPeers.count) — посмотреть"
+        }
 
         // Кто на связи, видно по точке в строке разговора, поэтому список
         // пересобирается и при изменении присутствия.
@@ -493,6 +577,10 @@ final class DiscoveryViewController: UIViewController {
             conversations = await viewModel.getAllConversations()
             isReloadingConversations = false
 
+            // Подсказка про круг зависит от способа связи: «кто рядом» через
+            // сервер было бы неправдой.
+            noConversationsLabel.text = "Разговоров пока нет.\nНажмите на круг, чтобы "
+                + (usesRelay ? "посмотреть, кто на связи." : "посмотреть, кто рядом.")
             noConversationsLabel.isHidden = !conversations.isEmpty
             tableView.reloadData()
         }
