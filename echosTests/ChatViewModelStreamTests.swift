@@ -395,6 +395,39 @@ final class ChatViewModelStreamTests: XCTestCase {
         XCTAssertEqual(viewModel.connectionStatus, "Рядом: 2")
     }
 
+    // MARK: - Список собеседников
+
+    /// Двое, подключившиеся почти одновременно, попадали в одно окно
+    /// `_throttle(latest:)`, и последнее значение придерживалось до следующего
+    /// события — которого могло не быть. Список оставался отстающим на одно
+    /// обновление: на экране «рядом 1», на релее двое.
+    func test_peersArrivingTogether_allReachTheList() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModel(transport: transport)
+
+        transport.emit(peers: [peer("bob", "Bob")])
+        transport.emit(peers: [peer("bob", "Bob"), peer("carol", "Carol")])
+
+        let both = await waitUntil { viewModel.peers.count == 2 }
+
+        XCTAssertTrue(both, "На экране осталось \(viewModel.peers.count) из двух")
+        XCTAssertEqual(viewModel.peers.map(\.address).sorted(), ["bob", "carol"])
+    }
+
+    /// Уход последнего собеседника — тоже конец серии, и его тоже теряли.
+    func test_lastPeerLeaving_emptiesTheList() async {
+        let transport = LoopbackTransport()
+        let viewModel = await makeViewModel(transport: transport)
+
+        transport.emit(peers: [peer("bob", "Bob")])
+        _ = await waitUntil { !viewModel.peers.isEmpty }
+
+        transport.emit(peers: [])
+
+        let emptied = await waitUntil { viewModel.peers.isEmpty }
+        XCTAssertTrue(emptied)
+    }
+
     // MARK: - Автопереход
 
     /// Раньше очередное присутствие открывало чат с первым подключённым

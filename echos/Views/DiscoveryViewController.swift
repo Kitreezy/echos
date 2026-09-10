@@ -82,6 +82,19 @@ final class DiscoveryViewController: UIViewController {
         return button
     }()
 
+    /// Когда разговоров ещё не было. Отдельно от строки под радаром: та про
+    /// то, кто вокруг, эта — про то, с кем вы говорили.
+    private let noConversationsLabel: UILabel = {
+        let label = UILabel()
+        label.font = Typography.caption
+        label.textColor = .inkMuted
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.text = "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто рядом."
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
     /// Одна строка вместо крутящейся иконки с надписью капсом.
     /// Показывается, только когда сказать действительно есть что.
     private let statusLabel: UILabel = {
@@ -103,6 +116,14 @@ final class DiscoveryViewController: UIViewController {
     
     /// Возобновлять поиск при возврате из фона только если он реально шёл.
     private var shouldResumeDiscovery = false
+
+    /// Ваши люди. Главный экран отвечает на вопрос «с кем я разговариваю», а
+    /// не «кто вокруг»: вокруг может не быть никого, а разговоры остаются.
+    private var conversations: [ConversationSummary] = []
+
+    /// Загрузка идёт из базы и асинхронно, а поводов обновиться много —
+    /// без этого флага они бы наслаивались.
+    private var isReloadingConversations = false
     
     // MARK: - Lifecycle
     
@@ -110,6 +131,10 @@ final class DiscoveryViewController: UIViewController {
         super.viewWillAppear(animated)
         
         navigationController?.setNavigationBarHidden(true, animated: animated)
+
+        // Возврат из чата — там могли написать, и последняя реплика в списке
+        // уже другая.
+        reloadConversations()
     }
     
     override func viewDidLoad() {
@@ -323,6 +348,13 @@ final class DiscoveryViewController: UIViewController {
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
 
+            noConversationsLabel.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
+            noConversationsLabel.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
+            noConversationsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
+                                                          constant: Space.margin),
+            noConversationsLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
+                                                           constant: -Space.margin),
+
             wallButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             wallButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
                                                constant: -Space.step)
@@ -344,10 +376,22 @@ final class DiscoveryViewController: UIViewController {
         view.addSubview(radarView)
         view.addSubview(statusLabel)
         view.addSubview(tableView)
+        view.addSubview(noConversationsLabel)
         view.addSubview(wallButton)
 
         wallButton.addTarget(self, action: #selector(showOwnWall), for: .touchUpInside)
         nameButton.addTarget(self, action: #selector(changeName), for: .touchUpInside)
+
+        // Круг был украшением: он показывал, что поиск идёт, но нажать на
+        // него было нельзя. Теперь это единственный вход к тем, кто вокруг.
+        radarView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(showNearby))
+        )
+        radarView.isUserInteractionEnabled = true
+
+        let statusTap = UITapGestureRecognizer(target: self, action: #selector(showNearby))
+        statusLabel.addGestureRecognizer(statusTap)
+        statusLabel.isUserInteractionEnabled = true
         
         NSLayoutConstraint.activate(layoutConstraints)
     }
@@ -355,7 +399,8 @@ final class DiscoveryViewController: UIViewController {
     private func setupTableView() {
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.register(PeerDiscoveryCell.self, forCellReuseIdentifier: "PeerCell")
+        tableView.register(ConversationCell.self,
+                           forCellReuseIdentifier: ConversationCell.reuseIdentifier)
     }
     
     @objc
@@ -417,51 +462,49 @@ final class DiscoveryViewController: UIViewController {
     
     private func updateUI() {
         let displayPeers = displayedPeers
-        
+
         peerCountLabel.text = displayPeers.isEmpty ? "" : "\(displayPeers.count)"
+        radarState.nearbyCount = displayPeers.count
 
-        // Когда рядом кто-то есть, список говорит сам за себя — строка молчит.
-        statusLabel.text = displayPeers.isEmpty ? "Пока никого рядом" : ""
+        // Строка под кругом — про то, кто вокруг, и она же подсказывает, что
+        // круг нажимается.
+        statusLabel.text = displayPeers.isEmpty
+            ? "Пока никого рядом"
+            : "Рядом \(displayPeers.count) — посмотреть"
 
-        tableView.reloadData()
+        // Кто на связи, видно по точке в строке разговора, поэтому список
+        // пересобирается и при изменении присутствия.
+        reloadConversations()
     }
-    
-    // MARK: - Actions
-    
-    private func connectToPeer(_ peer: Peer) {
-        Task {
-            do {
-                try await viewModel.multipeerService?.connectToPeer(address: peer.address)
-            } catch {
-                print("Failed to connect: \(error)")
+
+    /// Перечитать разговоры и перерисовать список.
+    private func reloadConversations() {
+        guard !isReloadingConversations else {
+            return
+        }
+
+        isReloadingConversations = true
+
+        Task { [weak self] in
+            guard let self else {
+                return
             }
+
+            conversations = await viewModel.getAllConversations()
+            isReloadingConversations = false
+
+            noConversationsLabel.isHidden = !conversations.isEmpty
+            tableView.reloadData()
         }
+    }
+
+    @objc
+    private func showNearby() {
+        navigationController?.pushViewController(
+            NearbyViewController(viewModel: viewModel), animated: true
+        )
     }
     
-    private func openChat(with peer: Peer) {
-        Task {
-            await viewModel.switchToConversation(with: peer.address,
-                                                 named: peer.displayName)
-            
-            let chatVC = ChatViewController(viewModel: viewModel)
-            await MainActor.run {
-                navigationController?.pushViewController(chatVC, animated: true)
-            }
-            print("[DiscoveryViewController] Opened chat with \(peer.displayName)")
-        }
-    }
-    
-    // MARK: - Toast Helper
-     
-    private func showToast(_ message: String) {
-        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
-        present(alert, animated: true)
-        
-        // Auto dismiss after 1.5s
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            alert.dismiss(animated: true)
-        }
-    }
 }
  
 // MARK: - TableView
@@ -470,45 +513,37 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
     
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
-        return displayedPeers.count
+        conversations.count
     }
     
     func tableView(_ tableView: UITableView,
                    cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(withIdentifier: "PeerCell", for: indexPath) as? PeerDiscoveryCell else {
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: ConversationCell.reuseIdentifier,
+            for: indexPath) as? ConversationCell else {
             return UITableViewCell()
         }
-        
-        let peer = displayedPeers[indexPath.row]
-        
-        cell.configure(with: peer, recognition: viewModel.recognition(for: peer))
+
+        cell.configure(with: conversations[indexPath.row])
         return cell
     }
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        
-        // В демо-режиме строки некликабельны: за ними нет живых устройств.
-        guard !viewModel.peers.isEmpty else {
+
+        guard indexPath.row < conversations.count else {
             return
         }
-        
-        let peer = viewModel.peers[indexPath.row]
-        
-        switch peer.status {
-        case .connected:
-            openChat(with: peer)
-            
-        case .notConnected:
-            connectToPeer(peer)
-            
-        case .connecting:
-            print("Already connecting to \(peer.displayName)...")
-            showToast("Подключение...")
-            
-        case .failed:
-            print("Peer \(peer.displayName) is unavailable")
-            showToast("Устройство недоступно")
+
+        let conversation = conversations[indexPath.row]
+
+        Task {
+            await viewModel.switchToConversation(with: conversation.peerAddress,
+                                                 named: conversation.peerName)
+
+            navigationController?.pushViewController(
+                ChatViewController(viewModel: viewModel), animated: true
+            )
         }
     }
     

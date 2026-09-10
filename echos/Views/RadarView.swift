@@ -37,6 +37,18 @@ struct RadarView: View {
                     .opacity(rippleOpacity)
             }
 
+            // Остальные. Расстояний у нас нет — ни через релей, ни у
+            // Multipeer без калибровки, — поэтому точки стоят ровно по кругу,
+            // а не «где-то там». Показывать вымышленное расстояние честнее
+            // не показывать вовсе.
+            ForEach(0..<state.nearbyCount, id: \.self) { index in
+                Circle()
+                    .fill(Color.other)
+                    .frame(width: 5, height: 5)
+                    .offset(offset(of: index))
+            }
+            .animation(.easeInOut(duration: 0.4), value: state.nearbyCount)
+
             // Ты. Без свечения — точка и есть точка.
             Circle()
                 .fill(Color.ink)
@@ -49,6 +61,15 @@ struct RadarView: View {
             }
             await breathe()
         }
+    }
+
+    /// Место точки на круге. Первая — сверху, дальше по часовой.
+    private func offset(of index: Int) -> CGSize {
+        let radius = diameter * 0.34
+        let step = 2 * Double.pi / Double(max(state.nearbyCount, 1))
+        let angle = -Double.pi / 2 + step * Double(index)
+
+        return CGSize(width: radius * cos(angle), height: radius * sin(angle))
     }
 
     /// Один круг на воде каждые четыре секунды.
