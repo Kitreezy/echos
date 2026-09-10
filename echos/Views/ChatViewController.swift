@@ -309,37 +309,6 @@ final class ChatViewController: UIViewController {
         view.endEditing(true)
     }
     
-    // MARK: - Onboarding
-    
-    private func showOnboardingAlert() {
-        let alert = UIAlertController(title: "Добро пожаловать в echos!",
-                                     message: "Как вас зовут? Это имя увидят другие устройства поблизости.",
-                                     preferredStyle: .alert)
-        
-        alert.addTextField { textField in
-            textField.placeholder = "Ваше имя"
-            textField.autocapitalizationType = .words
-            textField.returnKeyType = .done
-        }
-        
-        let contunieAction = UIAlertAction(title: "Продолжить", style: .default) { [weak self] _ in
-            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
-                self?.showOnboardingAlert()
-                return
-            }
-            UserSettings.userName = name
-            
-            Task {
-                self?.viewModel.initialize()
-                self?.viewModel.multipeerService?.approvalDelegate = self
-                await self?.viewModel.startDeviceDiscovery()
-            }
-        }
-        alert.addAction(contunieAction)
-        alert.preferredAction = contunieAction
-        present(alert, animated: true)
-    }
-    
     // MARK: - Binding
     
     /// Подписка на @Observable ViewModel через withObservationTracking.
@@ -385,15 +354,6 @@ final class ChatViewController: UIViewController {
             currentTypingPeer = nil
             stopTypingAnimation()
         }
-    }
-    
-    private func restartServiceWithNewName() async {
-        viewModel.multipeerService?.stopDeviceDiscovery()
-        
-        viewModel.initialize()
-        viewModel.multipeerService?.approvalDelegate = self
-        await viewModel.startDeviceDiscovery()
-        print("[ChatViewController] Service restarted with new name: \(UserSettings.displayName)")
     }
     
     // MARK: - Actions

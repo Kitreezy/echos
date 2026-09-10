@@ -53,13 +53,20 @@ enum UserSettings {
         UserDefaults.standard.bool(forKey: demoPeersKey)
     }
     
-    @MainActor
+    /// Имя, под которым нас видят остальные.
+    ///
+    /// Запасного варианта из имени устройства здесь больше нет. С iOS 16
+    /// `UIDevice.current.name` возвращает не имя из настроек, а модель —
+    /// «iPhone» у всех подряд, и весь список собеседников состоял из
+    /// одинаковых строк. Имя спрашивается при первом запуске, до того как
+    /// начнётся поиск, так что подставлять сюда нечего.
     static var displayName: String {
-        if let customName = userName, !customName.isEmpty {
-            return customName
+        guard let name = userName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else {
+            return "Без имени"
         }
-        
-        return DeviceInfo.deviceName
+
+        return name
     }
     /// Сбросить настройки 
     static func rest() {

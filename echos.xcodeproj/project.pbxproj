@@ -11,12 +11,6 @@
 		AA3300000000000000000005 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = AA3300000000000000000004 /* AsyncAlgorithms */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXFileReference section */
-		577A75CE2F4362CB0072CE59 /* echos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = echos.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		AA1100000000000000000002 /* echosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AA2200000000000000000002 /* echosIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
-
 /* Begin PBXContainerItemProxy section */
 		AA110000000000000000000B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -33,6 +27,12 @@
 			remoteInfo = echos;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		577A75CE2F4362CB0072CE59 /* echos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = echos.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA1100000000000000000002 /* echosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA2200000000000000000002 /* echosIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		577A75E02F4362CC0072CE59 /* Exceptions for "echos" folder in "echos" target */ = {
@@ -217,10 +217,10 @@
 			);
 			mainGroup = 577A75C52F4362CB0072CE59;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			packageReferences = (
 				AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
 			);
+			preferredProjectObjectVersion = 77;
 			productRefGroup = 577A75CF2F4362CB0072CE59 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -301,11 +301,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = LJZ97X76W9;
+				DEVELOPMENT_TEAM = B76Y2NFCBM;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = echos/Info.plist;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "echos использует Bluetooth для поиска устройств рядом.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "echos использует локальную сеть для обмена сообщениями.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -313,7 +316,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezyliz.echos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
@@ -328,11 +331,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = LJZ97X76W9;
+				DEVELOPMENT_TEAM = B76Y2NFCBM;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = echos/Info.plist;
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "echos использует Bluetooth для поиска устройств рядом.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "echos использует локальную сеть для обмена сообщениями.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -340,7 +346,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echos;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezyliz.echos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;

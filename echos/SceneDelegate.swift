@@ -15,6 +15,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = (scene as? UIWindowScene) else { return }
         
         let window = UIWindow(windowScene: windowScene)
+
+        // Палитра echos тёмная всегда, а системные части интерфейса —
+        // алерты, меню, клавиатура, статус-бар — рисуются в оформлении
+        // телефона. На светлом телефоне они выходили светлыми поверх тёмного
+        // приложения и выглядели чужими. Оформление задаётся окну целиком:
+        // ставить его на каждый экран значит однажды забыть.
+        window.overrideUserInterfaceStyle = .dark
         
         let discoveryVC = DiscoveryViewController()
         let navigationController = UINavigationController(rootViewController: discoveryVC)

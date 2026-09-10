@@ -27,6 +27,23 @@ final class DiscoveryViewController: UIViewController {
         return label
     }()
 
+    /// Своё имя — под названием приложения, нажатием меняется.
+    ///
+    /// Место выбрано не от нехватки: имя это про вас, и стоять ему там же,
+    /// где имя приложения. Отдельного экрана настроек в echos нет, а прятать
+    /// единственную настройку в меню чужого экрана — верный способ, чтобы её
+    /// не нашли.
+    private lazy var nameButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.contentInsets = .zero
+        config.baseForegroundColor = .ink
+
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     /// Сколько рядом. Пусто — значит ноль, и говорить об этом незачем.
     private let peerCountLabel: UILabel = {
         let label = UILabel()
@@ -108,12 +125,101 @@ final class DiscoveryViewController: UIViewController {
         startAnimations()
         setupAppLifecycleObservers()
 
+        updateNameButton()
+
+        // Поиск не начинается, пока не спросили имя: иначе собеседники
+        // увидят «Без имени», и переименование уже ничего не исправит —
+        // они запомнят вас таким.
         Task {
-            viewModel.initialize()
-            viewModel.multipeerService?.approvalDelegate = self
-            await viewModel.startDeviceDiscovery()
-            radarState.isScanning = true
+            if !UserSettings.hasCompletedOnboarding {
+                await askForName(
+                    title: "Как вас зовут?",
+                    message: "Это имя увидят те, кто окажется рядом."
+                )
+            }
+
+            await startDiscovery()
         }
+    }
+
+    // MARK: - Имя
+
+    private func updateNameButton() {
+        nameButton.configuration?.attributedTitle = AttributedString(
+            UserSettings.displayName,
+            attributes: AttributeContainer([
+                .font: Typography.micro,
+                .kern: Typography.narrow
+            ])
+        )
+    }
+
+    @objc
+    private func changeName() {
+        Task {
+            await askForName(title: "Как вас зовут?",
+                             message: "Имя увидят те, кто окажется рядом.")
+
+            // Транспорт берёт имя при создании, поэтому пересобираем его
+            // целиком. Заодно снимаются старые подписки.
+            viewModel.multipeerService?.stopDeviceDiscovery()
+            await startDiscovery()
+        }
+    }
+
+    private func startDiscovery() async {
+        viewModel.initialize()
+        viewModel.multipeerService?.approvalDelegate = self
+        await viewModel.startDeviceDiscovery()
+        radarState.isScanning = true
+    }
+
+    /// Спрашивает имя и не отпускает, пока не назовут.
+    ///
+    /// Отмены нет намеренно: без имени в echos делать нечего, а «Без имени»
+    /// в списке у собеседника — не тот результат, ради которого стоит давать
+    /// выбор.
+    private func askForName(title: String, message: String) async {
+        await withCheckedContinuation { continuation in
+            presentNameAlert(title: title, message: message) {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func presentNameAlert(title: String,
+                                  message: String,
+                                  completion: @escaping () -> Void) {
+        let alert = UIAlertController(title: title,
+                                      message: message,
+                                      preferredStyle: .alert)
+
+        alert.addTextField { field in
+            field.placeholder = "Имя"
+            field.text = UserSettings.userName
+            field.autocapitalizationType = .words
+            field.returnKeyType = .done
+            field.clearButtonMode = .whileEditing
+        }
+
+        let confirm = UIAlertAction(title: "Готово", style: .default) { [weak self] _ in
+            let entered = alert.textFields?.first?.text?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            guard !entered.isEmpty else {
+                // Пустое имя — не ответ. Спрашиваем заново.
+                self?.presentNameAlert(title: title, message: message, completion: completion)
+                return
+            }
+
+            UserSettings.userName = entered
+            self?.updateNameButton()
+            completion()
+        }
+
+        alert.addAction(confirm)
+        alert.preferredAction = confirm
+        present(alert, animated: true)
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -194,11 +300,17 @@ final class DiscoveryViewController: UIViewController {
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
                                                 constant: Space.margin),
 
+            nameButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor,
+                                            constant: Space.tight),
+            nameButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            nameButton.trailingAnchor.constraint(lessThanOrEqualTo: peerCountLabel.leadingAnchor,
+                                                 constant: -Space.step),
+
             peerCountLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             peerCountLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
                                                      constant: -Space.margin),
 
-            radarView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: Space.ma),
+            radarView.topAnchor.constraint(equalTo: nameButton.bottomAnchor, constant: Space.ma),
             radarView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             radarView.widthAnchor.constraint(equalToConstant: 240),
             radarView.heightAnchor.constraint(equalToConstant: 240),
@@ -227,6 +339,7 @@ final class DiscoveryViewController: UIViewController {
     
     private func setupLayout() {
         view.addSubview(titleLabel)
+        view.addSubview(nameButton)
         view.addSubview(peerCountLabel)
         view.addSubview(radarView)
         view.addSubview(statusLabel)
@@ -234,6 +347,7 @@ final class DiscoveryViewController: UIViewController {
         view.addSubview(wallButton)
 
         wallButton.addTarget(self, action: #selector(showOwnWall), for: .touchUpInside)
+        nameButton.addTarget(self, action: #selector(changeName), for: .touchUpInside)
         
         NSLayoutConstraint.activate(layoutConstraints)
     }
