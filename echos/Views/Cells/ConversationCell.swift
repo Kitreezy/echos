@@ -137,9 +137,15 @@ final class ConversationCell: UITableViewCell {
             : .hairline
     }
 
+    /// Язык задан явно, а не берётся у системы.
+    ///
+    /// Приложение целиком написано по-русски строками в коде, локализации в
+    /// нём нет. Без этой строки на телефоне с английским языком в русском
+    /// списке появлялось «3 sec ago».
     private static let formatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
+        formatter.locale = Locale(identifier: "ru_RU")
         return formatter
     }()
 }
