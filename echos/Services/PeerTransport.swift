@@ -70,6 +70,12 @@ protocol PeerTransport: AnyObject {
     var messageStream: AsyncStream<Addressed<MessagePayload>> { get }
     var typingStream: AsyncStream<Addressed<TypingEvent>> { get }
     var strokeStream: AsyncStream<Addressed<Stroke>> { get }
+
+    /// Адреса тех, кто просит показать свою стену.
+    var wallRequestStream: AsyncStream<String> { get }
+
+    /// Чужая стена целиком, как она есть у владельца.
+    var wallStateStream: AsyncStream<Addressed<[Stroke]>> { get }
     
     /// Состояние связи. Транспорту, у которого нет единого соединения
     /// (Multipeer), сообщать нечего — для него работает пустая реализация
@@ -99,6 +105,14 @@ protocol PeerTransport: AnyObject {
     func sendTypingEvent(_ event: TypingEvent, to address: String) async throws
     /// Росчерк адресный: он предназначен владельцу стены, а не всем вокруг.
     func sendStroke(_ stroke: Stroke, to address: String) async throws
+
+    /// Попросить показать стену. Владелец — источник правды: росчерк,
+    /// отправленный ему в офлайне, до него не дошёл, и узнать об этом можно
+    /// только спросив.
+    func requestWall(from address: String) async throws
+
+    /// Отдать свою стену тому, кто попросил.
+    func sendWall(_ strokes: [Stroke], to address: String) async throws
 }
 
 extension PeerTransport {

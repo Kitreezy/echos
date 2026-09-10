@@ -31,6 +31,8 @@ final class LoopbackTransport: PeerTransport {
     private let messageBroadcast = AsyncBroadcast<Addressed<MessagePayload>>()
     private let typingBroadcast = AsyncBroadcast<Addressed<TypingEvent>>()
     private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
+    private let wallRequestBroadcast = AsyncBroadcast<String>()
+    private let wallStateBroadcast = AsyncBroadcast<Addressed<[Stroke]>>()
 
     /// Сколько раз у потоков запрашивали подписку. Тесту нужно дождаться, пока
     /// конвейер ViewModel действительно встанет на потоки: события, отправленные
@@ -56,15 +58,24 @@ final class LoopbackTransport: PeerTransport {
         strokeBroadcast.stream
     }
 
+    var wallRequestStream: AsyncStream<String> {
+        subscriptionsCreated += 1
+        return wallRequestBroadcast.stream
+    }
+
+    var wallStateStream: AsyncStream<Addressed<[Stroke]>> {
+        wallStateBroadcast.stream
+    }
+
     /// Сколько подписчиков сейчас читают росчерки. Тест ждёт по нему, а не
     /// по времени: событие, отправленное до подписки, теряется.
     var strokeSubscriberCount: Int {
         strokeBroadcast.subscriberCount
     }
 
-    /// Один вызов `consumeTransportEvents()` подписывается на все три потока.
+    /// Один вызов `consumeTransportEvents()` подписывается на четыре потока.
     var pipelinesConnected: Int {
-        subscriptionsCreated / 3
+        subscriptionsCreated / 4
     }
 
     // MARK: - Recorded output
@@ -99,6 +110,14 @@ final class LoopbackTransport: PeerTransport {
         strokeBroadcast.yield(Addressed(sender: sender ?? stroke.author, value: stroke))
     }
 
+    func emit(wallRequestFrom asker: String) {
+        wallRequestBroadcast.yield(asker)
+    }
+
+    func emit(wall strokes: [Stroke], from owner: String) {
+        wallStateBroadcast.yield(Addressed(sender: owner, value: strokes))
+    }
+
     // MARK: - PeerTransport
 
     func startDeviceDiscovery() {
@@ -129,5 +148,30 @@ final class LoopbackTransport: PeerTransport {
 
     func sendStroke(_ stroke: Stroke, to address: String) async throws {
         sentStrokes.append((stroke, address))
+    }
+
+    /// Владелец, до которого не дотянуться. Нужен, чтобы проверить, что
+    /// открытая стена переживает его отсутствие.
+    var unreachableOwners: Set<String> = []
+
+    private(set) var wallRequests: [String] = []
+    private(set) var sentWalls: [(strokes: [Stroke], recipient: String)] = []
+
+    /// Забыть отправленные росчерки: сведение проверяется отдельно от
+    /// рисования, и штрих, ушедший при рисовании, здесь только мешает.
+    func clearSentStrokes() {
+        sentStrokes.removeAll()
+    }
+
+    func requestWall(from address: String) async throws {
+        guard !unreachableOwners.contains(address) else {
+            throw MultipeerError.peerNotFound
+        }
+
+        wallRequests.append(address)
+    }
+
+    func sendWall(_ strokes: [Stroke], to address: String) async throws {
+        sentWalls.append((strokes, address))
     }
 }

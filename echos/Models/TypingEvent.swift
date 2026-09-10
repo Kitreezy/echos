@@ -33,6 +33,8 @@ enum MultipeerDataType: String, Codable {
     case message
     case typing
     case stroke
+    case wallRequest
+    case wallState
 }
 
 struct MultipeerPacket: Codable {
@@ -54,6 +56,18 @@ struct MultipeerPacket: Codable {
         self.type = .stroke
         self.playload = try JSONEncoder().encode(stroke)
     }
+
+    /// Просьба прислать стену. Содержимого у неё нет: важен сам факт и то,
+    /// от кого она пришла.
+    init(wallRequest: Void) {
+        self.type = .wallRequest
+        self.playload = Data()
+    }
+
+    init(wallState strokes: [Stroke]) throws {
+        self.type = .wallState
+        self.playload = try JSONEncoder().encode(strokes)
+    }
     
     func decodeMessage() throws -> MessagePayload {
         try JSONDecoder().decode(MessagePayload.self, from: playload)
@@ -65,5 +79,9 @@ struct MultipeerPacket: Codable {
     
     func decodeStroke() throws -> Stroke {
         try JSONDecoder().decode(Stroke.self, from: playload)
+    }
+
+    func decodeWallState() throws -> [Stroke] {
+        try JSONDecoder().decode([Stroke].self, from: playload)
     }
 }

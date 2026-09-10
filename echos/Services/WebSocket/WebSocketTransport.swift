@@ -37,11 +37,15 @@ final class WebSocketTransport: NSObject {
     private let messageBroadcast = AsyncBroadcast<Addressed<MessagePayload>>()
     private let typingBroadcast = AsyncBroadcast<Addressed<TypingEvent>>()
     private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
+    private let wallRequestBroadcast = AsyncBroadcast<String>()
+    private let wallStateBroadcast = AsyncBroadcast<Addressed<[Stroke]>>()
 
     var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
     var messageStream: AsyncStream<Addressed<MessagePayload>> { messageBroadcast.stream }
     var typingStream: AsyncStream<Addressed<TypingEvent>> { typingBroadcast.stream }
     var strokeStream: AsyncStream<Addressed<Stroke>> { strokeBroadcast.stream }
+    var wallRequestStream: AsyncStream<String> { wallRequestBroadcast.stream }
+    var wallStateStream: AsyncStream<Addressed<[Stroke]>> { wallStateBroadcast.stream }
 
     /// Состояние соединения с релеем — для индикатора в UI.
     var connectionState: WebSocketClient.State { client.state }
@@ -248,6 +252,14 @@ final class WebSocketTransport: NSObject {
         try await send(.stroke(stroke, from: myDisplayName, to: address))
     }
 
+    func requestWall(from address: String) async throws {
+        try await send(.wallRequest(from: myAddress, to: address))
+    }
+
+    func sendWall(_ strokes: [Stroke], to address: String) async throws {
+        try await send(.wallState(strokes, from: myAddress, to: address))
+    }
+
     private func send(_ envelope: RelayEnvelope) async throws {
         await client.send(try envelope.encoded())
     }
@@ -333,6 +345,13 @@ final class WebSocketTransport: NSObject {
 
             case .challenge:
                 resumeChallengeWaiter(with: try envelope.decodeChallenge())
+
+            case .wallRequest:
+                wallRequestBroadcast.yield(envelope.sender)
+
+            case .wallState:
+                wallStateBroadcast.yield(
+                    Addressed(sender: envelope.sender, value: try envelope.decodeWallState()))
 
             case .hello:
                 break  // сервер такое не шлёт

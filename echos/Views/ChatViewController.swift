@@ -230,7 +230,30 @@ final class ChatViewController: UIViewController {
             image: UIImage(systemName: "ellipsis"),
             menu: createMainMenu()
         )
-        navigationItem.rightBarButtonItem = menuButton
+
+        // Стена — половина смысла переписки, а не служебный пункт. В меню
+        // третьим сверху её никто не находил.
+        var items = [menuButton]
+
+        if viewModel.currentConversationPeer != nil {
+            items.append(UIBarButtonItem(
+                image: UIImage(systemName: "scribble.variable"),
+                style: .plain,
+                target: self,
+                action: #selector(openPeerWall)
+            ))
+        }
+
+        navigationItem.rightBarButtonItems = items
+    }
+
+    @objc
+    private func openPeerWall() {
+        guard let address = viewModel.currentConversationPeer else {
+            return
+        }
+
+        showWall(of: address)
     }
 
     // MARK: - Layout
@@ -478,7 +501,7 @@ final class ChatViewController: UIViewController {
     // MARK: - Menu Update
     
     private func updateMenu() {
-        if let menuButton = navigationItem.rightBarButtonItem {
+        if let menuButton = navigationItem.rightBarButtonItems?.first {
             menuButton.menu = createMainMenu()
         }
     }

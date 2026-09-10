@@ -168,6 +168,109 @@ final class WallTests: XCTestCase {
         XCTAssertEqual(point.cgPoint(in: large).x, 150, accuracy: 0.001)
         XCTAssertEqual(point.cgPoint(in: large).y, 300, accuracy: 0.001)
     }
+
+    // MARK: - Сведение с владельцем
+
+    private func stroke(_ id: UUID = UUID(),
+                        author: String,
+                        at second: TimeInterval = 0) -> Stroke {
+        Stroke(id: id,
+               author: author,
+               points: [.init(x: 0, y: 0), .init(x: 0.5, y: 0.5)],
+               createdAt: Date(timeIntervalSince1970: second))
+    }
+
+    func test_openingSomeoneElsesWall_asksTheOwnerForIt() async {
+        _ = await started(makeWall(owner: "Bob"))
+
+        XCTAssertEqual(transport.wallRequests, ["Bob"])
+    }
+
+    /// Своя стена и есть источник правды — спрашивать некого.
+    func test_openingOwnWall_asksNobody() async {
+        _ = await started(makeWall(owner: nil))
+
+        XCTAssertTrue(transport.wallRequests.isEmpty)
+    }
+
+    /// Раньше в чужой стене лежали только собственные штрихи: то, что нарисовали
+    /// там другие, не приходило никогда.
+    func test_ownersWall_bringsInStrokesDrawnByOthers() async {
+        let wall = await started(makeWall(owner: "Bob"))
+        let byCarol = stroke(author: "Carol", at: 1)
+
+        transport.emit(wall: [byCarol], from: "Bob")
+        _ = await waitUntil { !wall.strokes.isEmpty }
+
+        XCTAssertEqual(wall.strokes.map(\.author), ["Carol"])
+        XCTAssertEqual(store.saved.map(\.wallOwner), ["Bob"],
+                       "Пришедшее с чужой стены сохраняется под её владельцем")
+    }
+
+    /// Ключевой случай: рисовали, пока владельца не было, и релей это выбросил.
+    func test_strokeTheOwnerNeverGot_isResentOnReconcile() async {
+        let wall = await started(makeWall(owner: "Bob"))
+        await draw(wall, points: 5)
+
+        let mine = try? XCTUnwrap(wall.strokes.first)
+        transport.clearSentStrokes()
+
+        // У владельца этого штриха нет.
+        transport.emit(wall: [], from: "Bob")
+        _ = await waitUntil { !self.transport.sentStrokes.isEmpty }
+
+        XCTAssertEqual(transport.sentStrokes.map(\.recipient), ["Bob"])
+        XCTAssertEqual(transport.sentStrokes.first?.stroke.id, mine?.id)
+    }
+
+    func test_strokeTheOwnerAlreadyHas_isNotResent() async {
+        let wall = await started(makeWall(owner: "Bob"))
+        await draw(wall, points: 5)
+
+        guard let mine = wall.strokes.first else {
+            return XCTFail("Росчерк не нарисовался")
+        }
+        transport.clearSentStrokes()
+
+        transport.emit(wall: [mine], from: "Bob")
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertTrue(transport.sentStrokes.isEmpty)
+    }
+
+    func test_reconcile_doesNotDuplicateWhatWeAlreadyHave() async {
+        let wall = await started(makeWall(owner: "Bob"))
+        let shared = stroke(author: "Carol", at: 1)
+
+        transport.emit(wall: [shared], from: "Bob")
+        _ = await waitUntil { !wall.strokes.isEmpty }
+
+        transport.emit(wall: [shared], from: "Bob")
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(wall.strokes.count, 1)
+    }
+
+    /// Владельца нет рядом — стена всё равно открывается тем, что есть.
+    /// Терять нарисованное из-за его отсутствия было бы хуже.
+    func test_absentOwner_leavesTheLocalCopyAlone() async {
+        store.preloaded = [stroke(author: "me", at: 1)]
+        transport.unreachableOwners = ["Bob"]
+
+        let wall = await started(makeWall(owner: "Bob"))
+
+        XCTAssertEqual(wall.strokes.count, 1)
+    }
+
+    /// Ответ чужого человека к нашей стене отношения не имеет.
+    func test_wallStateFromSomeoneElse_isIgnored() async {
+        let wall = await started(makeWall(owner: "Bob"))
+
+        transport.emit(wall: [stroke(author: "Carol", at: 1)], from: "Carol")
+        try? await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertTrue(wall.strokes.isEmpty)
+    }
 }
 
 // MARK: - Приём при закрытой стене

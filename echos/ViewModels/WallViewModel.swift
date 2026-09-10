@@ -27,6 +27,7 @@ final class WallViewModel {
     private let store: any StrokeStoring
 
     private var incomingTask: Task<Void, Never>?
+    private var wallStateTask: Task<Void, Never>?
 
     init(owner: String?,
          transport: any PeerTransport,
@@ -41,11 +42,15 @@ final class WallViewModel {
     func start() async {
         await loadHistory()
         observeIncoming()
+        await reconcileWithOwner()
     }
 
     func stop() {
         incomingTask?.cancel()
         incomingTask = nil
+
+        wallStateTask?.cancel()
+        wallStateTask = nil
     }
 
     private func loadHistory() async {
@@ -74,6 +79,82 @@ final class WallViewModel {
             for await incoming in strokes {
                 await self?.receive(incoming.value.by(incoming.sender))
             }
+        }
+    }
+
+    // MARK: - Сведение с владельцем
+
+    /// Спросить у владельца, как его стена выглядит на самом деле.
+    ///
+    /// До этого две копии жили порознь и никогда не сверялись: росчерк,
+    /// отправленный владельцу в офлайне, релей выбрасывал, у вас он оставался,
+    /// а у него не появлялся никогда. И чужого на его стене вы не видели вовсе
+    /// — в вашей копии лежали только собственные штрихи.
+    ///
+    /// Владелец — источник правды. Своя стена сверки не требует: правда и так
+    /// здесь.
+    private func reconcileWithOwner() async {
+        guard let owner else {
+            return
+        }
+
+        do {
+            try await transport.requestWall(from: owner)
+        }
+        catch {
+            // Владельца нет рядом — сверимся в следующий раз. Локальная копия
+            // при этом остаётся: терять нарисованное из-за его отсутствия
+            // было бы хуже, чем показать её неполной.
+            print("[WallViewModel] Owner is away, wall not reconciled: \(error)")
+            return
+        }
+
+        await awaitWallState(from: owner)
+    }
+
+    /// Дождаться ответа и свести обе копии.
+    private func awaitWallState(from owner: String) async {
+        let states = transport.wallStateStream
+
+        wallStateTask = Task { [weak self] in
+            for await incoming in states where incoming.sender == owner {
+                await self?.merge(incoming.value, from: owner)
+                return  // ответ приходит один
+            }
+        }
+    }
+
+    /// Объединить свою копию с копией владельца.
+    ///
+    /// Объединить, а не заменить: у владельца может не быть штрихов, которые
+    /// вы нарисовали, пока его не было. Их же после сверки и досылаем — так
+    /// стена сходится сама, без подтверждений и очередей.
+    private func merge(_ theirs: [Stroke], from owner: String) async {
+        let ownersIDs = Set(theirs.map(\.id))
+        let missing = strokes.filter { $0.author == transport.myAddress
+            && !ownersIDs.contains($0.id) }
+
+        let known = Set(strokes.map(\.id))
+        let arrived = theirs.filter { !known.contains($0.id) }
+
+        strokes = (strokes + arrived).sorted { $0.createdAt < $1.createdAt }
+
+        do {
+            for stroke in arrived {
+                try await store.saveStroke(stroke, wallOwner: owner)
+            }
+
+            for stroke in missing {
+                try await transport.sendStroke(stroke, to: owner)
+            }
+        }
+        catch {
+            print("[WallViewModel] Failed to merge wall: \(error)")
+        }
+
+        if !arrived.isEmpty || !missing.isEmpty {
+            print("[WallViewModel] Wall reconciled: +\(arrived.count) received, "
+                  + "\(missing.count) resent")
         }
     }
 

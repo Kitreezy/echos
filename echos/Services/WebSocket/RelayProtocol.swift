@@ -28,6 +28,10 @@ enum RelayEnvelopeKind: String, Codable, Sendable {
     case typing
     /// В обе стороны: росчерк на стене.
     case stroke
+    /// Просьба прислать свою стену целиком.
+    case wallRequest
+    /// Ответ на неё: стена владельца как она есть у него.
+    case wallState
 }
 
 /// Один человек в комнате.
@@ -110,6 +114,23 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: try JSONEncoder().encode(stroke))
     }
 
+    static func wallRequest(from sender: String,
+                            to recipient: String) -> RelayEnvelope {
+        RelayEnvelope(kind: .wallRequest,
+                      sender: sender,
+                      recipient: recipient,
+                      payload: nil)
+    }
+
+    static func wallState(_ strokes: [Stroke],
+                          from sender: String,
+                          to recipient: String) throws -> RelayEnvelope {
+        RelayEnvelope(kind: .wallState,
+                      sender: sender,
+                      recipient: recipient,
+                      payload: try JSONEncoder().encode(strokes))
+    }
+
     // MARK: - Decoding
 
     /// Вызов лежит в payload как есть: это просто набор байтов,
@@ -135,6 +156,10 @@ struct RelayEnvelope: Codable, Sendable {
 
     func decodeStroke() throws -> Stroke {
         try decode(Stroke.self)
+    }
+
+    func decodeWallState() throws -> [Stroke] {
+        try decode([Stroke].self)
     }
 
     private func decode<T: Decodable>(_ type: T.Type) throws -> T {

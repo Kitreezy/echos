@@ -16,6 +16,8 @@ enum TransportEvent: Sendable {
     case message(Addressed<MessagePayload>)
     case typing(Addressed<TypingEvent>)
     case stroke(Addressed<Stroke>)
+    /// Кто-то открыл вашу стену и просит её показать.
+    case wallRequest(String)
 }
 
 @Observable
@@ -332,8 +334,11 @@ final class ChatViewModel {
         let messages = multipeerService.messageStream.map(TransportEvent.message)
         let typing = multipeerService.typingStream.map(TransportEvent.typing)
         let strokes = multipeerService.strokeStream.map(TransportEvent.stroke)
+        let wallRequests = multipeerService.wallRequestStream.map(TransportEvent.wallRequest)
         
-        for await event in merge(merge(peers, messages), typing, strokes) {
+        for await event in merge(merge(peers, messages),
+                                 merge(typing, strokes),
+                                 wallRequests) {
             switch event {
             case .peers(let discoveredPeers):
                 await handlePeers(discoveredPeers)
@@ -346,6 +351,9 @@ final class ChatViewModel {
                 
             case .stroke(let incoming):
                 await handleIncomingStroke(incoming)
+
+            case .wallRequest(let asker):
+                await answerWallRequest(from: asker)
             }
         }
     }
@@ -369,6 +377,25 @@ final class ChatViewModel {
         }
     }
     
+    /// Ответить на просьбу показать свою стену.
+    ///
+    /// Отвечает приложение, а не экран: спросить могут когда угодно, а стена
+    /// у вас может быть и не открыта. Владелец — единственный, у кого она
+    /// целиком, и молчание здесь означало бы, что собеседник её не увидит.
+    private func answerWallRequest(from asker: String) async {
+        guard let transport = multipeerService else {
+            return
+        }
+
+        do {
+            let mine = try await strokeStore.loadStrokes(wallOwner: nil)
+            try await transport.sendWall(mine, to: asker)
+        }
+        catch {
+            print("[ChatViewModel] Failed to answer wall request from \(asker): \(error)")
+        }
+    }
+
     private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
         let message = incoming.value.toMessage(from: incoming.sender)
         

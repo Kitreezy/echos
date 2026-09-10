@@ -78,6 +78,12 @@ final class MultipeerService: NSObject {
     /// Для росчерков на стене
     private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
     var strokeStream: AsyncStream<Addressed<Stroke>> { strokeBroadcast.stream }
+
+    private let wallRequestBroadcast = AsyncBroadcast<String>()
+    var wallRequestStream: AsyncStream<String> { wallRequestBroadcast.stream }
+
+    private let wallStateBroadcast = AsyncBroadcast<Addressed<[Stroke]>>()
+    var wallStateStream: AsyncStream<Addressed<[Stroke]>> { wallStateBroadcast.stream }
     
     // MARK: - Init
     
@@ -276,6 +282,29 @@ final class MultipeerService: NSObject {
         
         try session.send(data, toPeers: [peerID], with: .reliable)
         print("[Session] Sent stroke to '\(address)' with \(stroke.points.count) points")
+    }
+
+    // MARK: - Wall
+
+    func requestWall(from address: String) async throws {
+        try await sendPacket(MultipeerPacket(wallRequest: ()), to: address)
+        print("[Session] Asked '\(address)' for their wall")
+    }
+
+    func sendWall(_ strokes: [Stroke], to address: String) async throws {
+        try await sendPacket(try MultipeerPacket(wallState: strokes), to: address)
+        print("[Session] Sent own wall (\(strokes.count) strokes) to '\(address)'")
+    }
+
+    private func sendPacket(_ packet: MultipeerPacket, to address: String) async throws {
+        guard let session = session else {
+            throw MultipeerError.noSession
+        }
+
+        let peerID = try connectedPeerID(named: address)
+        let data = try JSONEncoder().encode(packet)
+
+        try session.send(data, toPeers: [peerID], with: .reliable)
     }
     
     // MARK: - Helpers
@@ -496,6 +525,15 @@ extension MultipeerService: MCSessionDelegate {
                     print("[Session] Recived stroke from '\(sender)")
                     let stroke = try packet.decodeStroke()
                     strokeBroadcast.yield(Addressed(sender: sender, value: stroke))
+
+                case .wallRequest:
+                    print("[Session] '\(sender)' asked for the wall")
+                    wallRequestBroadcast.yield(sender)
+
+                case .wallState:
+                    print("[Session] Recived wall from '\(sender)")
+                    let strokes = try packet.decodeWallState()
+                    wallStateBroadcast.yield(Addressed(sender: sender, value: strokes))
                 }
                 
             } catch {

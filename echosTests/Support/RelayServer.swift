@@ -268,7 +268,7 @@ final class RelayServer {
             print("[RelayServer] '\(envelope.sender)' joined")
             broadcastPresence()
 
-        case .message, .typing, .stroke:
+        case .message, .typing, .stroke, .wallRequest, .wallState:
             guard let sender = client.fingerprint else {
                 return  // не представился — не обслуживаем
             }
