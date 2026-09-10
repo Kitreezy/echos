@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Прогон без тега — проверить, что сборка и заметки не сломались.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      # В pbxproj есть кириллица, и без UTF-8 локали xcodeproj падает
+      # на чтении файла ещё до запуска xcodebuild.
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Полная история нужна и для номера сборки, и для changelog.
+          fetch-depth: 0
+
+      - name: Выбрать Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Тесты
+        run: bundle exec fastlane tests
+
+      - name: Сборка
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: bundle exec fastlane package
+
+      - name: Заметки к релизу
+        run: |
+          bundle exec fastlane notes
+          cat build/notes.md
+
+      - name: Публикация
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file build/notes.md \
+            build/*.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: echos-ipa
+          path: build/*.ipa
+          retention-days: 14

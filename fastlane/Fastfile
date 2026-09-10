@@ -1,0 +1,139 @@
+default_platform(:ios)
+
+# Лейны выполняются с рабочей директорией fastlane/, поэтому все пути
+# считаются от корня репозитория, а не от текущей папки.
+ROOT    = File.expand_path("..", __dir__)
+PROJECT = File.join(ROOT, "echos.xcodeproj")
+SCHEME  = "echos"
+BUILD   = File.join(ROOT, "build")
+
+platform :ios do
+  desc "Тесты на симуляторе"
+  lane :tests do
+    run_tests(
+      project: PROJECT,
+      scheme: SCHEME,
+      # Устройство не зашито: локально симуляторы у всех разные, в CI
+      # scan возьмёт первый подходящий сам. Переопределяется SIMULATOR.
+      devices: ENV["SIMULATOR"] ? [ENV["SIMULATOR"]] : nil,
+      result_bundle: true,
+      output_directory: "#{BUILD}/test_output",
+      output_types: "junit",
+      clean: false
+    )
+  end
+
+  desc "Неподписанный .ipa — то, что отдаётся артефактом релиза"
+  lane :package do
+    version = release_version
+    build   = build_number
+
+    UI.message("Собираю echos #{version} (#{build})")
+
+    archive = "#{BUILD}/echos.xcarchive"
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Release",
+      archive_path: archive,
+      output_directory: BUILD,
+      skip_codesigning: true,
+      # Без сертификата экспортировать нечего, поэтому .ipa собирается
+      # вручную из архива парой строк ниже.
+      skip_package_ipa: true,
+      # Версия и номер сборки не пишутся в project.pbxproj: рабочая копия
+      # в CI остаётся чистой, а число берётся из истории.
+      xcargs: [
+        "MARKETING_VERSION=#{version}",
+        "CURRENT_PROJECT_VERSION=#{build}",
+        "CODE_SIGNING_ALLOWED=NO",
+        "CODE_SIGNING_REQUIRED=NO"
+      ].join(" ")
+    )
+
+    app = Dir["#{archive}/Products/Applications/*.app"].first
+    UI.user_error!("В архиве нет .app — смотри лог сборки") if app.nil?
+
+    ipa = "#{BUILD}/echos-#{version}.ipa"
+    Dir.chdir(File.dirname(app)) do
+      sh("rm -rf Payload '#{ipa}'")
+      sh("mkdir Payload && cp -R '#{File.basename(app)}' Payload/")
+      sh("zip -qry '#{ipa}' Payload")
+      sh("rm -rf Payload")
+    end
+
+    UI.success("Готово: #{ipa}")
+    ipa
+  end
+
+  desc "Заливка в TestFlight. Нужен платный Apple Developer Program"
+  lane :beta do
+    unless ENV["ASC_KEY_ID"]
+      UI.user_error!(
+        "Нет ключа App Store Connect. Лейн включается, когда появится платный " \
+        "аккаунт: ASC_KEY_ID, ASC_ISSUER_ID и ASC_KEY_P8 (содержимое .p8)."
+      )
+    end
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_P8"),
+      in_house: false
+    )
+
+    version = release_version
+    build   = build_number
+
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: BUILD,
+      output_name: "echos-#{version}.ipa",
+      xcargs: "MARKETING_VERSION=#{version} CURRENT_PROJECT_VERSION=#{build}"
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: "#{BUILD}/echos-#{version}.ipa",
+      changelog: notes,
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Что изменилось с прошлого тега. Кладётся в build/notes.md"
+  lane :notes do
+    # Предыдущий тег, а если тегов ещё нет — самый первый коммит.
+    base = sh(
+      "git describe --tags --abbrev=0 HEAD^ 2>/dev/null || " \
+      "git rev-list --max-parents=0 HEAD | tail -1",
+      log: false
+    ).strip
+
+    text = changelog_from_git_commits(
+      between: [base, "HEAD"],
+      pretty: "- %s",
+      merge_commit_filtering: "exclude_merges"
+    )
+    text = "- без заметных изменений" if text.to_s.strip.empty?
+
+    path = "#{BUILD}/notes.md"
+    FileUtils.mkdir_p(File.dirname(path))
+    File.write(path, text)
+
+    text
+  end
+end
+
+# Версия берётся из тега v1.2.3; вне тега это метка для локальной сборки.
+def release_version
+  tag = ENV["RELEASE_TAG"] || `git describe --tags --exact-match 2>/dev/null`.strip
+  tag.empty? ? "0.0.0" : tag.delete_prefix("v")
+end
+
+# Номер сборки монотонно растёт вместе с историей и не требует коммита.
+def build_number
+  `git rev-list --count HEAD`.strip
+end

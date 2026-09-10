@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: macos-latest
+    env:
+      # В pbxproj есть кириллица, и без UTF-8 локали xcodeproj падает
+      # на чтении файла ещё до запуска xcodebuild.
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+
+      # Раннер несёт несколько версий Xcode; берётся старшая, чтобы не
+      # переписывать путь при каждом обновлении образа.
+      - name: Выбрать Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Xcode: $latest"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Тесты
+        run: bundle exec fastlane tests
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output
+          path: build/test_output
+          retention-days: 7
