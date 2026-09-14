@@ -35,6 +35,10 @@ enum MultipeerDataType: String, Codable {
     case stroke
     case wallRequest
     case wallState
+    /// Случайная строка, которую просим подписать.
+    case challenge
+    /// Ответ на неё: открытый ключ и подпись.
+    case hello
 }
 
 struct MultipeerPacket: Codable {
@@ -68,6 +72,17 @@ struct MultipeerPacket: Codable {
         self.type = .wallState
         self.playload = try JSONEncoder().encode(strokes)
     }
+
+    /// Вызов лежит в payload как есть: это просто набор байтов.
+    init(challenge nonce: Data) {
+        self.type = .challenge
+        self.playload = nonce
+    }
+
+    init(hello: HelloPayload) throws {
+        self.type = .hello
+        self.playload = try JSONEncoder().encode(hello)
+    }
     
     func decodeMessage() throws -> MessagePayload {
         try JSONDecoder().decode(MessagePayload.self, from: playload)
@@ -83,5 +98,13 @@ struct MultipeerPacket: Codable {
 
     func decodeWallState() throws -> [Stroke] {
         try JSONDecoder().decode([Stroke].self, from: playload)
+    }
+
+    func decodeChallenge() -> Data {
+        playload
+    }
+
+    func decodeHello() throws -> HelloPayload {
+        try JSONDecoder().decode(HelloPayload.self, from: playload)
     }
 }
