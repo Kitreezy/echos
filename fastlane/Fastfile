@@ -66,6 +66,11 @@ platform :ios do
     ipa
   end
 
+  desc "Подпись архива вручную сертификатом из keychain. Только на маке разработчика"
+  lane :sign do
+    sh("#{ROOT}/scripts/sign.sh")
+  end
+
   desc "Заливка в TestFlight. Нужен платный Apple Developer Program"
   lane :beta do
     unless ENV["ASC_KEY_ID"]
