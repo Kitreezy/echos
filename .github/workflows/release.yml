@@ -24,10 +24,16 @@ jobs:
           fetch-depth: 0
 
       - name: Выбрать Xcode
+        id: xcode
         run: |
           latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$latest"
           xcodebuild -version
+          echo "version=$(xcodebuild -version | head -1 | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/xcode-cache
+        with:
+          xcode: ${{ steps.xcode.outputs.version }}
 
       - uses: ruby/setup-ruby@v1
         with:

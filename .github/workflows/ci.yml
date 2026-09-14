@@ -23,18 +23,42 @@ jobs:
       # Раннер несёт несколько версий Xcode; берётся старшая, чтобы не
       # переписывать путь при каждом обновлении образа.
       - name: Выбрать Xcode
+        id: xcode
         run: |
           latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           echo "Xcode: $latest"
           sudo xcode-select -s "$latest"
           xcodebuild -version
+          echo "version=$(xcodebuild -version | head -1 | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/xcode-cache
+        id: cache
+        with:
+          xcode: ${{ steps.xcode.outputs.version }}
 
       - uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
 
       - name: Тесты
-        run: bundle exec fastlane tests
+        run: |
+          start=$(date +%s)
+          bundle exec fastlane tests
+          echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+        id: tests
+
+      # Итог виден на странице прогона без раскрытия логов: попал ли кэш
+      # и сколько заняли тесты. По этим цифрам и сравниваются прогоны.
+      - name: Сводка
+        if: always()
+        run: |
+          {
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Пакеты SPM из кэша | ${{ steps.cache.outputs.spm-hit || 'нет' }} |"
+            echo "| DerivedData из кэша | ${{ steps.cache.outputs.derived-data-key || 'нет' }} |"
+            echo "| Тесты, сек | ${{ steps.tests.outputs.seconds || '—' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()

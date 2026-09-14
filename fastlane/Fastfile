@@ -7,6 +7,11 @@ PROJECT = File.join(ROOT, "echos.xcodeproj")
 SCHEME  = "echos"
 BUILD   = File.join(ROOT, "build")
 
+# Пакеты и DerivedData лежат в известных папках, а не в ~/Library:
+# в CI их кэшируют между прогонами, и путь должен быть предсказуемым.
+DERIVED_DATA = File.join(BUILD, "DerivedData")
+PACKAGES     = File.join(BUILD, "SourcePackages")
+
 platform :ios do
   desc "Тесты на симуляторе"
   lane :tests do
@@ -16,6 +21,8 @@ platform :ios do
       # Устройство не зашито: локально симуляторы у всех разные, в CI
       # scan возьмёт первый подходящий сам. Переопределяется SIMULATOR.
       devices: ENV["SIMULATOR"] ? [ENV["SIMULATOR"]] : nil,
+      derived_data_path: DERIVED_DATA,
+      cloned_source_packages_path: PACKAGES,
       result_bundle: true,
       output_directory: "#{BUILD}/test_output",
       output_types: "junit",
@@ -37,6 +44,8 @@ platform :ios do
       configuration: "Release",
       archive_path: archive,
       output_directory: BUILD,
+      derived_data_path: DERIVED_DATA,
+      cloned_source_packages_path: PACKAGES,
       skip_codesigning: true,
       # Без сертификата экспортировать нечего, поэтому .ipa собирается
       # вручную из архива парой строк ниже.
