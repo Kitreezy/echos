@@ -49,6 +49,8 @@ struct RelayParticipant: Codable, Sendable {
     let publicKey: Data?
     let agreementKey: Data?
     let agreementProof: Data?
+    let sessionKey: Data?
+    let sessionProof: Data?
 
     init(id: String, name: String, keys: KeyBundle? = nil) {
         self.id = id
@@ -56,6 +58,8 @@ struct RelayParticipant: Codable, Sendable {
         self.publicKey = keys?.publicKey
         self.agreementKey = keys?.agreementKey
         self.agreementProof = keys?.agreementProof
+        self.sessionKey = keys?.sessionKey
+        self.sessionProof = keys?.sessionProof
     }
 
     /// Личность, если ключи на месте, сходятся между собой и с адресом.
@@ -63,13 +67,16 @@ struct RelayParticipant: Codable, Sendable {
     /// Сверка отпечатка с `id` обязательна: иначе релей мог бы поставить
     /// рядом с чужим адресом свои ключи.
     var verifiedIdentity: PeerIdentity? {
-        guard let publicKey, let agreementKey, let agreementProof else {
+        guard let publicKey, let agreementKey, let agreementProof,
+              let sessionKey, let sessionProof else {
             return nil
         }
 
         let bundle = KeyBundle(publicKey: publicKey,
                                agreementKey: agreementKey,
-                               agreementProof: agreementProof)
+                               agreementProof: agreementProof,
+                               sessionKey: sessionKey,
+                               sessionProof: sessionProof)
 
         guard let identity = bundle.verified(), identity.fingerprint == id else {
             return nil
@@ -106,8 +113,9 @@ struct RelayEnvelope: Codable, Sendable {
 
     static func hello(from sender: String,
                       answering challenge: Data,
-                      as identity: DeviceIdentity) throws -> RelayEnvelope {
-        let proof = try HelloPayload(answering: challenge, as: identity)
+                      as identity: DeviceIdentity,
+                      session: SessionKey) throws -> RelayEnvelope {
+        let proof = try HelloPayload(answering: challenge, as: identity, session: session)
 
         return RelayEnvelope(kind: .hello,
                              sender: sender,
@@ -230,26 +238,46 @@ struct HelloPayload: Codable, Sendable {
     let signature: Data
     let agreementKey: Data
     let agreementProof: Data
+    let sessionKey: Data
+    let sessionProof: Data
 
-    init(answering challenge: Data, as identity: DeviceIdentity) throws {
-        let bundle = try identity.keyBundle()
+    init(answering challenge: Data, as identity: DeviceIdentity, session: SessionKey) throws {
+        let bundle = try identity.keyBundle(session: session)
         self.publicKey = bundle.publicKey
         self.signature = try identity.signature(for: challenge)
         self.agreementKey = bundle.agreementKey
         self.agreementProof = bundle.agreementProof
+        self.sessionKey = bundle.sessionKey
+        self.sessionProof = bundle.sessionProof
     }
 
     /// Собрать вручную. Нужно тестам, которые проверяют, что подделка
     /// не проходит.
-    init(publicKey: Data, signature: Data, agreementKey: Data, agreementProof: Data) {
+    init(publicKey: Data, signature: Data,
+         agreementKey: Data, agreementProof: Data,
+         sessionKey: Data, sessionProof: Data) {
         self.publicKey = publicKey
         self.signature = signature
         self.agreementKey = agreementKey
         self.agreementProof = agreementProof
+        self.sessionKey = sessionKey
+        self.sessionProof = sessionProof
+    }
+
+    /// Тот же ответ, но с другими ключами. Для тестов на подмену.
+    func replacing(agreementKey: Data? = nil, agreementProof: Data? = nil,
+                   sessionKey: Data? = nil, sessionProof: Data? = nil) -> HelloPayload {
+        HelloPayload(publicKey: publicKey, signature: signature,
+                     agreementKey: agreementKey ?? self.agreementKey,
+                     agreementProof: agreementProof ?? self.agreementProof,
+                     sessionKey: sessionKey ?? self.sessionKey,
+                     sessionProof: sessionProof ?? self.sessionProof)
     }
 
     var keyBundle: KeyBundle {
-        KeyBundle(publicKey: publicKey, agreementKey: agreementKey, agreementProof: agreementProof)
+        KeyBundle(publicKey: publicKey,
+                  agreementKey: agreementKey, agreementProof: agreementProof,
+                  sessionKey: sessionKey, sessionProof: sessionProof)
     }
 }
 

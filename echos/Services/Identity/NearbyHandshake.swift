@@ -10,7 +10,9 @@
 //  — всё это рядом работало на доверии к имени.
 //
 //  Порядок тот же, что и с сервером: открытый ключ объявляется при обнаружении,
-//  а подтверждается подписью под случайной строкой уже внутри сессии.
+//  а подтверждается подписью под случайной строкой уже внутри сессии. Вместе
+//  с ответом приходят ключи соглашения — статический и сессионный, оба
+//  подписанные тем же ключом.
 //
 
 import CryptoKit
@@ -61,8 +63,11 @@ enum NearbyHandshake {
         return hello.keyBundle.verified()
     }
 
-    /// Ответ на чужой вызов.
-    static func answer(to nonce: Data, as identity: DeviceIdentity) throws -> HelloPayload {
-        try HelloPayload(answering: nonce, as: identity)
+    /// Ответ на чужой вызов. Сессионный ключ — тот, что заведён на эту
+    /// сессию с этим устройством: он же пойдёт в вывод ключа переписки.
+    static func answer(to nonce: Data,
+                       as identity: DeviceIdentity,
+                       session: SessionKey) throws -> HelloPayload {
+        try HelloPayload(answering: nonce, as: identity, session: session)
     }
 }

@@ -65,20 +65,22 @@ struct DeviceIdentity: Sendable {
         try privateKey.signature(for: challenge)
     }
 
-    /// Чем представляемся: оба открытых ключа и доказательство, что ключ
-    /// соглашения принадлежит этой же личности.
+    /// Чем представляемся в этой сессии: открытые ключи и доказательства,
+    /// что ключи соглашения принадлежат этой же личности.
     ///
     /// Подписывается не голый ключ, а строка с префиксом: вызовы, которые мы
     /// подписываем для кого угодно, — тоже 32 случайных байта, и без префикса
     /// чужой «вызов» мог бы оказаться чужим ключом соглашения с нашей
     /// подписью под ним.
-    func keyBundle() throws -> KeyBundle {
+    func keyBundle(session: SessionKey) throws -> KeyBundle {
         KeyBundle(publicKey: publicKey,
                   agreementKey: agreementKey,
-                  agreementProof: try privateKey.signature(for: KeyBundle.bindingMessage(for: agreementKey)))
+                  agreementProof: try privateKey.signature(for: KeyBundle.bindingMessage(for: agreementKey)),
+                  sessionKey: session.publicKey,
+                  sessionProof: session.proof)
     }
 
-    /// Общий секрет с собеседником — сырой, до вывода ключа шифрования.
+    /// Статическая часть общего секрета — сырая, до вывода ключа шифрования.
     func sharedSecret(with peer: PeerIdentity) throws -> SharedSecret {
         let theirKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: peer.agreementKey)
         return try agreementPrivateKey.sharedSecretFromKeyAgreement(with: theirKey)
