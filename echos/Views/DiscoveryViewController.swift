@@ -202,7 +202,8 @@ final class DiscoveryViewController: UIViewController {
         let sheet = UIAlertController(
             title: "Как держать связь",
             message: "Рядом — напрямую между устройствами, без интернета, "
-                   + "метров на сто. Через сервер — с кем угодно, где есть сеть.",
+                   + "метров на сто. Через сервер — с кем угодно, где есть сеть; "
+                   + "кто рядом, останется рядом.",
             preferredStyle: .actionSheet
         )
 
@@ -210,7 +211,7 @@ final class DiscoveryViewController: UIViewController {
             self?.setUsesRelay(false)
         })
 
-        sheet.addAction(UIAlertAction(title: "Через сервер", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: "Рядом и через сервер", style: .default) { [weak self] _ in
             self?.setUsesRelay(true)
         })
 

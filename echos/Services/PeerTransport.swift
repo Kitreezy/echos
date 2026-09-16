@@ -138,7 +138,8 @@ extension MultipeerService: PeerTransport {}
 enum TransportKind: Equatable {
     /// Только те, кто рядом: MultipeerConnectivity, без интернета.
     case nearby
-    /// Через сервер: видно собеседников из любой сети.
+    /// Через сервер — и рядом тоже. Сервер не заменяет прямую связь, а
+    /// добавляется к ней: кто рядом, тот рядом, остальные через релей.
     case relay(URL)
 }
 
@@ -164,8 +165,9 @@ enum PeerTransportFactory {
     static func make() -> any PeerTransport {
         switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
         case .relay(let url):
-            print("[PeerTransportFactory] Relay transport: \(url)")
-            return WebSocketTransport(url: url)
+            print("[PeerTransportFactory] Nearby + relay transport: \(url)")
+            return CompositeTransport(nearby: MultipeerService(),
+                                      relay: WebSocketTransport(url: url))
 
         case .nearby:
             print("[PeerTransportFactory] Multipeer transport")

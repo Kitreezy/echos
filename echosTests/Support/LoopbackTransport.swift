@@ -33,6 +33,7 @@ final class LoopbackTransport: PeerTransport {
     private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
     private let wallRequestBroadcast = AsyncBroadcast<String>()
     private let wallStateBroadcast = AsyncBroadcast<Addressed<[Stroke]>>()
+    private let connectionStateBroadcast = AsyncBroadcast<TransportConnectionState>()
 
     /// Сколько раз у потоков запрашивали подписку. Тесту нужно дождаться, пока
     /// конвейер ViewModel действительно встанет на потоки: события, отправленные
@@ -65,6 +66,12 @@ final class LoopbackTransport: PeerTransport {
 
     var wallStateStream: AsyncStream<Addressed<[Stroke]>> {
         wallStateBroadcast.stream
+    }
+
+    /// По умолчанию у транспорта состояния нет, как у Multipeer. Тест,
+    /// изображающий релей, подаёт его через `emit(connectionState:)`.
+    var connectionStateUpdates: AsyncStream<TransportConnectionState> {
+        connectionStateBroadcast.stream
     }
 
     /// Сколько подписчиков сейчас читают росчерки. Тест ждёт по нему, а не
@@ -116,6 +123,10 @@ final class LoopbackTransport: PeerTransport {
 
     func emit(wall strokes: [Stroke], from owner: String) {
         wallStateBroadcast.yield(Addressed(sender: owner, value: strokes))
+    }
+
+    func emit(connectionState: TransportConnectionState) {
+        connectionStateBroadcast.yield(connectionState)
     }
 
     // MARK: - PeerTransport
