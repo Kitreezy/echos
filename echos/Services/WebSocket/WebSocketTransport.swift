@@ -267,11 +267,7 @@ final class WebSocketTransport: NSObject {
     // MARK: - Messaging
 
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
-        guard let cipher = ciphers[address] else {
-            throw RelayError.noCipher(address)
-        }
-
-        try await sendSealed(try cipher.seal(payload, from: myAddress, to: address), to: address)
+        try await sendSealed(try seal(payload, kind: .message, to: address), to: address)
     }
 
     /// Отправить уже запечатанное. Отдельно от `sendMessage`, чтобы можно
@@ -291,7 +287,8 @@ final class WebSocketTransport: NSObject {
     }
 
     func sendStroke(_ stroke: Stroke, to address: String) async throws {
-        try await send(.stroke(stroke, from: myDisplayName, to: address))
+        try await send(.stroke(try seal(stroke, kind: .stroke, to: address),
+                               from: myDisplayName, to: address))
     }
 
     func requestWall(from address: String) async throws {
@@ -299,7 +296,8 @@ final class WebSocketTransport: NSObject {
     }
 
     func sendWall(_ strokes: [Stroke], to address: String) async throws {
-        try await send(.wallState(strokes, from: myAddress, to: address))
+        try await send(.wallState(try seal(strokes, kind: .wall, to: address),
+                                  from: myAddress, to: address))
     }
 
     private func send(_ envelope: RelayEnvelope) async throws {
@@ -381,7 +379,8 @@ final class WebSocketTransport: NSObject {
                 updatePeers(try envelope.decodePresence())
 
             case .message:
-                let payload = try open(try envelope.decodeMessage(), from: envelope.sender)
+                let payload = try open(try envelope.decodeMessage(),
+                                       as: MessagePayload.self, kind: .message, from: envelope.sender)
                 messageBroadcast.yield(Addressed(sender: envelope.sender, value: payload))
 
             case .typing:
@@ -389,8 +388,9 @@ final class WebSocketTransport: NSObject {
                     Addressed(sender: envelope.sender, value: try envelope.decodeTyping()))
 
             case .stroke:
-                strokeBroadcast.yield(
-                    Addressed(sender: envelope.sender, value: try envelope.decodeStroke()))
+                let stroke = try open(try envelope.decodeStroke(),
+                                      as: Stroke.self, kind: .stroke, from: envelope.sender)
+                strokeBroadcast.yield(Addressed(sender: envelope.sender, value: stroke))
 
             case .challenge:
                 resumeChallengeWaiter(with: try envelope.decodeChallenge())
@@ -399,8 +399,9 @@ final class WebSocketTransport: NSObject {
                 wallRequestBroadcast.yield(envelope.sender)
 
             case .wallState:
-                wallStateBroadcast.yield(
-                    Addressed(sender: envelope.sender, value: try envelope.decodeWallState()))
+                let strokes = try open(try envelope.decodeWallState(),
+                                       as: [Stroke].self, kind: .wall, from: envelope.sender)
+                wallStateBroadcast.yield(Addressed(sender: envelope.sender, value: strokes))
 
             case .hello:
                 break  // сервер такое не шлёт
@@ -411,24 +412,36 @@ final class WebSocketTransport: NSObject {
         }
     }
 
+    /// Запечатать для собеседника — тем шифром, что есть, даже без сети:
+    /// конверт встанет в очередь и уйдёт после переподключения.
+    private func seal<T: Encodable>(_ value: T, kind: SealedKind, to address: String) throws -> SealedPayload {
+        guard let cipher = ciphers[address] else {
+            throw RelayError.noCipher(address)
+        }
+        return try cipher.seal(value, kind: kind, from: myAddress, to: address)
+    }
+
     /// Открыть текущим шифром, а если не вышло — прошлым.
     ///
     /// Не открылось ни тем, ни другим — значит, не от него или не нам.
     /// Открытый текст от старой сборки сюда тоже не пройдёт, и это верно:
     /// принимать его — принимать подделку от кого угодно.
-    private func open(_ sealed: SealedPayload, from sender: String) throws -> MessagePayload {
+    private func open<T: Decodable>(_ sealed: SealedPayload,
+                                    as type: T.Type,
+                                    kind: SealedKind,
+                                    from sender: String) throws -> T {
         guard let cipher = ciphers[sender] else {
             throw RelayError.noCipher(sender)
         }
 
         do {
-            return try cipher.open(sealed, as: MessagePayload.self, from: sender, to: myAddress)
+            return try cipher.open(sealed, as: type, kind: kind, from: sender, to: myAddress)
         }
         catch {
             guard let previous = previousCiphers[sender] else {
                 throw error
             }
-            return try previous.open(sealed, as: MessagePayload.self, from: sender, to: myAddress)
+            return try previous.open(sealed, as: type, kind: kind, from: sender, to: myAddress)
         }
     }
 
