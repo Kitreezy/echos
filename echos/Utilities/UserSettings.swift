@@ -12,6 +12,14 @@ enum UserSettings {
     private static let userNameKey = "echos_user_name"
     private static let relayURLKey = "echos_relay_url"
     private static let demoPeersKey = "echos_demo_peers"
+    private static let usesRelayKey = "echos_uses_relay"
+
+    /// Куда идти, если человек выбрал дальнюю связь и не назвал свой адрес.
+    ///
+    /// Зашит в приложение намеренно: спрашивать у человека адрес вебсокета —
+    /// значит сделать дальнюю связь доступной только тем, кто знает, что
+    /// такое вебсокет.
+    static let defaultRelayURL = URL(string: "wss://echos-relay.onrender.com/ws")!
     
     static var userName: String? {
         get {
@@ -26,9 +34,27 @@ enum UserSettings {
         userName != nil
     }
     
-    /// Адрес WebSocket-релея. Пусто — работаем через MultipeerConnectivity,
-    /// то есть только с устройствами рядом. Задан — идём через релей и видим
-    /// собеседников из любой сети.
+    /// Идти ли через релей.
+    ///
+    /// Выключено — работаем через MultipeerConnectivity, то есть только с
+    /// теми, кто рядом. Включено — идём через сервер и видим собеседников из
+    /// любой сети.
+    ///
+    /// По умолчанию выключено: echos прежде всего про тех, кто рядом, а
+    /// дальняя связь требует интернета и чужого сервера. Это выбор человека,
+    /// а не наше решение за него.
+    static var usesRelay: Bool {
+        get {
+            UserDefaults.standard.bool(forKey: usesRelayKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: usesRelayKey)
+        }
+    }
+
+    /// Свой адрес релея вместо зашитого. Задаётся аргументом запуска в схеме:
+    /// `-echos_relay_url ws://имя-мака.local:8080/ws` — так проверяют на
+    /// поднятом рядом сервере, не трогая боевой.
     static var relayURL: URL? {
         get {
             guard let raw = UserDefaults.standard.string(forKey: relayURLKey),
@@ -73,5 +99,6 @@ enum UserSettings {
         UserDefaults.standard.removeObject(forKey: userNameKey)
         UserDefaults.standard.removeObject(forKey: relayURLKey)
         UserDefaults.standard.removeObject(forKey: demoPeersKey)
+        UserDefaults.standard.removeObject(forKey: usesRelayKey)
     }
 }

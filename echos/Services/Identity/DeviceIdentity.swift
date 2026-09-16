@@ -29,8 +29,12 @@ struct DeviceIdentity: Sendable {
     /// Само по себе ничего не защищает, но по нему видно, что «Bob» сегодня
     /// и «Bob» вчера — один человек.
     var fingerprint: String {
-        let digest = SHA256.hash(data: publicKey)
-        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+        Self.fingerprint(of: publicKey)
+    }
+
+    /// Отпечаток чужого ключа — тот же, что считает релей.
+    static func fingerprint(of publicKey: Data) -> String {
+        SHA256.hash(data: publicKey).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     private let privateKey: Curve25519.Signing.PrivateKey
