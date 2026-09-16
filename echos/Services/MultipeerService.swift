@@ -68,6 +68,10 @@ final class MultipeerService: NSObject {
     /// обслуживать его нельзя: неизвестно, кто он.
     private var verifiedPeers: Set<MCPeerID> = []
 
+    /// Шифр переписки с каждым подтверждённым. Заводится в момент
+    /// рукопожатия — тогда же, когда становится известен ключ соглашения.
+    private var ciphers: [MCPeerID: ConversationCipher] = [:]
+
     /// Свой ключ. Тот же, которым подписываемся на релее: личность у
     /// устройства одна, независимо от того, как идёт связь.
     private let identity: DeviceIdentity?
@@ -267,8 +271,13 @@ final class MultipeerService: NSObject {
         }
         
         let peerID = try connectedPeerID(named: address)
+
+        guard let cipher = ciphers[peerID] else {
+            throw MultipeerError.noCipher
+        }
         
-        let packet = try MultipeerPacket(message: payload)
+        let sealed = try cipher.seal(payload, from: myAddress, to: address)
+        let packet = try MultipeerPacket(message: sealed)
         let data = try JSONEncoder().encode(packet)
         
         try session.send(data, toPeers: [peerID], with: .reliable)
@@ -368,17 +377,25 @@ final class MultipeerService: NSObject {
             return  // мы его ни о чём не спрашивали
         }
 
-        guard let address = NearbyHandshake.verify(hello: hello,
-                                                   nonce: nonce,
-                                                   advertised: advertisedKeys[peerID]) else {
+        guard let peer = NearbyHandshake.verify(hello: hello,
+                                                nonce: nonce,
+                                                advertised: advertisedKeys[peerID]) else {
             print("[Session] '\(peerID.displayName)' failed the challenge")
             return
         }
 
+        // Шифр — часть рукопожатия: собеседник без него не подтверждён.
+        guard let identity, let cipher = try? ConversationCipher(identity: identity, peer: peer) else {
+            print("[Session] No cipher for '\(peerID.displayName)'")
+            return
+        }
+
+        let address = peer.fingerprint
         issuedNonces.removeValue(forKey: peerID)
         addresses[peerID] = address
         discoveredPeerIDs[address] = peerID
         verifiedPeers.insert(peerID)
+        ciphers[peerID] = cipher
 
         print("[Session] '\(peerID.displayName)' confirmed (\(address))")
         emitPeers()
@@ -562,6 +579,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             advertisedKeys.removeValue(forKey: peerID)
             issuedNonces.removeValue(forKey: peerID)
             verifiedPeers.remove(peerID)
+            ciphers.removeValue(forKey: peerID)
             connectedPeers.remove(peerID)
             
             peerRSSI.removeValue(forKey: peerID)
@@ -594,6 +612,9 @@ extension MultipeerService: MCSessionDelegate {
                 connectedPeers.remove(peerID)
                 connectingPeers.remove(peerID)
                 verifiedPeers.remove(peerID)
+                // Новая сессия — новое рукопожатие и новый шифр: ключ у
+                // собеседника мог смениться, пока его не было.
+                ciphers.removeValue(forKey: peerID)
                 issuedNonces.removeValue(forKey: peerID)
                 
             case .connecting:
@@ -655,8 +676,18 @@ extension MultipeerService: MCSessionDelegate {
 
                 switch packet.type {
                 case .message:
+                    guard let cipher = ciphers[peerID] else {
+                        print("[Session] No cipher for '\(sender)', message dropped")
+                        return
+                    }
+                    // Открытый текст от старой сборки здесь не разберётся —
+                    // и правильно: принимать его значило бы принимать
+                    // подделку от кого угодно.
+                    let payload = try cipher.open(try packet.decodeMessage(),
+                                                  as: MessagePayload.self,
+                                                  from: sender,
+                                                  to: myAddress)
                     print("[Session] Recived message from '\(sender)")
-                    let payload = try packet.decodeMessage()
                     messageBroadcast.yield(Addressed(sender: sender, value: payload))
                     
                 case .typing:
@@ -721,6 +752,9 @@ enum MultipeerError: LocalizedError {
     case noPeers
     case sendFailed
     case peerNotFound
+    /// Собеседник подтверждён, а шифра нет. Не должно случаться: шифр
+    /// заводится в момент подтверждения.
+    case noCipher
     
     var errorDescription: String? {
         switch self {
@@ -735,6 +769,9 @@ enum MultipeerError: LocalizedError {
             
         case .peerNotFound:
             return "Устройство не найдено"
+
+        case .noCipher:
+            return "Нет ключа переписки с этим устройством"
         }
     }
 }

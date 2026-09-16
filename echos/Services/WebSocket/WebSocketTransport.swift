@@ -71,6 +71,11 @@ final class WebSocketTransport: NSObject {
 
     /// Ключ, которым подписывается рукопожатие.
     private let identity: DeviceIdentity?
+
+    /// Шифр переписки с каждым, кто сейчас на релее. Пересобирается на
+    /// каждом присутствии: ключ собеседника может смениться, и ждать
+    /// переподключения ради этого незачем.
+    private var ciphers: [String: ConversationCipher] = [:]
     private var readerTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
 
@@ -241,7 +246,23 @@ final class WebSocketTransport: NSObject {
     // MARK: - Messaging
 
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
-        try await send(.message(payload, from: myDisplayName, to: address))
+        guard let cipher = ciphers[address] else {
+            throw RelayError.noCipher(address)
+        }
+
+        try await sendSealed(try cipher.seal(payload, from: myAddress, to: address), to: address)
+    }
+
+    /// Отправить уже запечатанное. Отдельно от `sendMessage`, чтобы можно
+    /// было проверить, что чужой конверт на той стороне не откроется.
+    func sendSealed(_ sealed: SealedPayload, to address: String) async throws {
+        try await send(.message(sealed, from: myDisplayName, to: address))
+    }
+
+    /// Есть ли с кем-нибудь ключ переписки. Тестам нужно дождаться, пока
+    /// присутствие с ключами дойдёт, прежде чем слать.
+    var ciphersAreEmpty: Bool {
+        ciphers.isEmpty
     }
 
     func sendTypingEvent(_ event: TypingEvent, to address: String) async throws {
@@ -332,8 +353,18 @@ final class WebSocketTransport: NSObject {
                 updatePeers(try envelope.decodePresence())
 
             case .message:
-                messageBroadcast.yield(
-                    Addressed(sender: envelope.sender, value: try envelope.decodeMessage()))
+                guard let cipher = ciphers[envelope.sender] else {
+                    print("[WebSocketTransport] No cipher for '\(envelope.sender)', message dropped")
+                    return
+                }
+                // Не открылось — значит, не от него или не нам. Открытый
+                // текст от старой сборки сюда тоже не пройдёт, и это верно:
+                // принимать его — принимать подделку от кого угодно.
+                let payload = try cipher.open(try envelope.decodeMessage(),
+                                              as: MessagePayload.self,
+                                              from: envelope.sender,
+                                              to: myAddress)
+                messageBroadcast.yield(Addressed(sender: envelope.sender, value: payload))
 
             case .typing:
                 typingBroadcast.yield(
@@ -366,12 +397,28 @@ final class WebSocketTransport: NSObject {
         // Себя в списке собеседников быть не должно. Отличаем по адресу:
         // тёзка на другом устройстве — это другой человек, и он в списке
         // остаться должен.
-        let others = participants.filter { $0.id != myAddress }
-        knownAddresses = Set(others.map(\.id))
+        // Без проверенных ключей собеседника нет: писать ему нечем, а
+        // показывать в списке того, кому нельзя написать, — обман. Так же
+        // отсеивается старая сборка и старый релей, не пересылающий ключи.
+        let others = participants
+            .filter { $0.id != myAddress }
+            .compactMap { participant -> (RelayParticipant, ConversationCipher)? in
+                guard let identity,
+                      let peer = participant.verifiedIdentity,
+                      let cipher = try? ConversationCipher(identity: identity, peer: peer) else {
+                    print("[WebSocketTransport] '\(participant.name)' (\(participant.id)) has no usable keys")
+                    return nil
+                }
+                return (participant, cipher)
+            }
+
+        ciphers = Dictionary(others.map { ($0.0.id, $0.1) }, uniquingKeysWith: { first, _ in first })
+        knownAddresses = Set(ciphers.keys)
 
         // Порядок задаёт релей — по отпечатку. Для глаза он произволен,
         // поэтому сортируем по имени, а совпавшие имена разводим адресом.
         let peers = others
+            .map(\.0)
             .sorted { ($0.name, $0.id) < ($1.name, $1.id) }
             .map { participant in
                 Peer(id: identifier(for: participant.id),
@@ -390,6 +437,7 @@ final class WebSocketTransport: NSObject {
         }
 
         knownAddresses = []
+        ciphers = [:]
         peerBroadcast.yield([])
     }
 

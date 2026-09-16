@@ -29,20 +29,22 @@ enum NearbyHandshake {
         Data((0..<nonceSize).map { _ in UInt8.random(in: .min ... .max) })
     }
 
-    /// Проверить ответ и получить адрес собеседника.
+    /// Проверить ответ и получить личность собеседника.
     ///
     /// - Parameters:
-    ///   - hello: открытый ключ и подпись, пришедшие от собеседника.
+    ///   - hello: ключи и подпись, пришедшие от собеседника.
     ///   - nonce: строка, которую мы ему выдали.
     ///   - advertised: ключ, которым он представился при обнаружении. `nil`,
     ///     если подключились к нам первыми и объявления мы не видели.
-    /// - Returns: отпечаток ключа, если всё сошлось, иначе `nil`.
+    /// - Returns: адрес и ключ соглашения, если всё сошлось, иначе `nil`.
     ///
     /// Объявленный ключ сверяется с присланным намеренно: иначе собеседник мог
     /// бы показаться в списке одним человеком, а в переписке оказаться другим.
+    /// Ключ соглашения проверяется той же подписью — без него собеседника
+    /// нет: писать ему было бы нечем.
     static func verify(hello: HelloPayload,
                        nonce: Data,
-                       advertised: Data?) -> String? {
+                       advertised: Data?) -> PeerIdentity? {
         guard let key = try? Curve25519.Signing.PublicKey(
             rawRepresentation: hello.publicKey) else {
             return nil
@@ -56,12 +58,11 @@ enum NearbyHandshake {
             return nil
         }
 
-        return DeviceIdentity.fingerprint(of: hello.publicKey)
+        return hello.keyBundle.verified()
     }
 
     /// Ответ на чужой вызов.
     static func answer(to nonce: Data, as identity: DeviceIdentity) throws -> HelloPayload {
-        HelloPayload(publicKey: identity.publicKey,
-                     signature: try identity.signature(for: nonce))
+        try HelloPayload(answering: nonce, as: identity)
     }
 }

@@ -46,9 +46,10 @@ struct MultipeerPacket: Codable {
     let type: MultipeerDataType
     let playload: Data // MessagePayload или TypingEvent
     
-    init(message: MessagePayload) throws {
+    /// Сообщение идёт только запечатанным.
+    init(message sealed: SealedPayload) throws {
         self.type = .message
-        self.playload = try JSONEncoder().encode(message)
+        self.playload = try JSONEncoder().encode(sealed)
     }
     
     init(typingEvent: TypingEvent) throws {
@@ -84,8 +85,8 @@ struct MultipeerPacket: Codable {
         self.playload = try JSONEncoder().encode(hello)
     }
     
-    func decodeMessage() throws -> MessagePayload {
-        try JSONDecoder().decode(MessagePayload.self, from: playload)
+    func decodeMessage() throws -> SealedPayload {
+        try JSONDecoder().decode(SealedPayload.self, from: playload)
     }
     
     func decodeTypingEvent() throws -> TypingEvent {

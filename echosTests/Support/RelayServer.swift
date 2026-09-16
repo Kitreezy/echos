@@ -30,6 +30,10 @@ final class RelayServer {
         /// подключение — иначе подпись годилась бы повторно.
         let nonce: Data
 
+        /// Ключи из hello. Сервер их не проверяет — только передаёт: за
+        /// привязку ключа соглашения к личности отвечают собеседники.
+        var keys: KeyBundle?
+
         init(connection: NWConnection) {
             self.connection = connection
             self.nonce = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) })
@@ -56,6 +60,10 @@ final class RelayServer {
         clients.count
     }
 
+    /// Пересылать ли ключи в присутствии. Выключается, чтобы изобразить
+    /// старый релей, который о ключах соглашения не знает.
+    var forwardsKeys = true
+
     /// Всё, что сервер принял от клиентов. Позволяет проверить доставку до
     /// сервера отдельно от того, слушал ли в этот момент кто-то ещё.
     private(set) var received: [RelayEnvelope] = []
@@ -66,10 +74,14 @@ final class RelayServer {
         received.removeAll()
     }
 
-    var receivedMessageTexts: [String] {
+    /// Метки принятых сообщений. Внутрь запечатанного сообщения сервер
+    /// заглянуть не может — и не должен, — поэтому тесты, которым важен
+    /// только факт доставки, кладут метку прямо в `box`.
+    var receivedMessageMarkers: [String] {
         received
             .filter { $0.kind == .message }
-            .compactMap { try? $0.decodeMessage().text }
+            .compactMap { try? $0.decodeMessage().box }
+            .compactMap { String(data: $0, encoding: .utf8) }
     }
 
     // MARK: - Lifecycle
@@ -297,6 +309,7 @@ final class RelayServer {
 
         client.displayName = envelope.sender
         client.fingerprint = Self.fingerprint(of: proof.publicKey)
+        client.keys = forwardsKeys ? proof.keyBundle : nil
         return true
     }
 
@@ -311,7 +324,9 @@ final class RelayServer {
                 guard let fingerprint = client.fingerprint else {
                     return nil
                 }
-                return RelayParticipant(id: fingerprint, name: client.displayName ?? "")
+                return RelayParticipant(id: fingerprint,
+                                        name: client.displayName ?? "",
+                                        keys: client.keys)
             }
             .sorted { $0.id < $1.id }
 
