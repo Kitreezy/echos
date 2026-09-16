@@ -32,9 +32,12 @@ enum RelayHandshake {
                 return
             }
 
-            guard let hello = try? RelayEnvelope.hello(from: name,
+            // Свой сессионный ключ на каждое подключение — как в транспорте.
+            guard let session = try? SessionKey(signedBy: identity),
+                  let hello = try? RelayEnvelope.hello(from: name,
                                                        answering: challenge,
-                                                       as: identity).encoded() else {
+                                                       as: identity,
+                                                       session: session).encoded() else {
                 return
             }
 

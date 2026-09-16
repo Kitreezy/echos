@@ -12,22 +12,17 @@ final class MultipeerPacketTests: XCTestCase {
     
     // MARK: - Round-trip
     
-    func test_messagePacket_roundTrip_preservesPayload() throws {
-        let message = Message(text: "привет", isFromMe: true)
-        let payload = MessagePayload(from: message, senderName: "Alice")
+    /// Сообщение в пакете лежит запечатанным: пакет переносит его как есть.
+    func test_messagePacket_roundTrip_preservesSealedPayload() throws {
+        let sealed = SealedPayload(version: 1, box: Data([1, 2, 3, 4]))
         
-        let packet = try MultipeerPacket(message: payload)
+        let packet = try MultipeerPacket(message: sealed)
         // Пакет уходит по сети как Data — воспроизводим полный цикл.
         let wire = try JSONEncoder().encode(packet)
         let received = try JSONDecoder().decode(MultipeerPacket.self, from: wire)
         
         XCTAssertEqual(received.type, .message)
-        
-        let decoded = try received.decodeMessage()
-        XCTAssertEqual(decoded.id, message.id.uuidString)
-        XCTAssertEqual(decoded.text, "привет")
-        XCTAssertEqual(decoded.senderName, "Alice")
-        XCTAssertEqual(decoded.timestamp, message.timestamp.timeIntervalSince1970, accuracy: 0.001)
+        XCTAssertEqual(try received.decodeMessage(), sealed)
     }
     
     func test_typingPacket_roundTrip_preservesEvent() throws {
@@ -56,8 +51,7 @@ final class MultipeerPacketTests: XCTestCase {
     }
     
     func test_decodingMessagePacketAsTyping_throws() throws {
-        let payload = MessagePayload(from: Message(text: "hi", isFromMe: true), senderName: "Alice")
-        let packet = try MultipeerPacket(message: payload)
+        let packet = try MultipeerPacket(message: SealedPayload(version: 1, box: Data([1])))
         
         XCTAssertThrowsError(try packet.decodeTypingEvent())
     }

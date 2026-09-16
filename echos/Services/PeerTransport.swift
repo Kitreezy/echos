@@ -134,18 +134,44 @@ extension MultipeerService: PeerTransport {}
 
 // MARK: - Factory
 
+/// Каким способом держать связь.
+enum TransportKind: Equatable {
+    /// Только те, кто рядом: MultipeerConnectivity, без интернета.
+    case nearby
+    /// Через сервер — и рядом тоже. Сервер не заменяет прямую связь, а
+    /// добавляется к ней: кто рядом, тот рядом, остальные через релей.
+    case relay(URL)
+}
+
 enum PeerTransportFactory {
 
-    /// Собирает транспорт по настройкам: задан адрес релея — идём через него,
-    /// иначе остаёмся на MultipeerConnectivity.
-    @MainActor
-    static func make() -> any PeerTransport {
-        if let relayURL = UserSettings.relayURL {
-            print("[PeerTransportFactory] Relay transport: \(relayURL)")
-            return WebSocketTransport(url: relayURL)
+    /// Что выбрать при таких настройках.
+    ///
+    /// Отдельно от сборки транспорта, потому что решение стоит проверять, а
+    /// поднимать ради этого MultipeerConnectivity в тесте — значит просить
+    /// разрешение на локальную сеть у тестового процесса.
+    static func kind(usesRelay: Bool, customURL: URL?) -> TransportKind {
+        // Свой адрес задают аргументом запуска и только ради проверки на
+        // поднятом рядом сервере. Считаем это явной просьбой идти через него,
+        // иначе переключатель в приложении пришлось бы трогать каждый раз.
+        if let customURL {
+            return .relay(customURL)
         }
 
-        print("[PeerTransportFactory] Multipeer transport")
-        return MultipeerService()
+        return usesRelay ? .relay(UserSettings.defaultRelayURL) : .nearby
+    }
+
+    @MainActor
+    static func make() -> any PeerTransport {
+        switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
+        case .relay(let url):
+            print("[PeerTransportFactory] Nearby + relay transport: \(url)")
+            return CompositeTransport(nearby: MultipeerService(),
+                                      relay: WebSocketTransport(url: url))
+
+        case .nearby:
+            print("[PeerTransportFactory] Multipeer transport")
+            return MultipeerService()
+        }
     }
 }

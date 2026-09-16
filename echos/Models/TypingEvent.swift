@@ -35,6 +35,10 @@ enum MultipeerDataType: String, Codable {
     case stroke
     case wallRequest
     case wallState
+    /// Случайная строка, которую просим подписать.
+    case challenge
+    /// Ответ на неё: открытый ключ и подпись.
+    case hello
 }
 
 struct MultipeerPacket: Codable {
@@ -42,9 +46,10 @@ struct MultipeerPacket: Codable {
     let type: MultipeerDataType
     let playload: Data // MessagePayload или TypingEvent
     
-    init(message: MessagePayload) throws {
+    /// Сообщение идёт только запечатанным.
+    init(message sealed: SealedPayload) throws {
         self.type = .message
-        self.playload = try JSONEncoder().encode(message)
+        self.playload = try JSONEncoder().encode(sealed)
     }
     
     init(typingEvent: TypingEvent) throws {
@@ -52,9 +57,10 @@ struct MultipeerPacket: Codable {
         self.playload = try JSONEncoder().encode(typingEvent)
     }
     
-    init(stroke: Stroke) throws {
+    /// Росчерк — только запечатанным: это содержимое, как и сообщение.
+    init(stroke sealed: SealedPayload) throws {
         self.type = .stroke
-        self.playload = try JSONEncoder().encode(stroke)
+        self.playload = try JSONEncoder().encode(sealed)
     }
 
     /// Просьба прислать стену. Содержимого у неё нет: важен сам факт и то,
@@ -64,24 +70,43 @@ struct MultipeerPacket: Codable {
         self.playload = Data()
     }
 
-    init(wallState strokes: [Stroke]) throws {
+    init(wallState sealed: SealedPayload) throws {
         self.type = .wallState
-        self.playload = try JSONEncoder().encode(strokes)
+        self.playload = try JSONEncoder().encode(sealed)
+    }
+
+    /// Вызов лежит в payload как есть: это просто набор байтов.
+    init(challenge nonce: Data) {
+        self.type = .challenge
+        self.playload = nonce
+    }
+
+    init(hello: HelloPayload) throws {
+        self.type = .hello
+        self.playload = try JSONEncoder().encode(hello)
     }
     
-    func decodeMessage() throws -> MessagePayload {
-        try JSONDecoder().decode(MessagePayload.self, from: playload)
+    func decodeMessage() throws -> SealedPayload {
+        try JSONDecoder().decode(SealedPayload.self, from: playload)
     }
     
     func decodeTypingEvent() throws -> TypingEvent {
         try JSONDecoder().decode(TypingEvent.self, from: playload)
     }
     
-    func decodeStroke() throws -> Stroke {
-        try JSONDecoder().decode(Stroke.self, from: playload)
+    func decodeStroke() throws -> SealedPayload {
+        try JSONDecoder().decode(SealedPayload.self, from: playload)
     }
 
-    func decodeWallState() throws -> [Stroke] {
-        try JSONDecoder().decode([Stroke].self, from: playload)
+    func decodeWallState() throws -> SealedPayload {
+        try JSONDecoder().decode(SealedPayload.self, from: playload)
+    }
+
+    func decodeChallenge() -> Data {
+        playload
+    }
+
+    func decodeHello() throws -> HelloPayload {
+        try JSONDecoder().decode(HelloPayload.self, from: playload)
     }
 }

@@ -205,14 +205,14 @@ final class NetworkAwarenessTests: XCTestCase {
         monitor.goOffline()
         _ = await waitUntil { client.state == .waitingForNetwork }
 
-        let payload = MessagePayload(from: Message(text: "без сети", isFromMe: true),
-                                     senderName: "Alice")
+        // Содержимое серверу не видно, поэтому метка — в самом конверте.
+        let payload = SealedPayload(version: 1, box: Data("без сети".utf8))
         await client.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         monitor.goOnline()
 
         let delivered = await waitUntil(timeout: .seconds(10)) {
-            self.server.receivedMessageTexts.contains("без сети")
+            self.server.receivedMessageMarkers.contains("без сети")
         }
 
         XCTAssertTrue(delivered)

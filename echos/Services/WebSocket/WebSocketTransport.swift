@@ -71,6 +71,32 @@ final class WebSocketTransport: NSObject {
 
     /// Ключ, которым подписывается рукопожатие.
     private let identity: DeviceIdentity?
+
+    /// Свой сессионный ключ. Один на соединение: создаётся перед hello и
+    /// меняется при каждом переподключении, так что записанное в прошлом
+    /// соединении не откроется даже нашими долгими ключами.
+    private var session: SessionKey?
+
+    /// Шифр переписки с каждым, кто сейчас на релее. Пересобирается на
+    /// каждом присутствии: сессионный ключ собеседника меняется с каждым
+    /// его переподключением.
+    ///
+    /// Обрыв связи шифры не стирает намеренно. Сообщение, написанное без
+    /// сети, запечатывается тем ключом, что был, встаёт в очередь и уходит
+    /// после переподключения; та сторона откроет его прошлым шифром.
+    private var ciphers: [String: ConversationCipher] = [:]
+
+    /// Шифр предыдущей сессии с каждым — на одну смену ключа назад.
+    ///
+    /// Нужен для конвертов, запечатанных до смены: сообщение из очереди, или
+    /// отправленное собеседником, пока к нему ещё не дошло наше новое
+    /// присутствие. Глубже одной смены не храним: два переподключения подряд
+    /// за время доставки одного сообщения — уже не сеть, а её отсутствие.
+    private var previousCiphers: [String: ConversationCipher] = [:]
+
+    /// Из чего собран текущий шифр с каждым: наш и его сессионные ключи.
+    /// По этому видно, сменился ли ключ, а не просто пришло ли присутствие.
+    private var cipherInputs: [String: (ours: Data, theirs: Data)] = [:]
     private var readerTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
 
@@ -241,7 +267,19 @@ final class WebSocketTransport: NSObject {
     // MARK: - Messaging
 
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
-        try await send(.message(payload, from: myDisplayName, to: address))
+        try await sendSealed(try seal(payload, kind: .message, to: address), to: address)
+    }
+
+    /// Отправить уже запечатанное. Отдельно от `sendMessage`, чтобы можно
+    /// было проверить, что чужой конверт на той стороне не откроется.
+    func sendSealed(_ sealed: SealedPayload, to address: String) async throws {
+        try await send(.message(sealed, from: myDisplayName, to: address))
+    }
+
+    /// Есть ли с кем-нибудь ключ переписки. Тестам нужно дождаться, пока
+    /// присутствие с ключами дойдёт, прежде чем слать.
+    var ciphersAreEmpty: Bool {
+        ciphers.isEmpty
     }
 
     func sendTypingEvent(_ event: TypingEvent, to address: String) async throws {
@@ -249,7 +287,8 @@ final class WebSocketTransport: NSObject {
     }
 
     func sendStroke(_ stroke: Stroke, to address: String) async throws {
-        try await send(.stroke(stroke, from: myDisplayName, to: address))
+        try await send(.stroke(try seal(stroke, kind: .stroke, to: address),
+                               from: myDisplayName, to: address))
     }
 
     func requestWall(from address: String) async throws {
@@ -257,7 +296,8 @@ final class WebSocketTransport: NSObject {
     }
 
     func sendWall(_ strokes: [Stroke], to address: String) async throws {
-        try await send(.wallState(strokes, from: myAddress, to: address))
+        try await send(.wallState(try seal(strokes, kind: .wall, to: address),
+                                  from: myAddress, to: address))
     }
 
     private func send(_ envelope: RelayEnvelope) async throws {
@@ -283,9 +323,16 @@ final class WebSocketTransport: NSObject {
         }
 
         do {
+            // Новое соединение — новый сессионный ключ. Прошлый забывается
+            // вместе с ним: его секрет уже вошёл в прошлые шифры, а больше
+            // он ни для чего не нужен.
+            let session = try SessionKey(signedBy: identity)
+            self.session = session
+
             try await send(.hello(from: myDisplayName,
                                   answering: challenge,
-                                  as: identity))
+                                  as: identity,
+                                  session: session))
         }
         catch {
             print("[WebSocketTransport] Handshake failed: \(error.localizedDescription)")
@@ -332,16 +379,18 @@ final class WebSocketTransport: NSObject {
                 updatePeers(try envelope.decodePresence())
 
             case .message:
-                messageBroadcast.yield(
-                    Addressed(sender: envelope.sender, value: try envelope.decodeMessage()))
+                let payload = try open(try envelope.decodeMessage(),
+                                       as: MessagePayload.self, kind: .message, from: envelope.sender)
+                messageBroadcast.yield(Addressed(sender: envelope.sender, value: payload))
 
             case .typing:
                 typingBroadcast.yield(
                     Addressed(sender: envelope.sender, value: try envelope.decodeTyping()))
 
             case .stroke:
-                strokeBroadcast.yield(
-                    Addressed(sender: envelope.sender, value: try envelope.decodeStroke()))
+                let stroke = try open(try envelope.decodeStroke(),
+                                      as: Stroke.self, kind: .stroke, from: envelope.sender)
+                strokeBroadcast.yield(Addressed(sender: envelope.sender, value: stroke))
 
             case .challenge:
                 resumeChallengeWaiter(with: try envelope.decodeChallenge())
@@ -350,8 +399,9 @@ final class WebSocketTransport: NSObject {
                 wallRequestBroadcast.yield(envelope.sender)
 
             case .wallState:
-                wallStateBroadcast.yield(
-                    Addressed(sender: envelope.sender, value: try envelope.decodeWallState()))
+                let strokes = try open(try envelope.decodeWallState(),
+                                       as: [Stroke].self, kind: .wall, from: envelope.sender)
+                wallStateBroadcast.yield(Addressed(sender: envelope.sender, value: strokes))
 
             case .hello:
                 break  // сервер такое не шлёт
@@ -362,11 +412,74 @@ final class WebSocketTransport: NSObject {
         }
     }
 
+    /// Запечатать для собеседника — тем шифром, что есть, даже без сети:
+    /// конверт встанет в очередь и уйдёт после переподключения.
+    private func seal<T: Encodable>(_ value: T, kind: SealedKind, to address: String) throws -> SealedPayload {
+        guard let cipher = ciphers[address] else {
+            throw RelayError.noCipher(address)
+        }
+        return try cipher.seal(value, kind: kind, from: myAddress, to: address)
+    }
+
+    /// Открыть текущим шифром, а если не вышло — прошлым.
+    ///
+    /// Не открылось ни тем, ни другим — значит, не от него или не нам.
+    /// Открытый текст от старой сборки сюда тоже не пройдёт, и это верно:
+    /// принимать его — принимать подделку от кого угодно.
+    private func open<T: Decodable>(_ sealed: SealedPayload,
+                                    as type: T.Type,
+                                    kind: SealedKind,
+                                    from sender: String) throws -> T {
+        guard let cipher = ciphers[sender] else {
+            throw RelayError.noCipher(sender)
+        }
+
+        do {
+            return try cipher.open(sealed, as: type, kind: kind, from: sender, to: myAddress)
+        }
+        catch {
+            guard let previous = previousCiphers[sender] else {
+                throw error
+            }
+            return try previous.open(sealed, as: type, kind: kind, from: sender, to: myAddress)
+        }
+    }
+
     private func updatePeers(_ participants: [RelayParticipant]) {
         // Себя в списке собеседников быть не должно. Отличаем по адресу:
         // тёзка на другом устройстве — это другой человек, и он в списке
         // остаться должен.
-        let others = participants.filter { $0.id != myAddress }
+        // Без проверенных ключей собеседника нет: писать ему нечем, а
+        // показывать в списке того, кому нельзя написать, — обман. Так же
+        // отсеивается старая сборка и старый релей, не пересылающий ключи.
+        let others = participants
+            .filter { $0.id != myAddress }
+            .compactMap { participant -> RelayParticipant? in
+                guard let identity, let session,
+                      let peer = participant.verifiedIdentity else {
+                    print("[WebSocketTransport] '\(participant.name)' (\(participant.id)) has no usable keys")
+                    return nil
+                }
+
+                // Ключ не сменился — шифр тот же, пересобирать незачем, и
+                // прошлый трогать нельзя: иначе он бы затёрся копией текущего.
+                if let inputs = cipherInputs[participant.id],
+                   inputs.ours == session.publicKey, inputs.theirs == peer.sessionKey {
+                    return participant
+                }
+
+                guard let cipher = try? ConversationCipher(identity: identity, session: session, peer: peer) else {
+                    return nil
+                }
+
+                if let current = ciphers[participant.id] {
+                    previousCiphers[participant.id] = current
+                }
+                ciphers[participant.id] = cipher
+                cipherInputs[participant.id] = (session.publicKey, peer.sessionKey)
+                return participant
+            }
+
         knownAddresses = Set(others.map(\.id))
 
         // Порядок задаёт релей — по отпечатку. Для глаза он произволен,

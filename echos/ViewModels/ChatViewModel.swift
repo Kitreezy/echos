@@ -102,6 +102,7 @@ final class ChatViewModel {
     private var connectionStateTask: Task<Void, Never>?
     private var typingTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
+    private var remoteChangesTask: Task<Void, Never>?
     
     /// Как часто ViewModel применяла обновление списка пиров. Диагностика для
     /// тестов: показывает, что `removeDuplicates` действительно схлопывает
@@ -157,6 +158,19 @@ final class ChatViewModel {
         if persistenceTask == nil {
             persistenceTask = Task { [weak self] in
                 await self?.consumePersistenceQueue()
+            }
+        }
+
+        // Знакомые могут прийти из iCloud с другого устройства. Контекст
+        // их уже видит, а `recognizer` собран из снимка — перечитываем.
+        if remoteChangesTask == nil {
+            remoteChangesTask = Task { [weak self] in
+                let changes = NotificationCenter.default.notifications(
+                    named: PersistenceController.remoteChangesNotification
+                )
+                for await _ in changes {
+                    await self?.loadKnownPeers()
+                }
             }
         }
     }
