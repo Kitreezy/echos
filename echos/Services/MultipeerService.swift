@@ -278,12 +278,7 @@ final class MultipeerService: NSObject {
         
         let peerID = try connectedPeerID(named: address)
 
-        guard let cipher = ciphers[peerID] else {
-            throw MultipeerError.noCipher
-        }
-        
-        let sealed = try cipher.seal(payload, from: myAddress, to: address)
-        let packet = try MultipeerPacket(message: sealed)
+        let packet = try MultipeerPacket(message: try seal(payload, kind: .message, for: peerID))
         let data = try JSONEncoder().encode(packet)
         
         try session.send(data, toPeers: [peerID], with: .reliable)
@@ -330,7 +325,7 @@ final class MultipeerService: NSObject {
         
         let peerID = try connectedPeerID(named: address)
         
-        let packet = try MultipeerPacket(stroke: stroke)
+        let packet = try MultipeerPacket(stroke: try seal(stroke, kind: .stroke, for: peerID))
         let data = try JSONEncoder().encode(packet)
         
         try session.send(data, toPeers: [peerID], with: .reliable)
@@ -435,8 +430,35 @@ final class MultipeerService: NSObject {
     }
 
     func sendWall(_ strokes: [Stroke], to address: String) async throws {
-        try await sendPacket(try MultipeerPacket(wallState: strokes), to: address)
+        let peerID = try connectedPeerID(named: address)
+        try await sendPacket(try MultipeerPacket(wallState: try seal(strokes, kind: .wall, for: peerID)),
+                             to: address)
         print("[Session] Sent own wall (\(strokes.count) strokes) to '\(address)'")
+    }
+
+    // MARK: - Шифр
+
+    /// Запечатать для устройства. Шифр есть у каждого подтверждённого —
+    /// он заводится в рукопожатии, — так что его отсутствие здесь означает
+    /// не «ещё не договорились», а ошибку в порядке вызовов.
+    private func seal<T: Encodable>(_ value: T, kind: SealedKind, for peerID: MCPeerID) throws -> SealedPayload {
+        guard let cipher = ciphers[peerID], let address = addresses[peerID] else {
+            throw MultipeerError.noCipher
+        }
+        return try cipher.seal(value, kind: kind, from: myAddress, to: address)
+    }
+
+    /// Открыть от устройства. Не открылось — значит, не от него или не нам.
+    /// Открытый текст от старой сборки здесь не разберётся, и правильно:
+    /// принимать его значило бы принимать подделку от кого угодно.
+    private func open<T: Decodable>(_ sealed: SealedPayload,
+                                    as type: T.Type,
+                                    kind: SealedKind,
+                                    from peerID: MCPeerID) throws -> T {
+        guard let cipher = ciphers[peerID], let sender = addresses[peerID] else {
+            throw MultipeerError.noCipher
+        }
+        return try cipher.open(sealed, as: type, kind: kind, from: sender, to: myAddress)
     }
 
     private func sendPacket(_ packet: MultipeerPacket, to address: String) async throws {
@@ -705,17 +727,8 @@ extension MultipeerService: MCSessionDelegate {
 
                 switch packet.type {
                 case .message:
-                    guard let cipher = ciphers[peerID] else {
-                        print("[Session] No cipher for '\(sender)', message dropped")
-                        return
-                    }
-                    // Открытый текст от старой сборки здесь не разберётся —
-                    // и правильно: принимать его значило бы принимать
-                    // подделку от кого угодно.
-                    let payload = try cipher.open(try packet.decodeMessage(),
-                                                  as: MessagePayload.self,
-                                                  from: sender,
-                                                  to: myAddress)
+                    let payload = try open(try packet.decodeMessage(),
+                                           as: MessagePayload.self, kind: .message, from: peerID)
                     print("[Session] Recived message from '\(sender)")
                     messageBroadcast.yield(Addressed(sender: sender, value: payload))
                     
@@ -725,8 +738,9 @@ extension MultipeerService: MCSessionDelegate {
                     typingBroadcast.yield(Addressed(sender: sender, value: event))
                     
                 case .stroke:
+                    let stroke = try open(try packet.decodeStroke(),
+                                          as: Stroke.self, kind: .stroke, from: peerID)
                     print("[Session] Recived stroke from '\(sender)")
-                    let stroke = try packet.decodeStroke()
                     strokeBroadcast.yield(Addressed(sender: sender, value: stroke))
 
                 case .wallRequest:
@@ -734,8 +748,9 @@ extension MultipeerService: MCSessionDelegate {
                     wallRequestBroadcast.yield(sender)
 
                 case .wallState:
+                    let strokes = try open(try packet.decodeWallState(),
+                                           as: [Stroke].self, kind: .wall, from: peerID)
                     print("[Session] Recived wall from '\(sender)")
-                    let strokes = try packet.decodeWallState()
                     wallStateBroadcast.yield(Addressed(sender: sender, value: strokes))
 
                 case .challenge, .hello:

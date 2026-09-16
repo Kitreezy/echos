@@ -147,13 +147,14 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: try JSONEncoder().encode(event))
     }
 
-    static func stroke(_ stroke: Stroke,
+    /// Росчерк, как и сообщение, — только запечатанным.
+    static func stroke(_ sealed: SealedPayload,
                        from sender: String,
                        to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .stroke,
                       sender: sender,
                       recipient: recipient,
-                      payload: try JSONEncoder().encode(stroke))
+                      payload: try JSONEncoder().encode(sealed))
     }
 
     static func wallRequest(from sender: String,
@@ -164,13 +165,13 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: nil)
     }
 
-    static func wallState(_ strokes: [Stroke],
+    static func wallState(_ sealed: SealedPayload,
                           from sender: String,
                           to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .wallState,
                       sender: sender,
                       recipient: recipient,
-                      payload: try JSONEncoder().encode(strokes))
+                      payload: try JSONEncoder().encode(sealed))
     }
 
     // MARK: - Decoding
@@ -196,12 +197,12 @@ struct RelayEnvelope: Codable, Sendable {
         try decode(TypingEvent.self)
     }
 
-    func decodeStroke() throws -> Stroke {
-        try decode(Stroke.self)
+    func decodeStroke() throws -> SealedPayload {
+        try decode(SealedPayload.self)
     }
 
-    func decodeWallState() throws -> [Stroke] {
-        try decode([Stroke].self)
+    func decodeWallState() throws -> SealedPayload {
+        try decode(SealedPayload.self)
     }
 
     private func decode<T: Decodable>(_ type: T.Type) throws -> T {

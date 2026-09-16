@@ -268,6 +268,46 @@ final class WebSocketTransportTests: XCTestCase {
         XCTAssertTrue(reannounced, "После реконнекта hello должен уйти повторно")
     }
 
+    // MARK: - Стена
+
+    /// Росчерк и стена целиком — такое же содержимое, как сообщение:
+    /// доходят, а релей внутрь не заглядывает.
+    func test_strokeAndWall_travelSealed() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+
+        let strokes = bob.strokeStream
+        let requests = bob.wallRequestStream
+        let walls = alice.wallStateStream
+
+        let stroke = Stroke(author: alice.myAddress,
+                            points: [Stroke.Point(x: 0.25, y: 0.75), Stroke.Point(x: 0.5, y: 0.5)])
+        try await alice.sendStroke(stroke, to: bob.myAddress)
+        try await alice.requestWall(from: bob.myAddress)
+
+        let gotStroke = await collect(strokes, count: 1, timeout: .seconds(5))
+        XCTAssertEqual(gotStroke.first?.value.id, stroke.id)
+        XCTAssertEqual(gotStroke.first?.value.points.count, 2)
+        XCTAssertEqual(gotStroke.first?.sender, alice.myAddress)
+
+        let asked = await collect(requests, count: 1, timeout: .seconds(5))
+        XCTAssertEqual(asked.first, alice.myAddress)
+
+        try await bob.sendWall([stroke], to: alice.myAddress)
+        let gotWall = await collect(walls, count: 1, timeout: .seconds(5))
+        XCTAssertEqual(gotWall.first?.value.map(\.id), [stroke.id])
+
+        for envelope in server.received where envelope.kind == .stroke || envelope.kind == .wallState {
+            let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
+            XCTAssertFalse(wire.contains("points"), "Содержимое росчерка видно серверу")
+            XCTAssertFalse(wire.contains(stroke.id.uuidString), "Идентификатор росчерка видно серверу")
+        }
+    }
+
     // MARK: - Смена сессионного ключа
 
     /// Сессионные ключи: те, что ушли в hello до обрыва, и те, что после.

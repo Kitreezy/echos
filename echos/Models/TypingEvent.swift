@@ -57,9 +57,10 @@ struct MultipeerPacket: Codable {
         self.playload = try JSONEncoder().encode(typingEvent)
     }
     
-    init(stroke: Stroke) throws {
+    /// Росчерк — только запечатанным: это содержимое, как и сообщение.
+    init(stroke sealed: SealedPayload) throws {
         self.type = .stroke
-        self.playload = try JSONEncoder().encode(stroke)
+        self.playload = try JSONEncoder().encode(sealed)
     }
 
     /// Просьба прислать стену. Содержимого у неё нет: важен сам факт и то,
@@ -69,9 +70,9 @@ struct MultipeerPacket: Codable {
         self.playload = Data()
     }
 
-    init(wallState strokes: [Stroke]) throws {
+    init(wallState sealed: SealedPayload) throws {
         self.type = .wallState
-        self.playload = try JSONEncoder().encode(strokes)
+        self.playload = try JSONEncoder().encode(sealed)
     }
 
     /// Вызов лежит в payload как есть: это просто набор байтов.
@@ -93,12 +94,12 @@ struct MultipeerPacket: Codable {
         try JSONDecoder().decode(TypingEvent.self, from: playload)
     }
     
-    func decodeStroke() throws -> Stroke {
-        try JSONDecoder().decode(Stroke.self, from: playload)
+    func decodeStroke() throws -> SealedPayload {
+        try JSONDecoder().decode(SealedPayload.self, from: playload)
     }
 
-    func decodeWallState() throws -> [Stroke] {
-        try JSONDecoder().decode([Stroke].self, from: playload)
+    func decodeWallState() throws -> SealedPayload {
+        try JSONDecoder().decode(SealedPayload.self, from: playload)
     }
 
     func decodeChallenge() -> Data {

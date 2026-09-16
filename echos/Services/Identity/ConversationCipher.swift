@@ -12,9 +12,10 @@
 //  привязку к ней, и посреднику, чтобы встать между двумя людьми, нужен не
 //  только подписывающий ключ, но и закрытый ключ соглашения.
 //
-//  Сообщение запечатывается AES-GCM со случайным nonce, а адреса отправителя
+//  Конверт запечатывается AES-GCM со случайным nonce, а адреса отправителя
 //  и получателя входят в дополнительные данные: конверт, переставленный
-//  релеем в другую сторону или отражённый обратно, не откроется.
+//  релеем в другую сторону или отражённый обратно, не откроется. Туда же
+//  входит и род содержимого: росчерк, выданный за сообщение, — тоже.
 //
 
 import CryptoKit
@@ -30,6 +31,14 @@ struct SealedPayload: Codable, Sendable, Equatable {
     /// 2 — ключ с сессионной частью. Первую версию, без неё, не открываем:
     /// собеседник без сессионного ключа в список и так не попадает.
     static let currentVersion = 2
+}
+
+/// Что лежит в конверте. Входит в проверяемые данные, чтобы конверт одного
+/// рода нельзя было подсунуть вместо другого.
+enum SealedKind: String, Sendable {
+    case message
+    case stroke
+    case wall
 }
 
 enum ConversationCipherError: Error, Equatable {
@@ -67,12 +76,15 @@ struct ConversationCipher: Sendable {
         )
     }
 
-    /// Запечатать что угодно кодируемое — сообщение сегодня, росчерк завтра.
-    func seal<T: Encodable>(_ value: T, from sender: String, to recipient: String) throws -> SealedPayload {
+    /// Запечатать что угодно кодируемое: сообщение, росчерк, стену целиком.
+    func seal<T: Encodable>(_ value: T,
+                            kind: SealedKind,
+                            from sender: String,
+                            to recipient: String) throws -> SealedPayload {
         let plaintext = try JSONEncoder().encode(value)
         let box = try AES.GCM.seal(plaintext,
                                    using: key,
-                                   authenticating: Self.associatedData(from: sender, to: recipient))
+                                   authenticating: Self.associatedData(kind: kind, from: sender, to: recipient))
 
         guard let combined = box.combined else {
             throw ConversationCipherError.sealedBoxMalformed
@@ -83,6 +95,7 @@ struct ConversationCipher: Sendable {
 
     func open<T: Decodable>(_ sealed: SealedPayload,
                             as type: T.Type,
+                            kind: SealedKind,
                             from sender: String,
                             to recipient: String) throws -> T {
         guard sealed.version == SealedPayload.currentVersion else {
@@ -92,14 +105,14 @@ struct ConversationCipher: Sendable {
         let box = try AES.GCM.SealedBox(combined: sealed.box)
         let plaintext = try AES.GCM.open(box,
                                          using: key,
-                                         authenticating: Self.associatedData(from: sender, to: recipient))
+                                         authenticating: Self.associatedData(kind: kind, from: sender, to: recipient))
 
         return try JSONDecoder().decode(type, from: plaintext)
     }
 
-    /// Направление конверта. Не шифруется — релею адреса нужны, чтобы
-    /// доставить, — но подделать его нельзя.
-    private static func associatedData(from sender: String, to recipient: String) -> Data {
-        Data("echos/message/v1:\(sender)>\(recipient)".utf8)
+    /// Род и направление конверта. Не шифруются — релею адреса нужны, чтобы
+    /// доставить, — но подделать их нельзя.
+    private static func associatedData(kind: SealedKind, from sender: String, to recipient: String) -> Data {
+        Data("echos/\(kind.rawValue)/v1:\(sender)>\(recipient)".utf8)
     }
 }

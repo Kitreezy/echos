@@ -39,11 +39,11 @@ final class ConversationCipherTests: XCTestCase {
     }
 
     private func sealed(_ text: String, by cipher: ConversationCipher) throws -> SealedPayload {
-        try cipher.seal(payload(text), from: alice.fingerprint, to: bob.fingerprint)
+        try cipher.seal(payload(text), kind: .message, from: alice.fingerprint, to: bob.fingerprint)
     }
 
     private func open(_ sealed: SealedPayload, with cipher: ConversationCipher) throws -> MessagePayload {
-        try cipher.open(sealed, as: MessagePayload.self, from: alice.fingerprint, to: bob.fingerprint)
+        try cipher.open(sealed, as: MessagePayload.self, kind: .message, from: alice.fingerprint, to: bob.fingerprint)
     }
 
     // MARK: - Честная пара
@@ -79,8 +79,8 @@ final class ConversationCipherTests: XCTestCase {
     func test_keyDerivation_isSymmetric() throws {
         let s = try session(alice, bob)
 
-        let fromBob = try s.bobSide.seal(payload("ответ"), from: bob.fingerprint, to: alice.fingerprint)
-        let opened = try s.aliceSide.open(fromBob, as: MessagePayload.self,
+        let fromBob = try s.bobSide.seal(payload("ответ"), kind: .message, from: bob.fingerprint, to: alice.fingerprint)
+        let opened = try s.aliceSide.open(fromBob, as: MessagePayload.self, kind: .message,
                                           from: bob.fingerprint, to: alice.fingerprint)
 
         XCTAssertEqual(opened.text, "ответ")
@@ -140,8 +140,8 @@ final class ConversationCipherTests: XCTestCase {
         let honestBob = try ConversationCipher(identity: bob, session: bobSession, peer: realAliceAsPeer)
         let impostorSide = try ConversationCipher(identity: impostor, session: impostorSession, peer: bobAsPeer)
 
-        let forged = try impostorSide.seal(payload("я Алиса"), from: realAlice.fingerprint, to: bob.fingerprint)
-        XCTAssertThrowsError(try honestBob.open(forged, as: MessagePayload.self,
+        let forged = try impostorSide.seal(payload("я Алиса"), kind: .message, from: realAlice.fingerprint, to: bob.fingerprint)
+        XCTAssertThrowsError(try honestBob.open(forged, as: MessagePayload.self, kind: .message,
                                                 from: realAlice.fingerprint, to: bob.fingerprint))
     }
 
@@ -183,7 +183,7 @@ final class ConversationCipherTests: XCTestCase {
         let s = try session(alice, bob)
         let box = try sealed("моё", by: s.aliceSide)
 
-        XCTAssertThrowsError(try s.aliceSide.open(box, as: MessagePayload.self,
+        XCTAssertThrowsError(try s.aliceSide.open(box, as: MessagePayload.self, kind: .message,
                                                   from: bob.fingerprint, to: alice.fingerprint))
     }
 
@@ -191,8 +191,38 @@ final class ConversationCipherTests: XCTestCase {
         let s = try session(alice, bob)
         let box = try sealed("от Алисы", by: s.aliceSide)
 
-        XCTAssertThrowsError(try s.bobSide.open(box, as: MessagePayload.self,
+        XCTAssertThrowsError(try s.bobSide.open(box, as: MessagePayload.self, kind: .message,
                                                 from: mallory.fingerprint, to: bob.fingerprint))
+    }
+
+    // MARK: - Род содержимого
+
+    /// Росчерк, выданный за сообщение: тот же ключ, то же направление, но
+    /// род входит в проверяемые данные — не откроется.
+    func test_strokeSealedAsStroke_doesNotOpenAsMessage() throws {
+        let s = try session(alice, bob)
+        let stroke = Stroke(author: alice.fingerprint, points: [])
+
+        let box = try s.aliceSide.seal(stroke, kind: .stroke, from: alice.fingerprint, to: bob.fingerprint)
+
+        XCTAssertThrowsError(try s.bobSide.open(box, as: MessagePayload.self, kind: .message,
+                                                from: alice.fingerprint, to: bob.fingerprint))
+        XCTAssertThrowsError(try s.bobSide.open(box, as: Stroke.self, kind: .wall,
+                                                from: alice.fingerprint, to: bob.fingerprint))
+        XCTAssertNoThrow(try s.bobSide.open(box, as: Stroke.self, kind: .stroke,
+                                            from: alice.fingerprint, to: bob.fingerprint))
+    }
+
+    func test_wholeWall_sealsAndOpens() throws {
+        let s = try session(alice, bob)
+        let wall = [Stroke(author: bob.fingerprint, points: []),
+                    Stroke(author: alice.fingerprint, points: [])]
+
+        let box = try s.aliceSide.seal(wall, kind: .wall, from: alice.fingerprint, to: bob.fingerprint)
+        let opened = try s.bobSide.open(box, as: [Stroke].self, kind: .wall,
+                                        from: alice.fingerprint, to: bob.fingerprint)
+
+        XCTAssertEqual(opened.map(\.author), wall.map(\.author))
     }
 
     // MARK: - Версия
@@ -255,7 +285,7 @@ final class ConversationCipherTests: XCTestCase {
         let bobSide = try ConversationCipher(identity: goBob, session: bobSession, peer: aliceAsPeer)
         let sealed = SealedPayload(version: 2, box: key("GSjvIvQZMEdbFklrA3GRewU8IgjrS1qzQILeuzn2NgNi8BYSlG6HFOVymfzyXzdWCzrL/6TrJn8B7DomEnKYhAwJpQWzt9ocO49i9sPnZJlGjxGM0GkjhKrF+6G5Hua98r+vaKk2gGuwbCvQh+0U7ERnQQi8EUnq2otoDZHO/dO/HYau+4EH9icDHjbZdgg="))
 
-        let opened = try bobSide.open(sealed, as: MessagePayload.self,
+        let opened = try bobSide.open(sealed, as: MessagePayload.self, kind: .message,
                                       from: goAlice.fingerprint, to: goBob.fingerprint)
 
         XCTAssertEqual(opened.text, "из Go в Swift")
