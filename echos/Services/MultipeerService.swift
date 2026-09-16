@@ -72,6 +72,12 @@ final class MultipeerService: NSObject {
     /// рукопожатия — тогда же, когда становится известен ключ соглашения.
     private var ciphers: [MCPeerID: ConversationCipher] = [:]
 
+    /// Свой сессионный ключ на каждое устройство. Создаётся при подключении,
+    /// уходит в ответе на вызов, забывается при отключении: следующая сессия
+    /// получит новый, и записанная прошлая не откроется даже нашими долгими
+    /// ключами.
+    private var sessionKeys: [MCPeerID: SessionKey] = [:]
+
     /// Свой ключ. Тот же, которым подписываемся на релее: личность у
     /// устройства одна, независимо от того, как идёт связь.
     private let identity: DeviceIdentity?
@@ -355,13 +361,31 @@ final class MultipeerService: NSObject {
         }
     }
 
+    /// Сессионный ключ для устройства — тот, что уже есть, или новый.
+    ///
+    /// Лениво, а не строго в `.connected`: вызов от собеседника может
+    /// прийти вплотную к подключению, и ключ должен быть готов к ответу.
+    private func sessionKey(for peerID: MCPeerID) throws -> SessionKey {
+        if let existing = sessionKeys[peerID] {
+            return existing
+        }
+        guard let identity else {
+            throw MultipeerError.noCipher
+        }
+        let fresh = try SessionKey(signedBy: identity)
+        sessionKeys[peerID] = fresh
+        return fresh
+    }
+
     private func answerChallenge(_ nonce: Data, from peerID: MCPeerID) {
         guard let session, let identity else {
             return
         }
 
         do {
-            let hello = try NearbyHandshake.answer(to: nonce, as: identity)
+            let hello = try NearbyHandshake.answer(to: nonce,
+                                                   as: identity,
+                                                   session: try sessionKey(for: peerID))
             let packet = try MultipeerPacket(hello: hello)
             try session.send(try JSONEncoder().encode(packet),
                              toPeers: [peerID], with: .reliable)
@@ -385,7 +409,9 @@ final class MultipeerService: NSObject {
         }
 
         // Шифр — часть рукопожатия: собеседник без него не подтверждён.
-        guard let identity, let cipher = try? ConversationCipher(identity: identity, peer: peer) else {
+        guard let identity,
+              let session = try? sessionKey(for: peerID),
+              let cipher = try? ConversationCipher(identity: identity, session: session, peer: peer) else {
             print("[Session] No cipher for '\(peerID.displayName)'")
             return
         }
@@ -580,6 +606,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             issuedNonces.removeValue(forKey: peerID)
             verifiedPeers.remove(peerID)
             ciphers.removeValue(forKey: peerID)
+            sessionKeys.removeValue(forKey: peerID)
             connectedPeers.remove(peerID)
             
             peerRSSI.removeValue(forKey: peerID)
@@ -612,9 +639,11 @@ extension MultipeerService: MCSessionDelegate {
                 connectedPeers.remove(peerID)
                 connectingPeers.remove(peerID)
                 verifiedPeers.remove(peerID)
-                // Новая сессия — новое рукопожатие и новый шифр: ключ у
-                // собеседника мог смениться, пока его не было.
+                // Новая сессия — новое рукопожатие, новый сессионный ключ и
+                // новый шифр. Старый ключ забывается насовсем: в этом и
+                // состоит прямая секретность.
                 ciphers.removeValue(forKey: peerID)
+                sessionKeys.removeValue(forKey: peerID)
                 issuedNonces.removeValue(forKey: peerID)
                 
             case .connecting:

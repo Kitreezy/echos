@@ -2,16 +2,19 @@
 //  ConversationCipher.swift
 //  echos
 //
-//  Шифрование переписки между двумя личностями.
+//  Шифрование переписки между двумя личностями в рамках сессии.
 //
-//  Ключ выводится из общего секрета X25519 через HKDF и одинаков с обеих
-//  сторон: ни ключ, ни секрет по сети не ходят. Сообщение запечатывается
-//  AES-GCM со случайным nonce, а адреса отправителя и получателя входят в
-//  дополнительные данные: конверт, переставленный релеем в другую сторону
-//  или отражённый обратно, не откроется.
+//  Ключ выводится через HKDF из двух общих секретов X25519 и одинаков с
+//  обеих сторон: ни ключ, ни секреты по сети не ходят. Сессионный секрет —
+//  из эфемерных ключей, свежих на каждое подключение: он даёт прямую
+//  секретность, записанное прошлое не откроется даже утёкшими долгими
+//  ключами. Статический — из ключей, живущих с личностью: он держит
+//  привязку к ней, и посреднику, чтобы встать между двумя людьми, нужен не
+//  только подписывающий ключ, но и закрытый ключ соглашения.
 //
-//  Ключ пары статический: пока ключи соглашения у обоих одни и те же, один
-//  и тот же. Прямой секретности здесь нет — это отдельный шаг, см. ADR 003.
+//  Сообщение запечатывается AES-GCM со случайным nonce, а адреса отправителя
+//  и получателя входят в дополнительные данные: конверт, переставленный
+//  релеем в другую сторону или отражённый обратно, не откроется.
 //
 
 import CryptoKit
@@ -24,7 +27,9 @@ struct SealedPayload: Codable, Sendable, Equatable {
     /// nonce + шифртекст + тег, как их отдаёт `AES.GCM.SealedBox.combined`.
     let box: Data
 
-    static let currentVersion = 1
+    /// 2 — ключ с сессионной частью. Первую версию, без неё, не открываем:
+    /// собеседник без сессионного ключа в список и так не попадает.
+    static let currentVersion = 2
 }
 
 enum ConversationCipherError: Error, Equatable {
@@ -36,18 +41,28 @@ struct ConversationCipher: Sendable {
 
     private let key: SymmetricKey
 
-    /// Ключ переписки между нами и собеседником.
+    /// Ключ переписки между нами и собеседником на эту сессию.
     ///
-    /// Соль и информация фиксированы и симметричны: адреса входят в
-    /// отсортированном порядке, чтобы обе стороны вывели один ключ.
-    init(identity: DeviceIdentity, peer: PeerIdentity) throws {
-        let secret = try identity.sharedSecret(with: peer)
+    /// Оба секрета симметричны сами по себе — X25519 даёт одно и то же с
+    /// любой стороны, — поэтому и их порядок фиксирован: сессионный, потом
+    /// статический. Адреса входят в отсортированном порядке, чтобы обе
+    /// стороны вывели один ключ.
+    init(identity: DeviceIdentity, session: SessionKey, peer: PeerIdentity) throws {
+        let ephemeral = try session.sharedSecret(with: peer)
+        let longTerm = try identity.sharedSecret(with: peer)
         let pair = [identity.fingerprint, peer.fingerprint].sorted().joined(separator: "|")
 
-        key = secret.hkdfDerivedSymmetricKey(
-            using: SHA256.self,
-            salt: Data("echos/e2e/v1".utf8),
-            sharedInfo: Data(pair.utf8),
+        // `SharedSecret` наружу байты не отдаёт иначе как через
+        // `withUnsafeBytes`; склеиваем оба и ведём через HKDF как один
+        // входной материал.
+        var material = Data()
+        ephemeral.withUnsafeBytes { material.append(contentsOf: $0) }
+        longTerm.withUnsafeBytes { material.append(contentsOf: $0) }
+
+        key = HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: SymmetricKey(data: material),
+            salt: Data("echos/e2e/v2".utf8),
+            info: Data(pair.utf8),
             outputByteCount: 32
         )
     }

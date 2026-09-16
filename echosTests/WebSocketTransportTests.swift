@@ -265,6 +265,133 @@ final class WebSocketTransportTests: XCTestCase {
         XCTAssertTrue(reannounced, "После реконнекта hello должен уйти повторно")
     }
 
+    // MARK: - Смена сессионного ключа
+
+    /// Сессионные ключи: те, что ушли в hello до обрыва, и те, что после.
+    private func sessionKeys(in hellos: [RelayEnvelope]) -> [Data] {
+        hellos.compactMap { envelope in
+            guard let payload = envelope.payload,
+                  let hello = try? JSONDecoder().decode(HelloPayload.self, from: payload) else {
+                return nil
+            }
+            return hello.sessionKey
+        }
+    }
+
+    /// После переподключения у обоих новые сессионные ключи — и переписка
+    /// продолжается: шифры пересобрались из свежего присутствия.
+    func test_afterReconnect_sessionKeysChangeAndMessagesStillFlow() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+        let before = sessionKeys(in: server.received.filter { $0.kind == .hello })
+
+        server.clearReceived()
+        try await server.restart()
+        _ = await waitUntil(timeout: .seconds(15)) {
+            self.server.received.filter { $0.kind == .hello }.count >= 2
+        }
+        let after = sessionKeys(in: server.received.filter { $0.kind == .hello })
+
+        XCTAssertEqual(before.count, 2)
+        XCTAssertEqual(after.count, 2)
+        XCTAssertTrue(Set(before).isDisjoint(with: Set(after)), "Сессионные ключи после обрыва — новые")
+
+        // Оба должны получить присутствие с новыми ключами, прежде чем слать.
+        _ = await waitUntil(timeout: .seconds(5)) {
+            self.server.received.filter { $0.kind == .hello }.count >= 2
+        }
+        try await Task.sleep(for: .milliseconds(300))
+
+        let incoming = bob.messageStream
+        let payload = MessagePayload(from: Message(text: "после обрыва", isFromMe: true),
+                                     senderName: "Alice")
+        try await alice.sendMessage(payload, to: bob.myAddress)
+
+        let received = await collect(incoming, count: 1, timeout: .seconds(5))
+        XCTAssertEqual(received.first?.value.text, "после обрыва")
+    }
+
+    /// Сообщение, написанное без сети: запечатано ключом прошлой сессии,
+    /// встало в очередь, ушло после переподключения. Боб всё это время на
+    /// связи; наши новые ключи доходят до него присутствием раньше, чем
+    /// конверт из очереди, — и он открывает конверт прошлым шифром.
+    func test_messageQueuedOffline_opensAfterKeysRotated() async throws {
+        // У Алисы своя сеть: только она и уйдёт в офлайн.
+        let aliceNetwork = FakeNetworkMonitor()
+        let alice = WebSocketTransport(url: server.url,
+                                       displayName: "Alice",
+                                       identity: DeviceIdentity(),
+                                       networkMonitor: aliceNetwork)
+        let bob = makeTransport(named: "Bob")
+        alice.startDeviceDiscovery()
+        bob.startDeviceDiscovery()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+        let incoming = bob.messageStream
+
+        aliceNetwork.goOffline()
+        _ = await waitUntil { self.server.connectedClientCount == 1 }
+        XCTAssertFalse(alice.ciphersAreEmpty, "Обрыв шифры не стирает — иначе без сети не написать")
+
+        let payload = MessagePayload(from: Message(text: "из очереди", isFromMe: true),
+                                     senderName: "Alice")
+        try await alice.sendMessage(payload, to: bob.myAddress)
+
+        server.clearReceived()
+        aliceNetwork.goOnline()
+
+        let received = await collect(incoming, count: 1, timeout: .seconds(15))
+        XCTAssertEqual(received.first?.value.text, "из очереди",
+                       "Конверт из прошлой сессии должен открыться прошлым шифром")
+
+        // И это действительно была смена ключа, а не тот же самый.
+        let hellos = server.received.filter { $0.kind == .hello }
+        XCTAssertEqual(hellos.count, 1, "Переподключилась только Алиса")
+        XCTAssertEqual(server.received.first?.kind, .hello, "hello уходит раньше очереди")
+    }
+
+    /// Собеседник переподключился, а мы — нет. Его ключ сменился, наш
+    /// остался; шифр с ним пересобирается, и переписка идёт в обе стороны.
+    func test_whenOnlyPeerReconnects_cipherIsRebuilt() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+
+        // Только Боб уходит и возвращается.
+        bob.stopDeviceDiscovery()
+        _ = await waitUntil { self.server.connectedClientCount == 1 }
+        server.clearReceived()
+        bob.startDeviceDiscovery()
+        _ = await waitUntil(timeout: .seconds(10)) {
+            self.server.received.filter { $0.kind == .hello }.count == 1
+        }
+        try await Task.sleep(for: .milliseconds(300))
+
+        let toBob = bob.messageStream
+        let toAlice = alice.messageStream
+
+        try await alice.sendMessage(MessagePayload(from: Message(text: "к новому Бобу", isFromMe: true),
+                                                   senderName: "Alice"), to: bob.myAddress)
+        try await bob.sendMessage(MessagePayload(from: Message(text: "к прежней Алисе", isFromMe: true),
+                                                 senderName: "Bob"), to: alice.myAddress)
+
+        let bobGot = await collect(toBob, count: 1, timeout: .seconds(5))
+        let aliceGot = await collect(toAlice, count: 1, timeout: .seconds(5))
+
+        XCTAssertEqual(bobGot.first?.value.text, "к новому Бобу")
+        XCTAssertEqual(aliceGot.first?.value.text, "к прежней Алисе")
+    }
+
     // MARK: - Ограничения релея
 
     func test_connectToUnknownPeer_throws() async {

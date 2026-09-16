@@ -70,7 +70,8 @@ final class DeviceIdentityTests: XCTestCase {
 
         let envelope = try RelayEnvelope.hello(from: "Alice",
                                                answering: challenge,
-                                               as: identity)
+                                               as: identity,
+                                               session: try SessionKey(signedBy: identity))
 
         XCTAssertEqual(envelope.kind, .hello)
         XCTAssertEqual(envelope.sender, "Alice")
@@ -90,7 +91,8 @@ final class DeviceIdentityTests: XCTestCase {
 
         let original = try RelayEnvelope.hello(from: "Alice",
                                                answering: challenge,
-                                               as: identity)
+                                               as: identity,
+                                               session: try SessionKey(signedBy: identity))
         let restored = try RelayEnvelope.decode(from: try original.encoded())
 
         let payload = try XCTUnwrap(restored.payload)
