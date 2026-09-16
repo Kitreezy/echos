@@ -60,7 +60,10 @@ final class WebSocketTransportTests: XCTestCase {
             bob.stopDeviceDiscovery()
         }
 
-        XCTAssertEqual(alice.connectionState, .connected)
+        // Сервер насчитал двоих раньше, чем клиент перевёл своё состояние:
+        // ждём его, а не утверждаем с ходу.
+        let connected = await waitUntil { alice.connectionState == .connected }
+        XCTAssertTrue(connected)
 
         // Ждём именно появления собеседника: до этого поток успевает отдать
         // пустой список — присутствие с одной лишь Alice.
