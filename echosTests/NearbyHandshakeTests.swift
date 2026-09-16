@@ -19,11 +19,13 @@ final class NearbyHandshakeTests: XCTestCase {
         let bob = DeviceIdentity()
         let hello = try NearbyHandshake.answer(to: nonce, as: bob)
 
-        let address = NearbyHandshake.verify(hello: hello,
-                                             nonce: nonce,
-                                             advertised: bob.publicKey)
+        let peer = NearbyHandshake.verify(hello: hello,
+                                          nonce: nonce,
+                                          advertised: bob.publicKey)
 
-        XCTAssertEqual(address, bob.fingerprint)
+        XCTAssertEqual(peer?.fingerprint, bob.fingerprint)
+        XCTAssertEqual(peer?.agreementKey, bob.agreementKey,
+                       "Вместе с адресом приходит ключ, которым его шифровать")
     }
 
     /// Подключились к нам первыми — объявления мы не видели, сверять не с чем.
@@ -32,7 +34,7 @@ final class NearbyHandshakeTests: XCTestCase {
         let bob = DeviceIdentity()
         let hello = try NearbyHandshake.answer(to: nonce, as: bob)
 
-        XCTAssertEqual(NearbyHandshake.verify(hello: hello, nonce: nonce, advertised: nil),
+        XCTAssertEqual(NearbyHandshake.verify(hello: hello, nonce: nonce, advertised: nil)?.fingerprint,
                        bob.fingerprint)
     }
 
@@ -63,8 +65,11 @@ final class NearbyHandshakeTests: XCTestCase {
     func test_forgedSignature_isRejected() throws {
         let bob = DeviceIdentity()
 
+        let honest = try NearbyHandshake.answer(to: nonce, as: bob)
         let forged = HelloPayload(publicKey: bob.publicKey,
-                                  signature: Data(repeating: 0, count: 64))
+                                  signature: Data(repeating: 0, count: 64),
+                                  agreementKey: honest.agreementKey,
+                                  agreementProof: honest.agreementProof)
 
         XCTAssertNil(NearbyHandshake.verify(hello: forged,
                                             nonce: nonce,
@@ -73,9 +78,63 @@ final class NearbyHandshakeTests: XCTestCase {
 
     func test_garbageInsteadOfKey_isRejected() throws {
         let hello = HelloPayload(publicKey: Data("не ключ".utf8),
-                                 signature: Data(repeating: 0, count: 64))
+                                 signature: Data(repeating: 0, count: 64),
+                                 agreementKey: Data("тоже не ключ".utf8),
+                                 agreementProof: Data(repeating: 0, count: 64))
 
         XCTAssertNil(NearbyHandshake.verify(hello: hello, nonce: nonce, advertised: nil))
+    }
+
+    // MARK: - Ключ соглашения
+
+    /// Подпись под вызовом честная, а ключ соглашения подменён. Именно так
+    /// выглядел бы посредник, который хочет читать переписку.
+    func test_swappedAgreementKey_isRejected() throws {
+        let bob = DeviceIdentity()
+        let mallory = DeviceIdentity()
+        let honest = try NearbyHandshake.answer(to: nonce, as: bob)
+
+        let swapped = HelloPayload(publicKey: honest.publicKey,
+                                  signature: honest.signature,
+                                  agreementKey: mallory.agreementKey,
+                                  agreementProof: honest.agreementProof)
+
+        XCTAssertNil(NearbyHandshake.verify(hello: swapped, nonce: nonce, advertised: bob.publicKey))
+    }
+
+    /// Ключ соглашения чужой и подпись под ним чужая — но подпись под
+    /// вызовом всё ещё от Боба. Привязка должна быть к его ключу.
+    func test_agreementKeyProvenByAnotherIdentity_isRejected() throws {
+        let bob = DeviceIdentity()
+        let mallory = DeviceIdentity()
+        let honest = try NearbyHandshake.answer(to: nonce, as: bob)
+        let malloryBundle = try mallory.keyBundle()
+
+        let hijacked = HelloPayload(publicKey: honest.publicKey,
+                                    signature: honest.signature,
+                                    agreementKey: malloryBundle.agreementKey,
+                                    agreementProof: malloryBundle.agreementProof)
+
+        XCTAssertNil(NearbyHandshake.verify(hello: hijacked, nonce: nonce, advertised: bob.publicKey))
+    }
+
+    /// Подпись под вызовом — это подпись под 32 случайными байтами, и
+    /// ключ соглашения тоже 32 байта. Подпись под вызовом не должна
+    /// годиться как доказательство привязки ключа.
+    func test_challengeSignature_doesNotProveAnAgreementKey() throws {
+        let bob = DeviceIdentity()
+        let mallory = DeviceIdentity()
+
+        // Мэллори выдала Бобу «вызов», равный её ключу соглашения, и
+        // получила под ним честную подпись.
+        let trick = try NearbyHandshake.answer(to: mallory.agreementKey, as: bob)
+
+        let forged = HelloPayload(publicKey: bob.publicKey,
+                                  signature: try bob.signature(for: nonce),
+                                  agreementKey: mallory.agreementKey,
+                                  agreementProof: trick.signature)
+
+        XCTAssertNil(NearbyHandshake.verify(hello: forged, nonce: nonce, advertised: bob.publicKey))
     }
 
     // MARK: - Вызов
@@ -93,7 +152,7 @@ final class NearbyHandshakeTests: XCTestCase {
         let bob = DeviceIdentity()
         let hello = try NearbyHandshake.answer(to: nonce, as: bob)
 
-        let nearby = NearbyHandshake.verify(hello: hello, nonce: nonce, advertised: nil)
+        let nearby = NearbyHandshake.verify(hello: hello, nonce: nonce, advertised: nil)?.fingerprint
 
         XCTAssertEqual(nearby, DeviceIdentity.fingerprint(of: bob.publicKey))
         XCTAssertEqual(nearby, bob.fingerprint)
@@ -120,7 +179,7 @@ final class NearbyHandshakeTests: XCTestCase {
         XCTAssertEqual(restored.type, .hello)
         XCTAssertEqual(NearbyHandshake.verify(hello: try restored.decodeHello(),
                                               nonce: nonce,
-                                              advertised: bob.publicKey),
+                                              advertised: bob.publicKey)?.fingerprint,
                        bob.fingerprint)
     }
 }

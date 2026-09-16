@@ -39,9 +39,43 @@ enum RelayEnvelopeKind: String, Codable, Sendable {
 /// Имя и адрес разделены намеренно. Имя человек выбирает сам, оно может
 /// повторяться и меняться; `id` — отпечаток ключа, он уникален, и подделать
 /// его нельзя, не имея закрытой части.
+///
+/// Ключи — те, которыми человек представился серверу. Необязательные,
+/// потому что старый релей их не пересылает; такой участник в список не
+/// попадёт — писать ему нечем.
 struct RelayParticipant: Codable, Sendable {
     let id: String
     let name: String
+    let publicKey: Data?
+    let agreementKey: Data?
+    let agreementProof: Data?
+
+    init(id: String, name: String, keys: KeyBundle? = nil) {
+        self.id = id
+        self.name = name
+        self.publicKey = keys?.publicKey
+        self.agreementKey = keys?.agreementKey
+        self.agreementProof = keys?.agreementProof
+    }
+
+    /// Личность, если ключи на месте, сходятся между собой и с адресом.
+    ///
+    /// Сверка отпечатка с `id` обязательна: иначе релей мог бы поставить
+    /// рядом с чужим адресом свои ключи.
+    var verifiedIdentity: PeerIdentity? {
+        guard let publicKey, let agreementKey, let agreementProof else {
+            return nil
+        }
+
+        let bundle = KeyBundle(publicKey: publicKey,
+                               agreementKey: agreementKey,
+                               agreementProof: agreementProof)
+
+        guard let identity = bundle.verified(), identity.fingerprint == id else {
+            return nil
+        }
+        return identity
+    }
 }
 
 struct RelayEnvelope: Codable, Sendable {
@@ -73,8 +107,7 @@ struct RelayEnvelope: Codable, Sendable {
     static func hello(from sender: String,
                       answering challenge: Data,
                       as identity: DeviceIdentity) throws -> RelayEnvelope {
-        let proof = HelloPayload(publicKey: identity.publicKey,
-                                 signature: try identity.signature(for: challenge))
+        let proof = try HelloPayload(answering: challenge, as: identity)
 
         return RelayEnvelope(kind: .hello,
                              sender: sender,
@@ -87,13 +120,14 @@ struct RelayEnvelope: Codable, Sendable {
                       payload: try JSONEncoder().encode(participants))
     }
 
-    static func message(_ payload: MessagePayload,
+    /// Сообщение уходит только запечатанным: открытого текста релей не видит.
+    static func message(_ sealed: SealedPayload,
                         from sender: String,
                         to recipient: String) throws -> RelayEnvelope {
         RelayEnvelope(kind: .message,
                       sender: sender,
                       recipient: recipient,
-                      payload: try JSONEncoder().encode(payload))
+                      payload: try JSONEncoder().encode(sealed))
     }
 
     static func typing(_ event: TypingEvent,
@@ -146,8 +180,8 @@ struct RelayEnvelope: Codable, Sendable {
         try decode([RelayParticipant].self)
     }
 
-    func decodeMessage() throws -> MessagePayload {
-        try decode(MessagePayload.self)
+    func decodeMessage() throws -> SealedPayload {
+        try decode(SealedPayload.self)
     }
 
     func decodeTyping() throws -> TypingEvent {
@@ -186,22 +220,52 @@ struct RelayEnvelope: Codable, Sendable {
     }
 }
 
-/// Чем клиент подтверждает право на имя.
+/// Чем клиент подтверждает право на имя — и чем его потом шифровать.
+///
+/// `signature` — под вызовом, её проверяет тот, кто вызов выдал. Ключ
+/// соглашения и подпись под ним проверяет уже собеседник, а не сервер:
+/// серверу они не нужны, он их только передаёт дальше.
 struct HelloPayload: Codable, Sendable {
     let publicKey: Data
     let signature: Data
+    let agreementKey: Data
+    let agreementProof: Data
+
+    init(answering challenge: Data, as identity: DeviceIdentity) throws {
+        let bundle = try identity.keyBundle()
+        self.publicKey = bundle.publicKey
+        self.signature = try identity.signature(for: challenge)
+        self.agreementKey = bundle.agreementKey
+        self.agreementProof = bundle.agreementProof
+    }
+
+    /// Собрать вручную. Нужно тестам, которые проверяют, что подделка
+    /// не проходит.
+    init(publicKey: Data, signature: Data, agreementKey: Data, agreementProof: Data) {
+        self.publicKey = publicKey
+        self.signature = signature
+        self.agreementKey = agreementKey
+        self.agreementProof = agreementProof
+    }
+
+    var keyBundle: KeyBundle {
+        KeyBundle(publicKey: publicKey, agreementKey: agreementKey, agreementProof: agreementProof)
+    }
 }
 
 enum RelayError: Error, LocalizedError, Equatable {
     case emptyPayload
     case notConnected
     case invalidURL
+    /// Собеседника с таким адресом на релее нет — или его ключи не прошли.
+    case noCipher(String)
 
     var errorDescription: String? {
         switch self {
         case .emptyPayload:  return "В конверте нет полезной нагрузки"
         case .notConnected:  return "Нет соединения с релеем"
         case .invalidURL:    return "Некорректный адрес релея"
+        case .noCipher(let address): return "Нет ключа переписки с \(address)"
         }
     }
 }

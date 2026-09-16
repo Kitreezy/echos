@@ -112,6 +112,8 @@ final class WebSocketTransportTests: XCTestCase {
         }
 
         let incoming = bob.messageStream
+        // Слать можно только тому, чей ключ уже пришёл с присутствием.
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
 
         let payload = MessagePayload(from: Message(text: "привет из сети", isFromMe: true),
                                      senderName: "Alice")
@@ -123,6 +125,84 @@ final class WebSocketTransportTests: XCTestCase {
         XCTAssertEqual(received.first?.value.senderName, "Alice")
         XCTAssertEqual(received.first?.sender, alice.myAddress,
                        "Отправителя проставляет релей, из ключа")
+    }
+
+    /// Ради этого всё и затевалось: релей сообщение переносит, но прочитать
+    /// не может.
+    func test_relay_doesNotSeeTheText() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+
+        let incoming = bob.messageStream
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+
+        let payload = MessagePayload(from: Message(text: "только для Боба", isFromMe: true),
+                                     senderName: "Alice")
+        try await alice.sendMessage(payload, to: bob.myAddress)
+
+        let received = await collect(incoming, count: 1, timeout: .seconds(5))
+        XCTAssertEqual(received.first?.value.text, "только для Боба", "До Боба текст дошёл")
+
+        let passedThrough = server.received.filter { $0.kind == .message }
+        XCTAssertEqual(passedThrough.count, 1)
+        for envelope in passedThrough {
+            let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
+            XCTAssertFalse(wire.contains("только для Боба"), "Текст виден серверу")
+            XCTAssertFalse(wire.contains(payload.id), "Идентификатор сообщения тоже под замком")
+        }
+    }
+
+    /// Релей, который ключи не пересылает (старая сборка сервера), даёт
+    /// пустой список: писать этим людям нечем.
+    func test_relayWithoutKeys_listsNobody() async {
+        server.forwardsKeys = false
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+
+        let stream = alice.peerStream
+        let lists = await collect(stream, count: 1, timeout: .seconds(3))
+
+        XCTAssertTrue(lists.allSatisfy(\.isEmpty))
+
+        do {
+            let payload = MessagePayload(from: Message(text: "в никуда", isFromMe: true),
+                                         senderName: "Alice")
+            try await alice.sendMessage(payload, to: bob.myAddress)
+            XCTFail("Без ключа собеседника отправлять нечем")
+        } catch let error as RelayError {
+            XCTAssertEqual(error, .noCipher(bob.myAddress))
+        } catch {
+            XCTFail("Не та ошибка: \(error)")
+        }
+    }
+
+    /// Конверт, которого Алиса не отправляла: релей (или кто-то за ним)
+    /// подделал сообщение от её имени. Не откроется — и не дойдёт.
+    func test_forgedMessage_isDropped() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+
+        let incoming = bob.messageStream
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+
+        // Мэллори притворяется Алисой: подписаться на релее её ключом
+        // не может, поэтому шлёт от себя — сервер проставит её адрес,
+        // а Боб такого адреса не знает. Проверяем и второй путь: конверт
+        // с адресом Алисы, но чужим содержимым.
+        let forged = SealedPayload(version: 1, box: Data(repeating: 0x42, count: 60))
+        try await alice.sendSealed(forged, to: bob.myAddress)
+
+        let received = await collect(incoming, count: 1, timeout: .seconds(2))
+        XCTAssertTrue(received.isEmpty, "Подделка не должна пройти")
     }
 
     func test_typingEvent_isDeliveredToTheOtherTransport() async throws {
