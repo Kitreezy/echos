@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 @preconcurrency import MultipeerConnectivity
 
 /// Делегатные методы MultipeerConnectivity приходят с фоновых очередей,
@@ -131,14 +132,25 @@ final class MultipeerService: NSObject {
         self.identity = identity ?? (try? DeviceIdentity.current())
 
         super.init()
+        observeAppLifecycle()
         print("[lifecycle] MultipeerService init — advertising as '\(displayName)'")
     }
     
     // MARK: - Discovery
     
     /// Запускаем advertiser (объявляем себя) и browser (ищем других).
+    /// Поиск включён человеком и не выключен. Отличается от «сейчас ищем»:
+    /// в фоне MultipeerConnectivity не живёт, и мы его останавливаем сами,
+    /// а при возврате поднимаем — если человек не выключал.
+    private var wantsDiscovery = false
+
     func startDeviceDiscovery() {
-        stopDeviceDiscovery()
+        wantsDiscovery = true
+        resumeDiscovery()
+    }
+
+    private func resumeDiscovery() {
+        suspendDiscovery()
         
         session = MCSession(peer: myPeerID,
                             securityIdentity: nil,  // TODO step 8: CryptoKit для end-to-end
@@ -177,6 +189,11 @@ final class MultipeerService: NSObject {
     }
     
     func stopDeviceDiscovery() {
+        wantsDiscovery = false
+        suspendDiscovery()
+    }
+
+    private func suspendDiscovery() {
         advertiser?.stopAdvertisingPeer()
         advertiser?.delegate = nil
         advertiser = nil
@@ -190,6 +207,30 @@ final class MultipeerService: NSObject {
         session = nil
     
         print("[MultipeerService] Discovery stopped")
+    }
+
+    // MARK: - Жизненный цикл приложения
+
+    /// В фоне Multipeer не работает — Apple рвёт сессии при уходе с экрана.
+    /// Останавливаемся сами, чисто, а при возврате поднимаемся, если поиск
+    /// не выключали. Раньше это делал главный экран, но для релея правило
+    /// другое — там соединение в фоне ещё полминуты живёт, — поэтому
+    /// каждый транспорт решает за себя.
+    private func observeAppLifecycle() {
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.wantsDiscovery else { return }
+                self.suspendDiscovery()
+            }
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.wantsDiscovery else { return }
+                self.resumeDiscovery()
+            }
+        }
     }
     
     // Симуляция RSSI (пока нет Core Bluetooth)

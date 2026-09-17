@@ -68,6 +68,7 @@ final class WebSocketTransport: NSObject {
     // MARK: - Private
 
     private let client: WebSocketClient
+    private let backgroundLease: BackgroundLease
 
     /// Ключ, которым подписывается рукопожатие.
     private let identity: DeviceIdentity?
@@ -125,14 +126,19 @@ final class WebSocketTransport: NSObject {
     ///   устройства. Задаётся снаружи ради тестов: два транспорта в одном
     ///   процессе иначе делили бы одну личность на двоих и оказывались бы
     ///   для релея одним человеком.
+    /// - Parameter backgroundGrace: сколько держать соединение после
+    ///   сворачивания. По умолчанию — сколько даёт система; тесты ставят
+    ///   меньше.
     init(url: URL,
          displayName: String = UserSettings.displayName,
          identity: DeviceIdentity? = nil,
-         networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
+         networkMonitor: any NetworkMonitoring = NetworkMonitor.shared,
+         backgroundGrace: Duration = BackgroundLease.duration) {
         self.myDisplayName = displayName
         self.identity = identity ?? (try? DeviceIdentity.current())
         self.myAddress = self.identity?.fingerprint ?? ""
         self.client = WebSocketClient(url: url, networkMonitor: networkMonitor)
+        self.backgroundLease = BackgroundLease(duration: backgroundGrace)
         super.init()
         observeAppLifecycle()
     }
@@ -170,11 +176,14 @@ final class WebSocketTransport: NSObject {
             return
         }
 
-        // Закрываемся штатно, а не ждём, пока соединение умрёт само: так
-        // сервер сразу уберёт нас из присутствия, и собеседники не будут
-        // видеть призрака ещё минуту.
-        client.disconnect()
-        clearPeers()
+        // Не рвём сразу: полминуты соединение живёт, и сообщение за это
+        // время дойдёт — его покажет уведомление. Потом закрываемся штатно,
+        // а не ждём, пока соединение умрёт само: так сервер сразу уберёт
+        // нас из присутствия, и собеседники не будут видеть призрака.
+        backgroundLease.begin { [weak self] in
+            self?.client.disconnect()
+            self?.clearPeers()
+        }
     }
 
     @objc
@@ -183,6 +192,9 @@ final class WebSocketTransport: NSObject {
             return
         }
 
+        // Вернулись до истечения отсрочки — соединение и не рвалось;
+        // `connect()` на живом соединении ничего не делает.
+        backgroundLease.end()
         client.connect()
     }
 

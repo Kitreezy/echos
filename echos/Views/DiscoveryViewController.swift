@@ -398,6 +398,8 @@ final class DiscoveryViewController: UIViewController {
         )
     }
 
+    /// Связь в фоне — дело транспортов: Multipeer останавливается сам,
+    /// релей ещё полминуты живёт ради уведомлений. Здесь только экран.
     @objc
     private func appDidEnterBackground() {
         guard viewModel.isDiscovering else {
@@ -405,7 +407,6 @@ final class DiscoveryViewController: UIViewController {
         }
 
         shouldResumeDiscovery = true
-        viewModel.stopDeviceDiscovery()
         radarState.isScanning = false
         stopAnimations()
     }
@@ -418,11 +419,7 @@ final class DiscoveryViewController: UIViewController {
 
         shouldResumeDiscovery = false
         startAnimations()
-
-        Task {
-            await viewModel.startDeviceDiscovery()
-            radarState.isScanning = true
-        }
+        radarState.isScanning = true
     }
 
     deinit {
@@ -583,6 +580,7 @@ final class DiscoveryViewController: UIViewController {
         withObservationTracking {
             _ = viewModel.latestNotice
             _ = viewModel.unreadCounts
+            _ = viewModel.persistedBatches
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -596,14 +594,23 @@ final class DiscoveryViewController: UIViewController {
         // Список разговоров — с точками непрочитанного.
         reloadConversations()
 
-        // Окно — у навигации, не у своей вью: когда сверху другой экран,
-        // навигация снимает нашу вью с иерархии, и `view.window` пуст.
-        guard let notice = viewModel.latestNotice, notice.messageID != shownNoticeID,
-              let window = navigationController?.view.window ?? view.window else {
+        guard let notice = viewModel.latestNotice, notice.messageID != shownNoticeID else {
             return
         }
         shownNoticeID = notice.messageID
 
+        // Свёрнутому приложению баннер не нужен: сообщение сохранится и
+        // при возврате будет ждать числом в списке. Уведомлений на экране
+        // блокировки нет намеренно — см. ADR 005.
+        guard UIApplication.shared.applicationState == .active else {
+            return
+        }
+
+        // Окно — у навигации, не у своей вью: когда сверху другой экран,
+        // навигация снимает нашу вью с иерархии, и `view.window` пуст.
+        guard let window = navigationController?.view.window ?? view.window else {
+            return
+        }
         NoticeBanner.show(notice, in: window) { [weak self] in
             self?.open(conversationWith: notice.address, named: notice.name)
         }
