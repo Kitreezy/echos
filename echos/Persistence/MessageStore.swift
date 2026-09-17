@@ -34,6 +34,7 @@ final class MessageStore {
             entity.senderName = message.senderName
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
+            entity.isRead = message.isRead
             entity.timestamp = message.timestamp
             entity.status = Int16(message.status.rawValue)
             
@@ -42,6 +43,7 @@ final class MessageStore {
         } else {
             if let entity = existing.first {
                 entity.status = Int16(message.status.rawValue)
+                entity.isRead = message.isRead
                 try viewContext.save()
                 print("[MessageStore] Update status for: \(message.id)")
             }
@@ -64,7 +66,8 @@ final class MessageStore {
                     peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent)
+                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
+                    isRead: entity.isRead)
         }
         print("[MessageStore] Loaded \(messages.count) messages")
         return messages
@@ -94,13 +97,29 @@ final class MessageStore {
                     peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent
+                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
+                    isRead: entity.isRead
             )
         }
         print("[MessageStore] Loaded \(messages.count) messages with \(address)")
         return messages
     }
     
+    // MARK: - Read
+
+    /// Чат открыли — всё входящее в нём прочитано.
+    func markAsRead(with address: String) async throws {
+        let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "peerAddress == %@ AND isFromMe == NO AND isRead == NO", address)
+
+        let unread = try viewContext.fetch(fetchRequest)
+        guard !unread.isEmpty else {
+            return
+        }
+        unread.forEach { $0.isRead = true }
+        try viewContext.save()
+    }
+
     // MARK: - DeleteOld
     
     func deleteOldMessages(olderThan days: Int) async throws {

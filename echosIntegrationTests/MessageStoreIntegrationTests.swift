@@ -64,6 +64,19 @@ final class MessageStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(restored.text, mosaic.text)
     }
 
+    func test_markAsRead_touchesOnlyIncomingInThatConversation() async throws {
+        try await store.saveMessage(Message(text: "от Кэрол", peerAddress: "carol", isFromMe: false, status: .sent, isRead: false))
+        try await store.saveMessage(Message(text: "от Боба", peerAddress: "bob", isFromMe: false, status: .sent, isRead: false))
+        try await store.saveMessage(Message(text: "Кэрол от меня", peerAddress: "carol", isFromMe: true, status: .sent, isRead: false))
+
+        try await store.markAsRead(with: "carol")
+        let all = try await store.loadMessages()
+
+        XCTAssertEqual(all.first { $0.text == "от Кэрол" }?.isRead, true)
+        XCTAssertEqual(all.first { $0.text == "от Боба" }?.isRead, false, "Чужая переписка не трогается")
+        XCTAssertEqual(all.filter(\.isUnread).count, 1)
+    }
+
     func test_plainMessage_loadsWithoutMosaic() async throws {
         try await store.saveMessage(CoreDataTestStack.message("текст", isFromMe: true, status: .sent))
         let loaded = try await store.loadMessages()

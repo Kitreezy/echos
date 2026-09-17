@@ -149,7 +149,13 @@ final class LoopbackTransport: PeerTransport {
 
     func disconnectAll() {}
 
+    /// Изобразить обрыв: отправка падает, пока это включено.
+    var sendingFails = false
+
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
+        if sendingFails {
+            throw RelayError.notConnected
+        }
         sentMessages.append((payload, address))
     }
 
