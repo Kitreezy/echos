@@ -28,6 +28,9 @@ struct Message: Identifiable, Equatable {
     let isFromMe: Bool
     let timestamp: Date
     var status: MessageStatus
+    /// Прочитано ли. Своё — всегда; входящее — если пришло в открытый чат
+    /// или чат потом открыли. Ради этого и считается непрочитанное.
+    var isRead: Bool
     
     init(id: UUID = UUID(),
          text: String,
@@ -36,7 +39,8 @@ struct Message: Identifiable, Equatable {
          peerAddress: String? = nil,
          isFromMe: Bool,
          timestamp: Date = Date(),
-         status: MessageStatus = .sending
+         status: MessageStatus = .sending,
+         isRead: Bool = true
     ) {
         self.id = id
         self.text = text
@@ -46,6 +50,11 @@ struct Message: Identifiable, Equatable {
         self.isFromMe = isFromMe
         self.timestamp = timestamp
         self.status = status
+        self.isRead = isRead
+    }
+
+    var isUnread: Bool {
+        !isFromMe && !isRead
     }
 
     /// Копия с проставленной перепиской.
@@ -57,7 +66,8 @@ struct Message: Identifiable, Equatable {
                 peerAddress: address,
                 isFromMe: isFromMe,
                 timestamp: timestamp,
-                status: status)
+                status: status,
+                isRead: isRead)
     }
 }
 

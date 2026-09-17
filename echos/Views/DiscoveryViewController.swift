@@ -570,6 +570,56 @@ final class DiscoveryViewController: UIViewController {
     private func bindViewModel() {
         updateUI()
         scheduleObservation()
+        observeNotices()
+    }
+
+    // MARK: - Входящее
+
+    /// Главный экран живёт всё время — корень навигации, — поэтому именно он
+    /// слушает входящее и показывает баннер, на каком бы экране мы ни были.
+    private var shownNoticeID: UUID?
+
+    private func observeNotices() {
+        withObservationTracking {
+            _ = viewModel.latestNotice
+            _ = viewModel.unreadCounts
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.handleNotice()
+                self.observeNotices()
+            }
+        }
+    }
+
+    private func handleNotice() {
+        // Список разговоров — с точками непрочитанного.
+        reloadConversations()
+
+        // Окно — у навигации, не у своей вью: когда сверху другой экран,
+        // навигация снимает нашу вью с иерархии, и `view.window` пуст.
+        guard let notice = viewModel.latestNotice, notice.messageID != shownNoticeID,
+              let window = navigationController?.view.window ?? view.window else {
+            return
+        }
+        shownNoticeID = notice.messageID
+
+        NoticeBanner.show(notice, in: window) { [weak self] in
+            self?.open(conversationWith: notice.address, named: notice.name)
+        }
+    }
+
+    /// Открыть чат с человеком, откуда бы ни нажали: назад к корню и в чат.
+    private func open(conversationWith address: String, named name: String) {
+        guard let navigation = navigationController else {
+            return
+        }
+        navigation.popToRootViewController(animated: false)
+
+        Task {
+            await viewModel.switchToConversation(with: address, named: name)
+            navigation.pushViewController(ChatViewController(viewModel: viewModel), animated: true)
+        }
     }
     
     private func scheduleObservation() {

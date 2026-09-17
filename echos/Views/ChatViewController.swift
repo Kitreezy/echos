@@ -203,6 +203,10 @@ final class ChatViewController: UIViewController {
         navigationController?.interactivePopGestureRecognizer?.delegate = nil
 
         restoreMosaicDraft()
+
+        // Пока экран чата на экране, входящее в него — прочитанное, и
+        // баннер о нём не нужен.
+        viewModel.isConversationOnScreen = true
     }
 
     /// Набросок этой переписки — сразу на экран, без палитры: видно, что
@@ -218,17 +222,27 @@ final class ChatViewController: UIViewController {
         updateMosaicChrome()
     }
 
+    /// Открытый чат начинается с конца — с последних сообщений. Крутить
+    /// ленту до раскладки бесполезно: у неё ещё нет размера, — поэтому
+    /// первый раз это делается здесь, после раскладки, без анимации.
+    private var needsScrollToBottom = true
+
     /// Черновик лежит поверх ленты и не должен закрывать последние
     /// сообщения: лента получает отступ снизу на его высоту.
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+
         let inset = draftView.isHidden ? 0 : draftView.bounds.height + Space.tight
-        guard tableView.contentInset.bottom != inset else {
-            return
+        let insetChanged = tableView.contentInset.bottom != inset
+        if insetChanged {
+            tableView.contentInset.bottom = inset
+            tableView.verticalScrollIndicatorInsets.bottom = inset
         }
-        tableView.contentInset.bottom = inset
-        tableView.verticalScrollIndicatorInsets.bottom = inset
-        scrollToBottom(animated: false)
+
+        if needsScrollToBottom || insetChanged {
+            needsScrollToBottom = false
+            scrollToBottom(animated: false)
+        }
     }
 
     private func saveMosaicDraft() {
@@ -258,6 +272,7 @@ final class ChatViewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        viewModel.isConversationOnScreen = false
 
         print("[lifecycle] ChatViewController viewWillDisappear (isMovingFromParent: \(isMovingFromParent))")
         stopTypingAnimation()
@@ -459,7 +474,12 @@ final class ChatViewController: UIViewController {
         emptyStateView.isHidden = !viewModel.messages.isEmpty
         
         tableView.reloadData()
-        scrollToBottom(animated: true)
+        // До первого показа крутить нечего: лента ещё без размера, за это
+        // отвечает раскладка. Дальше — плавно, как и положено новому
+        // сообщению.
+        if view.window != nil {
+            scrollToBottom(animated: true)
+        }
         
         updateMenu()
         
@@ -955,7 +975,13 @@ extension ChatViewController: UITableViewDataSource {
         ) as? MessageCell else {
             return UITableViewCell()
         }
-        cell.configure(with: viewModel.messages[indexPath.row])
+        let message = viewModel.messages[indexPath.row]
+        cell.configure(with: message)
+        cell.onRetry = { [weak self] in
+            Task {
+                await self?.viewModel.resend(message.id)
+            }
+        }
         return cell
     }
 }
@@ -964,11 +990,17 @@ extension ChatViewController: UITableViewDataSource {
 
 extension ChatViewController: UITableViewDelegate {
 
-    /// Долгое нажатие на сообщение: скопировать, выделить, отправить снова.
+    /// Долгое нажатие на мозаику: скопировать как текст, отправить снова.
+    ///
+    /// У текста меню нет: текст выделяется прямо в ленте, и копирование там
+    /// штатное, а «повторить» — нажатием на подпись «не отправлено».
     func tableView(_ tableView: UITableView,
                    contextMenuConfigurationForRowAt indexPath: IndexPath,
                    point: CGPoint) -> UIContextMenuConfiguration? {
         let message = viewModel.messages[indexPath.row]
+        guard message.mosaic != nil else {
+            return nil
+        }
 
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             var actions: [UIAction] = []
@@ -982,31 +1014,15 @@ extension ChatViewController: UITableViewDelegate {
                 })
             }
 
-            // У мозаики копируется текстовая форма: в чужом мессенджере
-            // ровно не встанет, но это лучшее, что там возможно.
-            actions.append(UIAction(title: message.mosaic == nil ? "Скопировать" : "Скопировать как текст",
+            // В чужом мессенджере ровно не встанет, но это лучшее, что там
+            // возможно.
+            actions.append(UIAction(title: "Скопировать как текст",
                                     image: UIImage(systemName: "doc.on.doc")) { _ in
                 UIPasteboard.general.string = message.text
             })
 
-            if message.mosaic == nil {
-                actions.append(UIAction(title: "Выделить текст",
-                                        image: UIImage(systemName: "text.cursor")) { _ in
-                    self?.selectText(of: message)
-                })
-            }
-
             return UIMenu(children: actions)
         }
-    }
-
-    /// Выделить часть: текст открывается на листе, где его можно выделить
-    /// как угодно и скопировать штатным меню.
-    private func selectText(of message: Message) {
-        let sheet = TextSelectionViewController(text: message.text)
-        sheet.sheetPresentationController?.detents = [.medium(), .large()]
-        sheet.sheetPresentationController?.prefersGrabberVisible = true
-        present(sheet, animated: true)
     }
 }
 

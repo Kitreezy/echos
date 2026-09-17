@@ -20,6 +20,15 @@ enum TransportEvent: Sendable {
     case wallRequest(String)
 }
 
+/// О чём сказать баннером: кто, что, куда открыть.
+struct IncomingNotice: Equatable, Sendable {
+    let messageID: UUID
+    let address: String
+    let name: String
+    let preview: String
+    let mosaic: Mosaic?
+}
+
 @Observable
 @MainActor
 final class ChatViewModel {
@@ -31,6 +40,26 @@ final class ChatViewModel {
     var connectionStatus: String = "Не подключён"
     var isDiscovering: Bool = false
     var typingPeerName: String? = nil  // nil - никто не печатает
+
+    /// Непрочитанное по переписке: адрес → сколько. Считается при запуске
+    /// из хранилища, растёт на входящем не в открытый чат, обнуляется при
+    /// открытии.
+    var unreadCounts: [String: Int] = [:]
+
+    var totalUnread: Int {
+        unreadCounts.values.reduce(0, +)
+    }
+
+    /// Экран чата сейчас на экране. `currentConversationPeer` для этого не
+    /// годится: модель назначает собеседника и без экрана — у Multipeer в
+    /// момент принятого приглашения, — а прочитанным считается только то,
+    /// что человек действительно видел.
+    var isConversationOnScreen = false
+
+    /// Последнее входящее не в открытый чат — то, о чём стоит сказать
+    /// баннером. Меняется на каждое такое сообщение; наблюдатель сравнивает
+    /// по `id`, чтобы одно и то же не показать дважды.
+    var latestNotice: IncomingNotice? = nil
 
     /// Адрес того, кто печатает. Отдельно от имени: гасить индикатор надо по
     /// тому же адресу, с которого он зажёгся, а имена могут совпадать.
@@ -140,6 +169,10 @@ final class ChatViewModel {
         
         multipeerService = transport ?? PeerTransportFactory.make()
         messageStore = store ?? MessageStore()
+
+        Task { [weak self] in
+            await self?.loadUnreadCounts()
+        }
         
         transportTask = Task { [weak self] in
             await self?.consumeTransportEvents()
@@ -185,6 +218,12 @@ final class ChatViewModel {
             let filtered = try await messageStore.loadMessages(with: address)
             messages = filtered
             currentConversationPeer = address
+
+            // Открыли — значит, прочитали. И в памяти, и в хранилище.
+            if unreadCounts[address] != nil {
+                unreadCounts[address] = nil
+                try await messageStore.markAsRead(with: address)
+            }
             // Имя ищем по порядку: что передали, кто сейчас на связи, что
             // осталось в истории. Собеседника может не быть рядом, а чат
             // всё равно открывается.
@@ -215,7 +254,7 @@ final class ChatViewModel {
             }
             let summaries = conversations.map { address, messages in
                 let lastMessage = messages.max(by: { $0.timestamp < $1.timestamp })
-                let unreadCount = 0
+                let unreadCount = messages.filter(\.isUnread).count
 
                 // Имя берём то, под которым собеседник известен сейчас, а
                 // если его нет рядом — то, под которым он писал в последний раз.
@@ -415,7 +454,12 @@ final class ChatViewModel {
     }
 
     private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
-        let message = incoming.value.toMessage(from: incoming.sender)
+        var message = incoming.value.toMessage(from: incoming.sender)
+
+        // Прочитано — только если пришло в открытый чат. Остальное ждёт
+        // человека: в списке точкой, сверху баннером.
+        let isInOpenChat = isConversationOnScreen && incoming.sender == currentConversationPeer
+        message.isRead = isInOpenChat
         
         // Сравниваем адреса. По имени было нельзя: тёзка попадал бы в чужую
         // переписку, а при адресации по ключу — и вовсе кто угодно, назвавшись
@@ -426,8 +470,40 @@ final class ChatViewModel {
         } else {
             print("[ChatViewModel] Silently saved message from \(incoming.sender) (different conversation)")
         }
+
+        if !isInOpenChat {
+            unreadCounts[incoming.sender, default: 0] += 1
+            latestNotice = IncomingNotice(
+                messageID: message.id,
+                address: incoming.sender,
+                name: peers.first { $0.address == incoming.sender }?.displayName ?? message.senderName ?? incoming.sender,
+                preview: message.mosaic == nil ? message.text : "мозаика",
+                mosaic: message.mosaic
+            )
+        }
         
         persist(message)
+    }
+
+    /// Непрочитанное из хранилища — при запуске, чтобы точки в списке были
+    /// на месте с первого экрана.
+    func loadUnreadCounts() async {
+        guard let messageStore else {
+            return
+        }
+        do {
+            let all = try await messageStore.loadMessages()
+            var counts: [String: Int] = [:]
+            for message in all where message.isUnread {
+                if let address = message.peerAddress {
+                    counts[address, default: 0] += 1
+                }
+            }
+            unreadCounts = counts
+        }
+        catch {
+            print("[ChatViewModel] Failed to count unread: \(error)")
+        }
     }
     
     private func handlePeers(_ discoveredPeers: [Peer]) async {
