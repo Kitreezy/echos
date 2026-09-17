@@ -29,6 +29,20 @@ final class SpyMessageStore: MessageStoring {
         saved.filter { $0.senderName == peerName }
     }
 
+    private(set) var markedAsRead: [String] = []
+
+    func markAsRead(with address: String) async throws {
+        markedAsRead.append(address)
+        saved = saved.map { message in
+            guard message.peerAddress == address, !message.isFromMe else {
+                return message
+            }
+            var read = message
+            read.isRead = true
+            return read
+        }
+    }
+
     func deleteOldMessages(olderThan days: Int) async throws {}
 
     func deleteConverstaion(with peerName: String) async throws {

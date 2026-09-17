@@ -31,13 +31,30 @@ final class MessageCell: UITableViewCell {
         return label
     }()
 
-    private let messageLabel: UILabel = {
-        let label = UILabel()
-        label.numberOfLines = 0
-        label.font = Typography.body
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
+    /// Текст — в `UITextView`, а не в `UILabel`: так его можно выделить
+    /// прямо в ленте и скопировать штатным меню, а ссылки в нём живые.
+    /// Не редактируется, не прокручивается, размер задаёт содержимое.
+    private let messageLabel: UITextView = {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.font = Typography.body
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.dataDetectorTypes = [.link]
+        view.linkTextAttributes = [
+            .foregroundColor: UIColor.action,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        view.tintColor = .own
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
+
+    /// Что делать по нажатию на «не отправлено». `nil` — нажимать нечего.
+    var onRetry: (() -> Void)?
 
     /// Мозаика — вместо текста, когда сообщение ею и является.
     private let mosaicView: MosaicView = {
@@ -63,6 +80,9 @@ final class MessageCell: UITableViewCell {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
+
+    /// Подпись нажимается только у неотправленного — там она и есть кнопка.
+    private lazy var retryTap = UITapGestureRecognizer(target: self, action: #selector(retryTapped))
 
     private let column = UIView()
 
@@ -91,6 +111,7 @@ final class MessageCell: UITableViewCell {
         column.addSubview(senderNameLabel)
         column.addSubview(body)
         column.addSubview(footnoteLabel)
+        footnoteLabel.addGestureRecognizer(retryTap)
         body.addArrangedSubview(messageLabel)
         body.addArrangedSubview(mosaicView)
 
@@ -141,11 +162,13 @@ final class MessageCell: UITableViewCell {
             senderNameLabel.isHidden = true
             footnoteLabel.text = footnote(time: time, status: message.status)
             footnoteLabel.textColor = message.status == .failed ? .lost : .inkMuted
+            footnoteLabel.isUserInteractionEnabled = message.status == .failed
         } else {
             alignLeft()
             messageLabel.textColor = .other
             footnoteLabel.text = time
             footnoteLabel.textColor = .inkMuted
+            footnoteLabel.isUserInteractionEnabled = false
 
             senderNameLabel.text = message.senderName
             senderNameLabel.isHidden = message.senderName == nil
@@ -162,8 +185,13 @@ final class MessageCell: UITableViewCell {
             return time
 
         case .failed:
-            return "\(time) · не отправлено"
+            return "\(time) · не отправлено · повторить"
         }
+    }
+
+    @objc
+    private func retryTapped() {
+        onRetry?()
     }
 
     private func alignLeft() {
