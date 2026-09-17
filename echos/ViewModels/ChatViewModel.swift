@@ -50,6 +50,11 @@ final class ChatViewModel {
         unreadCounts.values.reduce(0, +)
     }
 
+    /// Сколько раз хранилище получало пачку сообщений. Список разговоров
+    /// читает хранилище, а запись идёт с задержкой: перечитывать его надо
+    /// после записи, а не в момент прихода.
+    var persistedBatches = 0
+
     /// Экран чата сейчас на экране. `currentConversationPeer` для этого не
     /// годится: модель назначает собеседника и без экрана — у Multipeer в
     /// момент принятого приглашения, — а прочитанным считается только то,
@@ -600,6 +605,7 @@ final class ChatViewModel {
                     print("[ChatViewModel] Failed to save message: \(error)")
                 }
             }
+            persistedBatches += 1
         }
     }
     

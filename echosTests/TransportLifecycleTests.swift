@@ -8,6 +8,10 @@
 //  и сокет оставался умирать по таймауту, а собеседники ещё минуту видели
 //  «призрака» в списке присутствия.
 //
+//  Теперь в фоне соединение живёт ещё немного — ради уведомления о
+//  входящем, — и только потом закрывается штатно. Вернулись раньше —
+//  соединение то же самое, представляться заново не надо.
+//
 
 import UIKit
 import XCTest
@@ -33,8 +37,9 @@ final class TransportLifecycleTests: XCTestCase {
         try await super.tearDown()
     }
 
-    private func makeTransport() -> WebSocketTransport {
-        WebSocketTransport(url: server.url, displayName: "Alice", networkMonitor: monitor)
+    private func makeTransport(grace: Duration = .milliseconds(300)) -> WebSocketTransport {
+        WebSocketTransport(url: server.url, displayName: "Alice",
+                           networkMonitor: monitor, backgroundGrace: grace)
     }
 
     private func enterBackground() {
@@ -49,8 +54,10 @@ final class TransportLifecycleTests: XCTestCase {
 
     // MARK: - Фон
 
-    func test_background_closesConnectionPromptly() async {
-        let transport = makeTransport()
+    /// Свернули — соединение живёт ещё отсрочку: сообщение за это время
+    /// дойдёт и станет уведомлением. Потом — закрываемся сами, штатно.
+    func test_background_keepsConnectionForTheGrace_thenCloses() async {
+        let transport = makeTransport(grace: .milliseconds(400))
         defer { transport.stopDeviceDiscovery() }
 
         transport.startDeviceDiscovery()
@@ -58,10 +65,37 @@ final class TransportLifecycleTests: XCTestCase {
 
         enterBackground()
 
-        let released = await waitUntil { self.server.connectedClientCount == 0 }
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(server.connectedClientCount, 1, "В отсрочку соединение живо")
+        XCTAssertEqual(transport.connectionState, .connected)
 
-        XCTAssertTrue(released, "Сервер должен сразу убрать нас из присутствия")
+        let released = await waitUntil { self.server.connectedClientCount == 0 }
+        XCTAssertTrue(released, "После отсрочки сервер убирает нас из присутствия")
         XCTAssertEqual(transport.connectionState, .disconnected)
+    }
+
+    /// Вернулись до истечения отсрочки — соединение то же, hello заново
+    /// не уходит.
+    func test_foregroundWithinGrace_keepsTheSameConnection() async {
+        let transport = makeTransport(grace: .seconds(5))
+        defer { transport.stopDeviceDiscovery() }
+
+        transport.startDeviceDiscovery()
+        _ = await waitUntil { self.server.connectedClientCount == 1 }
+        server.clearReceived()
+
+        enterBackground()
+        try? await Task.sleep(for: .milliseconds(100))
+        enterForeground()
+        try? await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(server.connectedClientCount, 1)
+        XCTAssertFalse(server.received.contains { $0.kind == .hello },
+                       "То же соединение — представляться заново незачем")
+
+        // И отсрочка снята: по её истечении ничего не рвётся.
+        try? await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(transport.connectionState, .connected)
     }
 
     func test_foreground_restoresConnection() async {
