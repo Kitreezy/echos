@@ -15,7 +15,11 @@ enum MessageStatus: Int, Codable {
 
 struct Message: Identifiable, Equatable {
     let id: UUID
+    /// Текст — для обычного сообщения он и есть содержимое, для мозаики —
+    /// её текстовая форма: превью, старые сборки, копирование наружу.
     let text: String
+    /// Точная форма, если это мозаика. Рисуется сеткой, а не текстом.
+    let mosaic: Mosaic?
     /// Имя отправителя — для показа в бабблах. Заполняет его сам отправитель,
     /// поэтому раскладывать по нему переписку нельзя: для этого есть адрес.
     let senderName: String?
@@ -27,6 +31,7 @@ struct Message: Identifiable, Equatable {
     
     init(id: UUID = UUID(),
          text: String,
+         mosaic: Mosaic? = nil,
          senderName: String? = nil,
          peerAddress: String? = nil,
          isFromMe: Bool,
@@ -35,6 +40,7 @@ struct Message: Identifiable, Equatable {
     ) {
         self.id = id
         self.text = text
+        self.mosaic = mosaic
         self.senderName = senderName
         self.peerAddress = peerAddress
         self.isFromMe = isFromMe
@@ -46,6 +52,7 @@ struct Message: Identifiable, Equatable {
     func inConversation(with address: String) -> Message {
         Message(id: id,
                 text: text,
+                mosaic: mosaic,
                 senderName: senderName,
                 peerAddress: address,
                 isFromMe: isFromMe,
@@ -60,12 +67,16 @@ struct MessagePayload: Codable {
     let text: String
     let senderName: String
     let timestamp: Double   // Date().timeIntervalSince1970
+    /// Мозаика, если это она. Необязательна: у обычного сообщения её нет,
+    /// а старая сборка, не знающая о мозаике, увидит текстовую форму.
+    let mosaic: Mosaic?
     
     init(from message: Message, senderName: String) {
         self.id = message.id.uuidString
         self.text = message.text
         self.senderName = senderName
         self.timestamp = message.timestamp.timeIntervalSince1970
+        self.mosaic = message.mosaic
     }
     
     /// Конвертация обратно в Message (входящее — isFromMe = false).
@@ -73,9 +84,14 @@ struct MessagePayload: Codable {
     /// Адрес отправителя приходит снаружи, от транспорта: `senderName` внутри
     /// payload пишет сам отправитель, и верить ему нельзя.
     func toMessage(from sender: String) -> Message {
-        Message(
+        // Сетка снаружи может быть какой угодно: не сошлась — остаётся
+        // текстовая форма, она есть всегда.
+        let mosaic = mosaic.flatMap { $0.isValid ? $0 : nil }
+
+        return Message(
             id: UUID(uuidString: id) ?? UUID(),
             text: text,
+            mosaic: mosaic,
             senderName: senderName,
             peerAddress: sender,
             isFromMe: false,

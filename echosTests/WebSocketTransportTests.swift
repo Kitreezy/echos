@@ -268,6 +268,33 @@ final class WebSocketTransportTests: XCTestCase {
         XCTAssertTrue(reannounced, "После реконнекта hello должен уйти повторно")
     }
 
+    /// Мозаика — то же сообщение, только с сеткой внутри: доходит сеткой,
+    /// а не текстом, и сервер её не видит.
+    func test_mosaic_arrivesAsAGrid() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+        let incoming = bob.messageStream
+
+        let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟨", "", "", "🟨"])!
+        let payload = MessagePayload(from: Message(text: mosaic.text, mosaic: mosaic, isFromMe: true),
+                                     senderName: "Alice")
+        try await alice.sendMessage(payload, to: bob.myAddress)
+
+        let received = await collect(incoming, count: 1, timeout: .seconds(5))
+        XCTAssertEqual(received.first?.value.mosaic, mosaic)
+        XCTAssertEqual(received.first?.value.text, mosaic.text)
+
+        for envelope in server.received where envelope.kind == .message {
+            let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
+            XCTAssertFalse(wire.contains("🟨"))
+            XCTAssertFalse(wire.contains("cells"))
+        }
+    }
+
     // MARK: - Стена
 
     /// Росчерк и стена целиком — такое же содержимое, как сообщение:

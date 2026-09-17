@@ -39,6 +39,23 @@ final class MessageCell: UITableViewCell {
         return label
     }()
 
+    /// Мозаика — вместо текста, когда сообщение ею и является.
+    private let mosaicView: MosaicView = {
+        let view = MosaicView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+
+    /// Текст или мозаика — что-то одно; скрытое в стеке не занимает места.
+    private let body: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+
     private let footnoteLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
@@ -72,8 +89,10 @@ final class MessageCell: UITableViewCell {
         column.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(column)
         column.addSubview(senderNameLabel)
-        column.addSubview(messageLabel)
+        column.addSubview(body)
         column.addSubview(footnoteLabel)
+        body.addArrangedSubview(messageLabel)
+        body.addArrangedSubview(mosaicView)
 
         columnLeading = column.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
                                                         constant: Space.margin)
@@ -89,11 +108,12 @@ final class MessageCell: UITableViewCell {
             senderNameLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             senderNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
 
-            messageLabel.topAnchor.constraint(equalTo: senderNameLabel.bottomAnchor, constant: Space.hair),
-            messageLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            messageLabel.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            body.topAnchor.constraint(equalTo: senderNameLabel.bottomAnchor, constant: Space.hair),
+            body.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            messageLabel.widthAnchor.constraint(equalTo: body.widthAnchor),
 
-            footnoteLabel.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: Space.tight),
+            footnoteLabel.topAnchor.constraint(equalTo: body.bottomAnchor, constant: Space.tight),
             footnoteLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             footnoteLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
             footnoteLabel.bottomAnchor.constraint(equalTo: column.bottomAnchor)
@@ -103,7 +123,15 @@ final class MessageCell: UITableViewCell {
     // MARK: - Configure
 
     func configure(with message: Message) {
-        messageLabel.text = message.text
+        if let mosaic = message.mosaic {
+            mosaicView.show(mosaic)
+            mosaicView.isHidden = false
+            messageLabel.isHidden = true
+        } else {
+            messageLabel.text = message.text
+            messageLabel.isHidden = false
+            mosaicView.isHidden = true
+        }
 
         let time = Self.timeFormatter.string(from: message.timestamp)
 
@@ -143,6 +171,7 @@ final class MessageCell: UITableViewCell {
         columnLeading?.isActive = true
         messageLabel.textAlignment = .left
         footnoteLabel.textAlignment = .left
+        body.alignment = .leading
     }
 
     private func alignRight() {
@@ -150,6 +179,7 @@ final class MessageCell: UITableViewCell {
         columnTrailing?.isActive = true
         messageLabel.textAlignment = .right
         footnoteLabel.textAlignment = .right
+        body.alignment = .trailing
     }
 
     // MARK: - Reuse

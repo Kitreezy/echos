@@ -608,20 +608,38 @@ final class ChatViewModel {
     
     /// Отправка сообщения
     func sendMessage(_ text: String) async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
         }
-        // Адрес проставляется сразу: без него сообщение не принадлежит ни
+        await send(Message(text: trimmed,
+                           senderName: nil,
+                           peerAddress: currentConversationPeer,
+                           isFromMe: true,
+                           status: .sending))
+    }
+
+    /// Отправка мозаики. Текст — её текстовая форма: превью и старые сборки
+    /// получают его, сетка едет рядом.
+    func sendMosaic(_ mosaic: Mosaic) async {
+        guard !mosaic.isEmpty else {
+            return
+        }
+        await send(Message(text: mosaic.text,
+                           mosaic: mosaic,
+                           senderName: nil,
+                           peerAddress: currentConversationPeer,
+                           isFromMe: true,
+                           status: .sending))
+    }
+
+    /// Общий путь для всего, что уходит собеседнику как сообщение.
+    private func send(_ message: Message) async {
+        guard let multipeerService = multipeerService else {
+            return
+        }
+        // Адрес проставлен сразу: без него сообщение не принадлежит ни
         // одной переписке и в чате собеседника не покажется.
-        let message = Message(text: trimmed,
-                              senderName: nil,
-                              peerAddress: currentConversationPeer,
-                              isFromMe: true,
-                              status: .sending)
         messages.append(message)
         
         stopTyping()

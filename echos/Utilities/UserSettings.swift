@@ -13,6 +13,7 @@ enum UserSettings {
     private static let relayURLKey = "echos_relay_url"
     private static let demoPeersKey = "echos_demo_peers"
     private static let usesRelayKey = "echos_uses_relay"
+    private static let mosaicBrushesKey = "echos_mosaic_brushes"
 
     /// Куда идти, если человек выбрал дальнюю связь и не назвал свой адрес.
     ///
@@ -94,11 +95,31 @@ enum UserSettings {
 
         return name
     }
+    /// Последние кисти мозаики — эмодзи, которыми рисовали. Восьми хватает,
+    /// чтобы не искать в клавиатуре то, чем рисовал минуту назад.
+    static var mosaicBrushes: [String] {
+        get {
+            UserDefaults.standard.stringArray(forKey: mosaicBrushesKey) ?? []
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue.prefix(8)), forKey: mosaicBrushesKey)
+        }
+    }
+
+    /// Кисть становится первой в ряду; повторы не копятся.
+    static func rememberBrush(_ brush: String) {
+        guard !brush.isEmpty else {
+            return
+        }
+        mosaicBrushes = [brush] + mosaicBrushes.filter { $0 != brush }
+    }
+
     /// Сбросить настройки 
     static func rest() {
         UserDefaults.standard.removeObject(forKey: userNameKey)
         UserDefaults.standard.removeObject(forKey: relayURLKey)
         UserDefaults.standard.removeObject(forKey: demoPeersKey)
         UserDefaults.standard.removeObject(forKey: usesRelayKey)
+        UserDefaults.standard.removeObject(forKey: mosaicBrushesKey)
     }
 }

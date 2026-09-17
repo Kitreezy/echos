@@ -127,6 +127,16 @@ final class ChatViewController: UIViewController {
         return textField
     }()
     
+    /// Вход в набор мозаики — слева от поля, где обычно живёт вложение.
+    private let mosaicButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "square.grid.3x3")
+        config.baseForegroundColor = .inkMuted
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     private let sendButton: UIButton = {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: "arrow.up")
@@ -286,8 +296,14 @@ final class ChatViewController: UIViewController {
             inputContainer.heightAnchor.constraint(equalToConstant: 64),
             inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
             
+            // Мозаика
+            mosaicButton.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 4),
+            mosaicButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
+            mosaicButton.widthAnchor.constraint(equalToConstant: 40),
+            mosaicButton.heightAnchor.constraint(equalToConstant: 40),
+
             // TextField
-            textField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 12),
+            textField.leadingAnchor.constraint(equalTo: mosaicButton.trailingAnchor, constant: 4),
             textField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
             textField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
             textField.heightAnchor.constraint(equalToConstant: 40),
@@ -312,12 +328,14 @@ final class ChatViewController: UIViewController {
         view.addSubview(emptyStateView)
         view.addSubview(typingLabel)
         view.addSubview(inputContainer)
+        inputContainer.addSubview(mosaicButton)
         inputContainer.addSubview(textField)
         inputContainer.addSubview(sendButton)
         
         NSLayoutConstraint.activate(layoutConstraints)
         
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
+        mosaicButton.addTarget(self, action: #selector(composeMosaic), for: .touchUpInside)
         textField.delegate = self
         textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
     }
@@ -387,6 +405,23 @@ final class ChatViewController: UIViewController {
     
     // MARK: - Actions
     
+    /// Мозаика набирается на отдельном листе: сетке нужно место, а не
+    /// строка ввода.
+    @objc
+    private func composeMosaic() {
+        let composer = MosaicComposerViewController()
+        composer.onSend = { [weak self] mosaic in
+            Task {
+                await self?.viewModel.sendMosaic(mosaic)
+            }
+        }
+
+        let navigation = UINavigationController(rootViewController: composer)
+        navigation.navigationBar.tintColor = .own
+        navigation.sheetPresentationController?.detents = [.large()]
+        present(navigation, animated: true)
+    }
+
     @objc
     private func sendTapped() {
         guard let text = textField.text, !text.isEmpty else {
