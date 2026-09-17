@@ -150,6 +150,36 @@ final class ChatViewController: UIViewController {
     private var typingAnimationTimer: Timer?
     private var typingDots = 0
     private var currentTypingPeer: String?
+
+    // MARK: - Мозаика
+
+    /// Черновик живёт, пока его не отправили или не очистили: закрыть
+    /// палитру и вернуться к нему можно сколько угодно.
+    private var mosaicDraft = Mosaic(columns: 4, rows: 4)
+    private var isComposingMosaic = false
+
+    /// Ждём один эмодзи с настоящей клавиатуры — для кисти, которой нет в
+    /// палитре. Пока ждём, набранное — не сообщение.
+    private var awaitingCustomBrush = false
+
+    private lazy var palette: MosaicPaletteView = {
+        let palette = MosaicPaletteView()
+        palette.delegate = self
+        return palette
+    }()
+
+    private lazy var draftView: MosaicDraftView = {
+        let view = MosaicDraftView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        view.onTap = { [weak self] column, row in
+            self?.paint(column: column, row: row, toggling: true)
+        }
+        view.onDrag = { [weak self] column, row in
+            self?.paint(column: column, row: row, toggling: false)
+        }
+        return view
+    }()
     
     // MARK: Init
     
@@ -296,6 +326,10 @@ final class ChatViewController: UIViewController {
             inputContainer.heightAnchor.constraint(equalToConstant: 64),
             inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
             
+            // Черновик мозаики — над полем ввода, справа, как своё сообщение.
+            draftView.bottomAnchor.constraint(equalTo: typingLabel.topAnchor, constant: -Space.tight),
+            draftView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Space.margin),
+
             // Мозаика
             mosaicButton.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: 4),
             mosaicButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
@@ -331,6 +365,7 @@ final class ChatViewController: UIViewController {
         inputContainer.addSubview(mosaicButton)
         inputContainer.addSubview(textField)
         inputContainer.addSubview(sendButton)
+        view.addSubview(draftView)
         
         NSLayoutConstraint.activate(layoutConstraints)
         
@@ -405,25 +440,85 @@ final class ChatViewController: UIViewController {
     
     // MARK: - Actions
     
-    /// Мозаика набирается на отдельном листе: сетке нужно место, а не
-    /// строка ввода.
+    /// Мозаика — часть печатания: вместо клавиатуры выезжает палитра, над
+    /// полем появляется черновик. Повторное нажатие убирает палитру,
+    /// черновик остаётся до отправки.
     @objc
     private func composeMosaic() {
-        let composer = MosaicComposerViewController()
-        composer.onSend = { [weak self] mosaic in
-            Task {
-                await self?.viewModel.sendMosaic(mosaic)
-            }
+        setComposingMosaic(!isComposingMosaic)
+    }
+
+    private func setComposingMosaic(_ composing: Bool) {
+        isComposingMosaic = composing
+        awaitingCustomBrush = false
+
+        if composing {
+            textField.text = ""
+            textField.inputView = palette
+            textField.reloadInputViews()
+            textField.becomeFirstResponder()
+            draftView.show(mosaicDraft)
+            draftView.isHidden = false
+        } else {
+            textField.inputView = nil
+            textField.reloadInputViews()
+            textField.resignFirstResponder()
+            draftView.isHidden = true
         }
 
-        let navigation = UINavigationController(rootViewController: composer)
-        navigation.navigationBar.tintColor = .own
-        navigation.sheetPresentationController?.detents = [.large()]
-        present(navigation, animated: true)
+        updateMosaicChrome()
+    }
+
+    /// Кнопка сетки и подсказка в поле говорят, в каком мы режиме — и что
+    /// черновик есть, даже когда палитра убрана.
+    private func updateMosaicChrome() {
+        let hasDraft = !mosaicDraft.isEmpty
+        mosaicButton.configuration?.baseForegroundColor = isComposingMosaic || hasDraft ? .own : .inkMuted
+        textField.attributedPlaceholder = NSAttributedString(
+            string: isComposingMosaic ? "мозаика · стрелка отправит" : "Сообщение",
+            attributes: [.foregroundColor: UIColor.inkMuted]
+        )
+    }
+
+    /// `toggling` — нажатие: та же кисть по той же клетке стирает.
+    /// Протягивание не стирает: палец, прошедший по уже покрашенной
+    /// клетке, не должен её снимать.
+    private func paint(column: Int, row: Int, toggling: Bool) {
+        let brush = palette.brush
+        let current = mosaicDraft[column, row]
+        let next: String
+        if brush.isEmpty {
+            next = ""
+        } else if toggling && current == brush {
+            next = ""
+        } else {
+            next = brush
+        }
+
+        guard next != current else {
+            return
+        }
+        mosaicDraft = mosaicDraft.setting(column: column, row: row, to: next)
+        draftView.show(mosaicDraft)
+        UISelectionFeedbackGenerator().selectionChanged()
+        updateMosaicChrome()
     }
 
     @objc
     private func sendTapped() {
+        if isComposingMosaic {
+            guard !mosaicDraft.isEmpty else {
+                return
+            }
+            let mosaic = mosaicDraft
+            Task {
+                await viewModel.sendMosaic(mosaic)
+            }
+            mosaicDraft = Mosaic(columns: mosaic.columns, rows: mosaic.rows)
+            setComposingMosaic(false)
+            return
+        }
+
         guard let text = textField.text, !text.isEmpty else {
             return
         }
@@ -435,6 +530,19 @@ final class ChatViewController: UIViewController {
     
     @objc
     private func textFieldDidChange() {
+        if awaitingCustomBrush {
+            guard let last = textField.text?.last else {
+                return
+            }
+            // Один знак — и обратно к палитре.
+            textField.text = ""
+            awaitingCustomBrush = false
+            palette.setBrush(String(last))
+            textField.inputView = palette
+            textField.reloadInputViews()
+            return
+        }
+
         guard let text = textField.text, !text.isEmpty else {
             viewModel.stopTyping()
             return
@@ -817,8 +925,68 @@ extension ChatViewController: UITableViewDataSource {
 extension ChatViewController: UITextFieldDelegate {
     
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        // Пока ждём кисть с клавиатуры, Return — просто вернуться к палитре.
+        if awaitingCustomBrush {
+            awaitingCustomBrush = false
+            textField.inputView = palette
+            textField.reloadInputViews()
+            return true
+        }
         sendTapped()
         return true
+    }
+}
+
+// MARK: - MosaicPaletteDelegate
+
+extension ChatViewController: MosaicPaletteDelegate {
+
+    func palette(_ palette: MosaicPaletteView, didPickBrush brush: String) {
+        // Кисть сменилась — черновик тот же, перерисовывать нечего.
+    }
+
+    func palette(_ palette: MosaicPaletteView, didPickSide side: Int) {
+        // Нарисованное переносится, насколько влезает: сменить размер на
+        // ходу и потерять всё — обидно.
+        var resized = Mosaic(columns: side, rows: side)
+        for row in 0..<min(side, mosaicDraft.rows) {
+            for column in 0..<min(side, mosaicDraft.columns) {
+                resized = resized.setting(column: column, row: row, to: mosaicDraft[column, row])
+            }
+        }
+        mosaicDraft = resized
+        draftView.show(mosaicDraft)
+        updateMosaicChrome()
+    }
+
+    func paletteDidAskToFill(_ palette: MosaicPaletteView) {
+        let brush = palette.brush
+        guard !brush.isEmpty else {
+            return
+        }
+        for row in 0..<mosaicDraft.rows {
+            for column in 0..<mosaicDraft.columns where mosaicDraft[column, row].isEmpty {
+                mosaicDraft = mosaicDraft.setting(column: column, row: row, to: brush)
+            }
+        }
+        draftView.show(mosaicDraft)
+        UISelectionFeedbackGenerator().selectionChanged()
+        updateMosaicChrome()
+    }
+
+    func paletteDidAskToClear(_ palette: MosaicPaletteView) {
+        mosaicDraft = Mosaic(columns: mosaicDraft.columns, rows: mosaicDraft.rows)
+        draftView.show(mosaicDraft)
+        updateMosaicChrome()
+    }
+
+    /// Настоящая клавиатура на один знак: палитра уходит, набранное
+    /// становится кистью, палитра возвращается.
+    func paletteDidAskForKeyboard(_ palette: MosaicPaletteView) {
+        awaitingCustomBrush = true
+        textField.text = ""
+        textField.inputView = nil
+        textField.reloadInputViews()
     }
 }
 
