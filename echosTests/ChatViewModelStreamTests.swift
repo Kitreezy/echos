@@ -342,17 +342,17 @@ final class ChatViewModelStreamTests: XCTestCase {
         Peer(address: address, displayName: name, status: status)
     }
 
-    func test_reachablePeer_saysNothing() async {
+    /// Имя уже в заголовке; под ним — то, чем собеседника можно сверить.
+    func test_reachablePeer_showsLockAndAddress() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport,
-                                                          with: "bob-address",
+                                                          with: "93f440ee4f07d563",
                                                           named: "Bob")
 
-        transport.emit(peers: [peer("bob-address", "Bob")])
+        transport.emit(peers: [peer("93f440ee4f07d563", "Bob")])
         _ = await waitUntil { !viewModel.peers.isEmpty }
 
-        XCTAssertEqual(viewModel.connectionStatus, "",
-                       "Имя собеседника уже стоит в заголовке")
+        XCTAssertEqual(viewModel.connectionStatus, "зашифровано · 93f4 40ee 4f07 d563")
     }
 
     func test_peerNotInTheRoom_saysSo() async {
@@ -379,7 +379,8 @@ final class ChatViewModelStreamTests: XCTestCase {
                                peer("impostor-address", "Bob")])
         _ = await waitUntil { viewModel.peers.count == 2 }
 
-        XCTAssertEqual(viewModel.connectionStatus, "")
+        XCTAssertEqual(viewModel.connectionStatus, "зашифровано · bob-address",
+                       "Адрес — того, с кем разговор, и только его")
     }
 
     /// Вне чата сказать можно только сколько рядом: перечислять имена
