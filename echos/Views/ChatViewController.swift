@@ -302,6 +302,12 @@ final class ChatViewController: UIViewController {
     
     private func setupLayout() {
         view.addSubview(statusLabel)
+
+        // Строка с адресом нажимается: объясняет, зачем он и как сверить.
+        statusLabel.isUserInteractionEnabled = true
+        statusLabel.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(explainAddress))
+        )
         view.addSubview(tableView)
         view.addSubview(emptyStateView)
         view.addSubview(typingLabel)
@@ -645,6 +651,31 @@ final class ChatViewController: UIViewController {
 
         let recognition = viewModel.recognizer.recognize(address: address, name: name)
         return recognition.deservesAttention ? recognition.note : nil
+    }
+
+    /// Зачем под именем адрес и что с ним делать.
+    ///
+    /// Показывается только когда адрес на экране есть: вне чата и без связи
+    /// строка про другое, и объяснять там нечего.
+    @objc
+    private func explainAddress() {
+        guard let address = viewModel.currentConversationPeer,
+              viewModel.connectionStatus.hasPrefix("зашифровано") else {
+            return
+        }
+
+        let alert = UIAlertController(
+            title: Fingerprint.display(address),
+            message: "Переписка зашифрована между вашими устройствами: "
+                   + "сервер её переносит, но прочитать не может.\n\n"
+                   + Fingerprint.howToCheck,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Скопировать", style: .default) { _ in
+            UIPasteboard.general.string = Fingerprint.display(address)
+        })
+        alert.addAction(UIAlertAction(title: "Понятно", style: .cancel))
+        present(alert, animated: true)
     }
 
     /// `owner` — адрес владельца стены, `nil` для своей.
