@@ -44,6 +44,20 @@ final class DiscoveryViewController: UIViewController {
         return button
     }()
 
+    /// Свой адрес — под именем. Это то, что собеседник сверяет со своим
+    /// экраном, и единственный способ заметить посредника: имя можно
+    /// повторить, отпечаток ключа — нет. Нажатием копируется.
+    private lazy var addressButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.contentInsets = .zero
+        config.baseForegroundColor = .inkMuted
+
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     /// Сколько рядом. Пусто — значит ноль, и говорить об этом незачем.
     private let peerCountLabel: UILabel = {
         let label = UILabel()
@@ -163,6 +177,7 @@ final class DiscoveryViewController: UIViewController {
         setupAppLifecycleObservers()
 
         updateNameButton()
+        updateAddressButton()
         updateLinkButton()
 
         // Поиск не начинается, пока не спросили имя: иначе собеседники
@@ -251,6 +266,40 @@ final class DiscoveryViewController: UIViewController {
                 .kern: Typography.narrow
             ])
         )
+    }
+
+    // MARK: - Адрес
+
+    private var ownAddress: String {
+        (try? DeviceIdentity.current().fingerprint) ?? ""
+    }
+
+    private func updateAddressButton(text: String? = nil) {
+        let address = ownAddress
+        addressButton.isHidden = address.isEmpty
+        addressButton.configuration?.attributedTitle = AttributedString(
+            text ?? "адрес · \(Fingerprint.display(address))",
+            attributes: AttributeContainer([
+                .font: Typography.micro,
+                .kern: Typography.narrow
+            ])
+        )
+    }
+
+    @objc
+    private func copyAddress() {
+        let address = ownAddress
+        guard !address.isEmpty else {
+            return
+        }
+
+        UIPasteboard.general.string = Fingerprint.display(address)
+        updateAddressButton(text: "адрес скопирован")
+
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            self?.updateAddressButton()
+        }
     }
 
     @objc
@@ -405,11 +454,15 @@ final class DiscoveryViewController: UIViewController {
             nameButton.trailingAnchor.constraint(lessThanOrEqualTo: peerCountLabel.leadingAnchor,
                                                  constant: -Space.step),
 
+            addressButton.topAnchor.constraint(equalTo: nameButton.bottomAnchor,
+                                               constant: Space.tight),
+            addressButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+
             peerCountLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             peerCountLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
                                                      constant: -Space.margin),
 
-            radarView.topAnchor.constraint(equalTo: nameButton.bottomAnchor, constant: Space.ma),
+            radarView.topAnchor.constraint(equalTo: addressButton.bottomAnchor, constant: Space.ma),
             radarView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             radarView.widthAnchor.constraint(equalToConstant: 240),
             radarView.heightAnchor.constraint(equalToConstant: 240),
@@ -450,6 +503,7 @@ final class DiscoveryViewController: UIViewController {
     private func setupLayout() {
         view.addSubview(titleLabel)
         view.addSubview(nameButton)
+        view.addSubview(addressButton)
         view.addSubview(peerCountLabel)
         view.addSubview(radarView)
         view.addSubview(statusLabel)
@@ -461,6 +515,7 @@ final class DiscoveryViewController: UIViewController {
         wallButton.addTarget(self, action: #selector(showOwnWall), for: .touchUpInside)
         linkButton.addTarget(self, action: #selector(chooseLink), for: .touchUpInside)
         nameButton.addTarget(self, action: #selector(changeName), for: .touchUpInside)
+        addressButton.addTarget(self, action: #selector(copyAddress), for: .touchUpInside)
 
         // Круг был украшением: он показывал, что поиск идёт, но нажать на
         // него было нельзя. Теперь это единственный вход к тем, кто вокруг.

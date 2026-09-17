@@ -28,6 +28,9 @@ final class MessageStore {
             let entity = MessageEntity(context: viewContext)
             entity.id = message.id
             entity.text = message.text
+            // Сетка лежит рядом с текстом как JSON: отдельная сущность
+            // под неё — лишняя, а бинарный атрибут переживает миграцию сам.
+            entity.mosaic = try message.mosaic.map { try JSONEncoder().encode($0) }
             entity.senderName = message.senderName
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
@@ -56,6 +59,7 @@ final class MessageStore {
         let messages = entities.map { entity in
             Message(id: entity.id ?? UUID(),
                     text: entity.text ?? "",
+                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
                     senderName: entity.senderName,
                     peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
@@ -85,6 +89,7 @@ final class MessageStore {
         let messages = entities.map { entity in
             Message(id: entity.id ?? UUID(),
                     text: entity.text ?? "",
+                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
                     senderName: entity.senderName,
                     peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,

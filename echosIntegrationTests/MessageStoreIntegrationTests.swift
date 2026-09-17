@@ -50,6 +50,28 @@ final class MessageStoreIntegrationTests: XCTestCase {
                        accuracy: 0.001)
     }
     
+    /// Мозаика лежит рядом с текстом и возвращается сеткой, а не текстом.
+    func test_mosaic_survivesTheStore() async throws {
+        let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟥", "", "", "🟦"])!
+        let message = Message(text: mosaic.text, mosaic: mosaic,
+                              peerAddress: "bob", isFromMe: true, status: .sent)
+
+        try await store.saveMessage(message)
+        let loaded = try await store.loadMessages(with: "bob")
+        let restored = try XCTUnwrap(loaded.first)
+
+        XCTAssertEqual(restored.mosaic, mosaic)
+        XCTAssertEqual(restored.text, mosaic.text)
+    }
+
+    func test_plainMessage_loadsWithoutMosaic() async throws {
+        try await store.saveMessage(CoreDataTestStack.message("текст", isFromMe: true, status: .sent))
+        let loaded = try await store.loadMessages()
+        let restored = try XCTUnwrap(loaded.first)
+
+        XCTAssertNil(restored.mosaic)
+    }
+
     func test_loadMessages_returnsEmptyArrayOnFreshStore() async throws {
         let loaded = try await store.loadMessages()
         
