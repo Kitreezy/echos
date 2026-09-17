@@ -1014,8 +1014,15 @@ extension ChatViewController: UITableViewDelegate {
                 })
             }
 
+            // Наружу — картинкой: сетку в другом мессенджере не повторить,
+            // а картинку — можно.
+            actions.append(UIAction(title: "Поделиться картинкой",
+                                    image: UIImage(systemName: "square.and.arrow.up")) { _ in
+                self?.share(mosaic: message.mosaic)
+            })
+
             // В чужом мессенджере ровно не встанет, но это лучшее, что там
-            // возможно.
+            // возможно текстом.
             actions.append(UIAction(title: "Скопировать как текст",
                                     image: UIImage(systemName: "doc.on.doc")) { _ in
                 UIPasteboard.general.string = message.text
@@ -1023,6 +1030,19 @@ extension ChatViewController: UITableViewDelegate {
 
             return UIMenu(children: actions)
         }
+    }
+}
+
+extension ChatViewController {
+
+    private func share(mosaic: Mosaic?) {
+        guard let mosaic else {
+            return
+        }
+        let image = MosaicImageRenderer.render(mosaic)
+        let sheet = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceView = view
+        present(sheet, animated: true)
     }
 }
 
