@@ -635,18 +635,35 @@ final class ChatViewModel {
 
     /// Общий путь для всего, что уходит собеседнику как сообщение.
     private func send(_ message: Message) async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
         // Адрес проставлен сразу: без него сообщение не принадлежит ни
         // одной переписке и в чате собеседника не покажется.
         messages.append(message)
-        
         stopTyping()
-        
+        await deliver(message)
+    }
+
+    /// Отправить снова то, что не ушло. Сообщение то же, с тем же
+    /// идентификатором: собеседник, если первая попытка всё-таки дошла,
+    /// второй раз его не сохранит.
+    func resend(_ id: UUID) async {
+        guard let message = messages.first(where: { $0.id == id }),
+              message.isFromMe, message.status == .failed else {
+            return
+        }
+        updateStatus(.sending, for: id)
+        await deliver(message)
+    }
+
+    /// Доставка: собеседнику, по адресу переписки. Статус — по итогу.
+    private func deliver(_ message: Message) async {
+        guard let multipeerService = multipeerService else {
+            updateStatus(.failed, for: message.id)
+            return
+        }
+
         // Сообщение адресное, и без собеседника отправлять его некому.
         // Раньше в этом случае оно уходило всем подряд.
-        guard let address = currentConversationPeer else {
+        guard let address = message.peerAddress ?? currentConversationPeer else {
             updateStatus(.failed, for: message.id)
             print("[ChatViewModel] No conversation selected, message not sent")
             return

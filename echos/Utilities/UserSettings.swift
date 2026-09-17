@@ -14,6 +14,7 @@ enum UserSettings {
     private static let demoPeersKey = "echos_demo_peers"
     private static let usesRelayKey = "echos_uses_relay"
     private static let mosaicBrushesKey = "echos_mosaic_brushes"
+    private static let mosaicDraftsKey = "echos_mosaic_drafts"
 
     /// Куда идти, если человек выбрал дальнюю связь и не назвал свой адрес.
     ///
@@ -114,6 +115,27 @@ enum UserSettings {
         mosaicBrushes = [brush] + mosaicBrushes.filter { $0 != brush }
     }
 
+    /// Набросок мозаики в переписке с этим адресом. Начал рисовать, вышел
+    /// ответить, вернулся — набросок на месте, даже после перезапуска.
+    static func mosaicDraft(for address: String) -> Mosaic? {
+        guard let drafts = UserDefaults.standard.dictionary(forKey: mosaicDraftsKey) as? [String: Data],
+              let data = drafts[address] else {
+            return nil
+        }
+        return try? JSONDecoder().decode(Mosaic.self, from: data)
+    }
+
+    /// `nil` — набросок отправлен или стёрт, хранить нечего.
+    static func setMosaicDraft(_ draft: Mosaic?, for address: String) {
+        var drafts = UserDefaults.standard.dictionary(forKey: mosaicDraftsKey) as? [String: Data] ?? [:]
+        if let draft, !draft.isEmpty, let data = try? JSONEncoder().encode(draft) {
+            drafts[address] = data
+        } else {
+            drafts.removeValue(forKey: address)
+        }
+        UserDefaults.standard.set(drafts, forKey: mosaicDraftsKey)
+    }
+
     /// Сбросить настройки 
     static func rest() {
         UserDefaults.standard.removeObject(forKey: userNameKey)
@@ -121,5 +143,6 @@ enum UserSettings {
         UserDefaults.standard.removeObject(forKey: demoPeersKey)
         UserDefaults.standard.removeObject(forKey: usesRelayKey)
         UserDefaults.standard.removeObject(forKey: mosaicBrushesKey)
+        UserDefaults.standard.removeObject(forKey: mosaicDraftsKey)
     }
 }
