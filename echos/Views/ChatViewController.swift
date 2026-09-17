@@ -201,6 +201,41 @@ final class ChatViewController: UIViewController {
         
         navigationController?.interactivePopGestureRecognizer?.isEnabled = true
         navigationController?.interactivePopGestureRecognizer?.delegate = nil
+
+        restoreMosaicDraft()
+    }
+
+    /// Набросок этой переписки — сразу на экран, без палитры: видно, что
+    /// начатое не пропало, а дорисовать можно кнопкой сетки.
+    private func restoreMosaicDraft() {
+        guard let address = viewModel.currentConversationPeer,
+              let saved = UserSettings.mosaicDraft(for: address) else {
+            return
+        }
+        mosaicDraft = saved
+        draftView.show(mosaicDraft)
+        draftView.isHidden = false
+        updateMosaicChrome()
+    }
+
+    /// Черновик лежит поверх ленты и не должен закрывать последние
+    /// сообщения: лента получает отступ снизу на его высоту.
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let inset = draftView.isHidden ? 0 : draftView.bounds.height + Space.tight
+        guard tableView.contentInset.bottom != inset else {
+            return
+        }
+        tableView.contentInset.bottom = inset
+        tableView.verticalScrollIndicatorInsets.bottom = inset
+        scrollToBottom(animated: false)
+    }
+
+    private func saveMosaicDraft() {
+        guard let address = viewModel.currentConversationPeer else {
+            return
+        }
+        UserSettings.setMosaicDraft(mosaicDraft, for: address)
     }
     
     override func viewDidLoad() {
@@ -377,6 +412,7 @@ final class ChatViewController: UIViewController {
     
     private func setupTableView() {
         tableView.dataSource = self
+        tableView.delegate = self
         tableView.register(MessageCell.self, forCellReuseIdentifier: MessageCell.reuseID)
     }
     
@@ -463,7 +499,9 @@ final class ChatViewController: UIViewController {
             textField.inputView = nil
             textField.reloadInputViews()
             textField.resignFirstResponder()
-            draftView.isHidden = true
+            // Начатое остаётся на виду и без палитры: так видно, что оно
+            // не пропало. Пустой черновик показывать незачем.
+            draftView.isHidden = mosaicDraft.isEmpty
         }
 
         updateMosaicChrome()
@@ -502,6 +540,7 @@ final class ChatViewController: UIViewController {
         draftView.show(mosaicDraft)
         UISelectionFeedbackGenerator().selectionChanged()
         updateMosaicChrome()
+        saveMosaicDraft()
     }
 
     @objc
@@ -515,6 +554,7 @@ final class ChatViewController: UIViewController {
                 await viewModel.sendMosaic(mosaic)
             }
             mosaicDraft = Mosaic(columns: mosaic.columns, rows: mosaic.rows)
+            saveMosaicDraft()
             setComposingMosaic(false)
             return
         }
@@ -920,6 +960,56 @@ extension ChatViewController: UITableViewDataSource {
     }
 }
 
+// MARK: - UITableViewDelegate
+
+extension ChatViewController: UITableViewDelegate {
+
+    /// Долгое нажатие на сообщение: скопировать, выделить, отправить снова.
+    func tableView(_ tableView: UITableView,
+                   contextMenuConfigurationForRowAt indexPath: IndexPath,
+                   point: CGPoint) -> UIContextMenuConfiguration? {
+        let message = viewModel.messages[indexPath.row]
+
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            var actions: [UIAction] = []
+
+            if message.isFromMe && message.status == .failed {
+                actions.append(UIAction(title: "Отправить снова",
+                                        image: UIImage(systemName: "arrow.clockwise")) { _ in
+                    Task {
+                        await self?.viewModel.resend(message.id)
+                    }
+                })
+            }
+
+            // У мозаики копируется текстовая форма: в чужом мессенджере
+            // ровно не встанет, но это лучшее, что там возможно.
+            actions.append(UIAction(title: message.mosaic == nil ? "Скопировать" : "Скопировать как текст",
+                                    image: UIImage(systemName: "doc.on.doc")) { _ in
+                UIPasteboard.general.string = message.text
+            })
+
+            if message.mosaic == nil {
+                actions.append(UIAction(title: "Выделить текст",
+                                        image: UIImage(systemName: "text.cursor")) { _ in
+                    self?.selectText(of: message)
+                })
+            }
+
+            return UIMenu(children: actions)
+        }
+    }
+
+    /// Выделить часть: текст открывается на листе, где его можно выделить
+    /// как угодно и скопировать штатным меню.
+    private func selectText(of message: Message) {
+        let sheet = TextSelectionViewController(text: message.text)
+        sheet.sheetPresentationController?.detents = [.medium(), .large()]
+        sheet.sheetPresentationController?.prefersGrabberVisible = true
+        present(sheet, animated: true)
+    }
+}
+
 // MARK: - UITextFieldDelegate
 
 extension ChatViewController: UITextFieldDelegate {
@@ -957,6 +1047,7 @@ extension ChatViewController: MosaicPaletteDelegate {
         mosaicDraft = resized
         draftView.show(mosaicDraft)
         updateMosaicChrome()
+        saveMosaicDraft()
     }
 
     func paletteDidAskToFill(_ palette: MosaicPaletteView) {
@@ -972,12 +1063,14 @@ extension ChatViewController: MosaicPaletteDelegate {
         draftView.show(mosaicDraft)
         UISelectionFeedbackGenerator().selectionChanged()
         updateMosaicChrome()
+        saveMosaicDraft()
     }
 
     func paletteDidAskToClear(_ palette: MosaicPaletteView) {
         mosaicDraft = Mosaic(columns: mosaicDraft.columns, rows: mosaicDraft.rows)
         draftView.show(mosaicDraft)
         updateMosaicChrome()
+        saveMosaicDraft()
     }
 
     /// Настоящая клавиатура на один знак: палитра уходит, набранное
