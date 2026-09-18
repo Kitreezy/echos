@@ -459,6 +459,13 @@ final class ChatViewModel {
     }
 
     private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
+        // Реакция — не сообщение: она меняет то, на что поставлена, и в
+        // ленту не попадает.
+        if let reaction = incoming.value.reaction {
+            apply(reaction, from: incoming.sender)
+            return
+        }
+
         var message = incoming.value.toMessage(from: incoming.sender)
 
         // Прочитано — только если пришло в открытый чат. Остальное ждёт
@@ -488,6 +495,59 @@ final class ChatViewModel {
         }
         
         persist(message)
+    }
+
+    // MARK: - Реакции
+
+    /// Шесть на выбор. Немного — чтобы выбирать нажатием, а не искать.
+    static let reactionChoices = ["❤️", "👍", "😂", "🔥", "😮", "😢"]
+
+    /// Поставить или снять свою реакцию. Та же — снять.
+    func react(to id: UUID, with emoji: String) async {
+        guard let idx = messages.firstIndex(where: { $0.id == id }),
+              let multipeerService,
+              let address = messages[idx].peerAddress ?? currentConversationPeer else {
+            return
+        }
+
+        let next = messages[idx].myReaction == emoji ? nil : emoji
+        messages[idx].myReaction = next
+        persist(messages[idx])
+
+        let payload = MessagePayload(reaction: ReactionPayload(targetID: id.uuidString, emoji: next ?? ""),
+                                     senderName: multipeerService.myDisplayName)
+        do {
+            try await multipeerService.sendMessage(payload, to: address)
+        } catch {
+            print("[ChatViewModel] Failed to send reaction: \(error)")
+        }
+    }
+
+    private func apply(_ reaction: ReactionPayload, from sender: String) {
+        guard let target = UUID(uuidString: reaction.targetID) else {
+            return
+        }
+        let emoji: String? = reaction.emoji.isEmpty ? nil : String(reaction.emoji.prefix(1))
+
+        if let idx = messages.firstIndex(where: { $0.id == target }) {
+            // Реакция от того, с кем эта переписка, — иначе чужая.
+            guard messages[idx].peerAddress == sender || messages[idx].peerAddress == nil else {
+                return
+            }
+            messages[idx].peerReaction = emoji
+            persist(messages[idx])
+            return
+        }
+
+        // Сообщение не на экране — в другой переписке или чат закрыт.
+        // Хранилище найдёт его по идентификатору.
+        Task { [weak self] in
+            guard let self, let store = self.messageStore else { return }
+            if var stored = try? await store.loadMessages(with: sender).first(where: { $0.id == target }) {
+                stored.peerReaction = emoji
+                self.persist(stored)
+            }
+        }
     }
 
     /// Непрочитанное из хранилища — при запуске, чтобы точки в списке были

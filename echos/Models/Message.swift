@@ -31,6 +31,11 @@ struct Message: Identifiable, Equatable {
     /// Прочитано ли. Своё — всегда; входящее — если пришло в открытый чат
     /// или чат потом открыли. Ради этого и считается непрочитанное.
     var isRead: Bool
+
+    /// Реакции. Переписка один на один, поэтому у каждой стороны — не
+    /// больше одной на сообщение: своя и собеседника.
+    var myReaction: String?
+    var peerReaction: String?
     
     init(id: UUID = UUID(),
          text: String,
@@ -40,7 +45,9 @@ struct Message: Identifiable, Equatable {
          isFromMe: Bool,
          timestamp: Date = Date(),
          status: MessageStatus = .sending,
-         isRead: Bool = true
+         isRead: Bool = true,
+         myReaction: String? = nil,
+         peerReaction: String? = nil
     ) {
         self.id = id
         self.text = text
@@ -51,6 +58,8 @@ struct Message: Identifiable, Equatable {
         self.timestamp = timestamp
         self.status = status
         self.isRead = isRead
+        self.myReaction = myReaction
+        self.peerReaction = peerReaction
     }
 
     var isUnread: Bool {
@@ -67,8 +76,17 @@ struct Message: Identifiable, Equatable {
                 isFromMe: isFromMe,
                 timestamp: timestamp,
                 status: status,
-                isRead: isRead)
+                isRead: isRead,
+                myReaction: myReaction,
+                peerReaction: peerReaction)
     }
+}
+
+/// Реакция на сообщение: на какое и какая.
+struct ReactionPayload: Codable, Equatable, Sendable {
+    let targetID: String
+    /// Один эмодзи; пустая строка — снять.
+    let emoji: String
 }
 
 /// Формат для сериализации при отправке через Multipeer
@@ -80,6 +98,10 @@ struct MessagePayload: Codable {
     /// Мозаика, если это она. Необязательна: у обычного сообщения её нет,
     /// а старая сборка, не знающая о мозаике, увидит текстовую форму.
     let mosaic: Mosaic?
+    /// Реакция, если это она. Едет тем же конвертом, что и сообщение, —
+    /// ни транспорту, ни релею новый род не нужен. Старая сборка увидит
+    /// эмодзи текстом; текст для этого и заполняется.
+    let reaction: ReactionPayload?
     
     init(from message: Message, senderName: String) {
         self.id = message.id.uuidString
@@ -87,6 +109,17 @@ struct MessagePayload: Codable {
         self.senderName = senderName
         self.timestamp = message.timestamp.timeIntervalSince1970
         self.mosaic = message.mosaic
+        self.reaction = nil
+    }
+
+    /// Реакция на чужое или своё сообщение. `emoji` пустая — реакция снята.
+    init(reaction: ReactionPayload, senderName: String) {
+        self.id = UUID().uuidString
+        self.text = reaction.emoji.isEmpty ? "" : reaction.emoji
+        self.senderName = senderName
+        self.timestamp = Date().timeIntervalSince1970
+        self.mosaic = nil
+        self.reaction = reaction
     }
     
     /// Конвертация обратно в Message (входящее — isFromMe = false).
