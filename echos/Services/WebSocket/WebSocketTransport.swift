@@ -73,6 +73,10 @@ final class WebSocketTransport: NSObject {
     /// Ключ, которым подписывается рукопожатие.
     private let identity: DeviceIdentity?
 
+    /// Чем устройство ручается за ключ. На симуляторе и без entitlement —
+    /// ничем, и hello уходит как раньше.
+    private let attestation: any DeviceAttesting
+
     /// Свой сессионный ключ. Один на соединение: создаётся перед hello и
     /// меняется при каждом переподключении, так что записанное в прошлом
     /// соединении не откроется даже нашими долгими ключами.
@@ -132,10 +136,12 @@ final class WebSocketTransport: NSObject {
     init(url: URL,
          displayName: String = UserSettings.displayName,
          identity: DeviceIdentity? = nil,
+         attestation: (any DeviceAttesting)? = nil,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared,
          backgroundGrace: Duration = BackgroundLease.duration) {
         self.myDisplayName = displayName
         self.identity = identity ?? (try? DeviceIdentity.current())
+        self.attestation = attestation ?? (AppAttestService.isSupported ? AppAttestService() : NoAttestation())
         self.myAddress = self.identity?.fingerprint ?? ""
         self.client = WebSocketClient(url: url, networkMonitor: networkMonitor)
         self.backgroundLease = BackgroundLease(duration: backgroundGrace)
@@ -341,10 +347,15 @@ final class WebSocketTransport: NSObject {
             let session = try SessionKey(signedBy: identity)
             self.session = session
 
+            // Ручательство устройства — если есть чем. Его отсутствие не
+            // ошибка: пускать ли без него, решает релей.
+            let proof = try await attestation.proof(answering: challenge, for: identity.publicKey)
+
             try await send(.hello(from: myDisplayName,
                                   answering: challenge,
                                   as: identity,
-                                  session: session))
+                                  session: session,
+                                  attestation: proof))
         }
         catch {
             print("[WebSocketTransport] Handshake failed: \(error.localizedDescription)")

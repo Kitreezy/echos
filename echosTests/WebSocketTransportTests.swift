@@ -51,6 +51,34 @@ final class WebSocketTransportTests: XCTestCase {
         return (alice, bob)
     }
 
+    // MARK: - App Attest
+
+    func test_transport_asksDeviceToVouchForItsIdentityKey() async throws {
+        let identity = DeviceIdentity()
+        let device = FakeAttestation()
+        let transport = WebSocketTransport(url: server.url,
+                                           displayName: "Alice",
+                                           identity: identity,
+                                           attestation: device,
+                                           networkMonitor: monitor)
+
+        transport.startDeviceDiscovery()
+        _ = await waitUntil { self.server.connectedClientCount == 1 }
+        _ = await waitUntil { !device.asked.isEmpty }
+
+        let request = try XCTUnwrap(device.asked.first)
+        XCTAssertEqual(request.publicKey, identity.publicKey,
+                       "Устройство ручается за ключ личности, а не за что-то ещё")
+        XCTAssertFalse(request.challenge.isEmpty, "И под вызов релея, а не под пустоту")
+
+        let hello = try XCTUnwrap(server.received.first { $0.kind == .hello })
+        let payload = try JSONDecoder().decode(HelloPayload.self, from: try XCTUnwrap(hello.payload))
+        XCTAssertEqual(payload.assertion, device.proof.assertion)
+        XCTAssertEqual(payload.attestKeyId, device.proof.keyID)
+
+        transport.stopDeviceDiscovery()
+    }
+
     // MARK: - Присутствие
 
     func test_twoTransports_seeEachOtherInPeerStream() async {

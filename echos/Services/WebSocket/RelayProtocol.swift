@@ -52,7 +52,11 @@ struct RelayParticipant: Codable, Sendable {
     let sessionKey: Data?
     let sessionProof: Data?
 
-    init(id: String, name: String, keys: KeyBundle? = nil) {
+    /// Релей проверил App Attest: с этим ключом говорит настоящий iPhone с
+    /// настоящим echos. Старый релей поля не шлёт — тогда `nil`.
+    let attested: Bool?
+
+    init(id: String, name: String, keys: KeyBundle? = nil, attested: Bool? = nil) {
         self.id = id
         self.name = name
         self.publicKey = keys?.publicKey
@@ -60,6 +64,7 @@ struct RelayParticipant: Codable, Sendable {
         self.agreementProof = keys?.agreementProof
         self.sessionKey = keys?.sessionKey
         self.sessionProof = keys?.sessionProof
+        self.attested = attested
     }
 
     /// Личность, если ключи на месте, сходятся между собой и с адресом.
@@ -114,8 +119,10 @@ struct RelayEnvelope: Codable, Sendable {
     static func hello(from sender: String,
                       answering challenge: Data,
                       as identity: DeviceIdentity,
-                      session: SessionKey) throws -> RelayEnvelope {
-        let proof = try HelloPayload(answering: challenge, as: identity, session: session)
+                      session: SessionKey,
+                      attestation: AttestationProof? = nil) throws -> RelayEnvelope {
+        let proof = try HelloPayload(answering: challenge, as: identity, session: session,
+                                     attestation: attestation)
 
         return RelayEnvelope(kind: .hello,
                              sender: sender,
@@ -242,7 +249,15 @@ struct HelloPayload: Codable, Sendable {
     let sessionKey: Data
     let sessionProof: Data
 
-    init(answering challenge: Data, as identity: DeviceIdentity, session: SessionKey) throws {
+    /// App Attest, если устройство им ручается. Все четыре либо есть, либо
+    /// нет; в JSON отсутствующие не пишутся, и старый релей их не заметит.
+    let attestKeyId: Data?
+    let attestation: Data?
+    let attestChallenge: Data?
+    let assertion: Data?
+
+    init(answering challenge: Data, as identity: DeviceIdentity, session: SessionKey,
+         attestation: AttestationProof? = nil) throws {
         let bundle = try identity.keyBundle(session: session)
         self.publicKey = bundle.publicKey
         self.signature = try identity.signature(for: challenge)
@@ -250,6 +265,10 @@ struct HelloPayload: Codable, Sendable {
         self.agreementProof = bundle.agreementProof
         self.sessionKey = bundle.sessionKey
         self.sessionProof = bundle.sessionProof
+        self.attestKeyId = attestation?.keyID
+        self.attestation = attestation?.attestation
+        self.attestChallenge = attestation?.challenge
+        self.assertion = attestation?.assertion
     }
 
     /// Собрать вручную. Нужно тестам, которые проверяют, что подделка
@@ -263,6 +282,10 @@ struct HelloPayload: Codable, Sendable {
         self.agreementProof = agreementProof
         self.sessionKey = sessionKey
         self.sessionProof = sessionProof
+        self.attestKeyId = nil
+        self.attestation = nil
+        self.attestChallenge = nil
+        self.assertion = nil
     }
 
     /// Тот же ответ, но с другими ключами. Для тестов на подмену.
