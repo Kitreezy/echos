@@ -81,6 +81,24 @@ final class MessageCell: UITableViewCell {
         return label
     }()
 
+    /// Реакции под сообщением: сначала собеседника, потом своя. Пусто —
+    /// метки нет и места она не занимает.
+    private let reactionsLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 15)
+        label.backgroundColor = .surfaceRaised
+        label.layer.cornerRadius = 11
+        label.layer.masksToBounds = true
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private lazy var reactionsGap = footnoteLabel.topAnchor.constraint(equalTo: reactionsLabel.bottomAnchor,
+                                                                        constant: Space.tight)
+    private lazy var noReactionsGap = footnoteLabel.topAnchor.constraint(equalTo: body.bottomAnchor,
+                                                                          constant: Space.tight)
+
     /// Подпись нажимается только у неотправленного — там она и есть кнопка.
     private lazy var retryTap = UITapGestureRecognizer(target: self, action: #selector(retryTapped))
 
@@ -110,6 +128,7 @@ final class MessageCell: UITableViewCell {
         contentView.addSubview(column)
         column.addSubview(senderNameLabel)
         column.addSubview(body)
+        column.addSubview(reactionsLabel)
         column.addSubview(footnoteLabel)
         footnoteLabel.addGestureRecognizer(retryTap)
         body.addArrangedSubview(messageLabel)
@@ -134,7 +153,10 @@ final class MessageCell: UITableViewCell {
             body.trailingAnchor.constraint(equalTo: column.trailingAnchor),
             messageLabel.widthAnchor.constraint(equalTo: body.widthAnchor),
 
-            footnoteLabel.topAnchor.constraint(equalTo: body.bottomAnchor, constant: Space.tight),
+            reactionsLabel.topAnchor.constraint(equalTo: body.bottomAnchor, constant: Space.tight),
+            reactionsLabel.heightAnchor.constraint(equalToConstant: 22),
+            noReactionsGap,
+
             footnoteLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             footnoteLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
             footnoteLabel.bottomAnchor.constraint(equalTo: column.bottomAnchor)
@@ -144,6 +166,8 @@ final class MessageCell: UITableViewCell {
     // MARK: - Configure
 
     func configure(with message: Message) {
+        showReactions(of: message)
+
         if let mosaic = message.mosaic {
             mosaicView.show(mosaic)
             mosaicView.isHidden = false
@@ -172,6 +196,27 @@ final class MessageCell: UITableViewCell {
 
             senderNameLabel.text = message.senderName
             senderNameLabel.isHidden = message.senderName == nil
+        }
+    }
+
+    private var reactionsLeading: NSLayoutConstraint?
+    private var reactionsTrailing: NSLayoutConstraint?
+
+    private func showReactions(of message: Message) {
+        let reactions = [message.peerReaction, message.myReaction].compactMap { $0 }
+        reactionsLabel.isHidden = reactions.isEmpty
+        reactionsLabel.text = reactions.isEmpty ? nil : " " + reactions.joined(separator: " ") + " "
+        reactionsGap.isActive = !reactions.isEmpty
+        noReactionsGap.isActive = reactions.isEmpty
+
+        reactionsLeading?.isActive = false
+        reactionsTrailing?.isActive = false
+        if message.isFromMe {
+            reactionsTrailing = reactionsLabel.trailingAnchor.constraint(equalTo: column.trailingAnchor)
+            reactionsTrailing?.isActive = true
+        } else {
+            reactionsLeading = reactionsLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor)
+            reactionsLeading?.isActive = true
         }
     }
 

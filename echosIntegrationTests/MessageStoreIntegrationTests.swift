@@ -77,6 +77,20 @@ final class MessageStoreIntegrationTests: XCTestCase {
         XCTAssertEqual(all.filter(\.isUnread).count, 1)
     }
 
+    func test_reactions_areStoredAndUpdated() async throws {
+        var message = Message(text: "привет", peerAddress: "bob", isFromMe: true, status: .sent)
+        try await store.saveMessage(message)
+
+        message.myReaction = "❤️"
+        message.peerReaction = "👍"
+        try await store.saveMessage(message)
+
+        let loaded = try await store.loadMessages(with: "bob")
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded.first?.myReaction, "❤️")
+        XCTAssertEqual(loaded.first?.peerReaction, "👍")
+    }
+
     func test_plainMessage_loadsWithoutMosaic() async throws {
         try await store.saveMessage(CoreDataTestStack.message("текст", isFromMe: true, status: .sent))
         let loaded = try await store.loadMessages()
