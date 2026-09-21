@@ -38,7 +38,11 @@ final class WebSocketTransportTests: XCTestCase {
                            networkMonitor: monitor)
     }
 
-    /// Поднимает оба транспорта и ждёт, пока сервер увидит обоих.
+    /// Поднимает оба транспорта и ждёт, пока оба представятся серверу.
+    ///
+    /// Ждать установки соединений мало: рукопожатие идёт отдельным кругом, и
+    /// сообщение, отправленное между этими моментами, релей выбросит —
+    /// получателя он ещё не знает по отпечатку.
     private func makePair() async -> (alice: WebSocketTransport, bob: WebSocketTransport) {
         let alice = makeTransport(named: "Alice")
         let bob = makeTransport(named: "Bob")
@@ -46,7 +50,7 @@ final class WebSocketTransportTests: XCTestCase {
         alice.startDeviceDiscovery()
         bob.startDeviceDiscovery()
 
-        _ = await waitUntil { self.server.connectedClientCount == 2 }
+        _ = await waitUntil(timeout: .seconds(5)) { self.server.introducedClientCount == 2 }
 
         return (alice, bob)
     }

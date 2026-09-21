@@ -66,3 +66,80 @@ jobs:
           name: test-output
           path: build/test_output
           retention-days: 7
+
+      # Падения — отдельно и в читаемом виде, чтобы ревью ниже читало их,
+      # а не лог на десятки тысяч строк.
+      - name: Падения
+        if: always()
+        run: |
+          bundle=$(ls -d build/test_output/*.xcresult 2>/dev/null | head -1)
+          if [ -n "$bundle" ]; then
+            xcrun xcresulttool get test-results tests --path "$bundle" \
+              | python3 scripts/failures.py > build/failures.txt || true
+          fi
+          test -s build/failures.txt || echo "Падений нет." > build/failures.txt
+          cat build/failures.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failures
+          path: build/failures.txt
+          retention-days: 7
+
+  # Третий шаг цикла. Модель не собирает и не тестирует — это уже сделано
+  # выше. Она читает: diff и падения. Один комментарий в PR: если тесты
+  # упали — что сломалось и где; если прошли — что в diff стоит поправить
+  # и чего не хватает по тестам.
+  #
+  # Ходит по подписке через CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`).
+  # Секрета нет — job пропускается, а не падает.
+  review:
+    needs: tests
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Есть ли токен
+        id: token
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: echo "present=${{ env.TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          name: failures
+          path: build
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.token.outputs.present == 'true'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_tools: "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(cat:*)"
+          prompt: |
+            Проект echos, iOS, Swift 6. Это pull request; тесты уже прошли
+            в предыдущем job — их результат: ${{ needs.tests.result }}.
+            Падения, если были, лежат в build/failures.txt.
+
+            Если тесты упали: прочитай build/failures.txt, найди код под
+            упавшими тестами и объясни, что сломано и где. Не предлагай
+            ослабить тест.
+
+            Если прошли: посмотри diff относительно базовой ветки
+            (git diff origin/${{ github.base_ref }}...HEAD) и напиши, что
+            стоит поправить — только то, что тесты не поймают: состояние
+            без изоляции, Sendable, поведение без теста, обещание в
+            комментарии, которое код не выполняет. Если поправить нечего,
+            так и скажи одной фразой.
+
+            Один комментарий, прозой, по-русски, коротко. Без похвал и
+            пересказа diff.
