@@ -12,7 +12,7 @@
 
 import UIKit
 
-final class MosaicView: UIView {
+final class MosaicView: UIView, UIGestureRecognizerDelegate {
 
     /// Клетка в чате. В наборе клетки крупнее — см. `cellSize`.
     static let chatCellSize: CGFloat = 32
@@ -46,7 +46,13 @@ final class MosaicView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         addSubview(rowsStack)
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(dragged)))
+
+        // Протягивание нужно только там, где рисуют. В ленте чата мозаика
+        // просто картинка, и этот распознаватель отбирал бы у таблицы
+        // прокрутку: палец, начавший движение на мозаике, никуда не вёл.
+        let drag = UIPanGestureRecognizer(target: self, action: #selector(dragged))
+        drag.delegate = self
+        addGestureRecognizer(drag)
         NSLayoutConstraint.activate([
             rowsStack.topAnchor.constraint(equalTo: topAnchor),
             rowsStack.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -120,6 +126,14 @@ final class MosaicView: UIView {
     private func fill(_ label: UILabel, with cell: String) {
         label.text = cell
         label.backgroundColor = cell.isEmpty && onTap != nil ? .surfaceRaised : .clear
+    }
+
+    /// Рисуем — только когда есть чем.
+    override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        guard recognizer is UIPanGestureRecognizer else {
+            return super.gestureRecognizerShouldBegin(recognizer)
+        }
+        return onDrag != nil
     }
 
     @objc
