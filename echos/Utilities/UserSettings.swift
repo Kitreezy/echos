@@ -15,6 +15,7 @@ enum UserSettings {
     private static let usesRelayKey = "echos_uses_relay"
     private static let mosaicBrushesKey = "echos_mosaic_brushes"
     private static let mosaicDraftsKey = "echos_mosaic_drafts"
+    private static let mosaicTemplatesKey = "echos_mosaic_templates"
 
     /// Куда идти, если человек выбрал дальнюю связь и не назвал свой адрес.
     ///
@@ -136,6 +137,35 @@ enum UserSettings {
         UserDefaults.standard.set(drafts, forKey: mosaicDraftsKey)
     }
 
+    /// Сохранённые мозаики. Рисунок, который делали двадцать минут,
+    /// не должен пропадать после отправки: его берут как основу для
+    /// следующего или шлют ещё раз другому человеку.
+    static var mosaicTemplates: [Mosaic] {
+        get {
+            guard let raw = UserDefaults.standard.array(forKey: mosaicTemplatesKey) as? [Data] else {
+                return []
+            }
+            return raw.compactMap { try? JSONDecoder().decode(Mosaic.self, from: $0) }
+        }
+        set {
+            let raw = newValue.prefix(24).compactMap { try? JSONEncoder().encode($0) }
+            UserDefaults.standard.set(raw, forKey: mosaicTemplatesKey)
+        }
+    }
+
+    /// Сохранить мозаику. Свежая — первой; такая же уже есть — просто
+    /// поднимается наверх, а не ложится второй раз.
+    static func saveMosaicTemplate(_ mosaic: Mosaic) {
+        guard !mosaic.isEmpty else {
+            return
+        }
+        mosaicTemplates = [mosaic] + mosaicTemplates.filter { $0 != mosaic }
+    }
+
+    static func deleteMosaicTemplate(_ mosaic: Mosaic) {
+        mosaicTemplates = mosaicTemplates.filter { $0 != mosaic }
+    }
+
     /// Сбросить настройки 
     static func rest() {
         UserDefaults.standard.removeObject(forKey: userNameKey)
@@ -144,5 +174,6 @@ enum UserSettings {
         UserDefaults.standard.removeObject(forKey: usesRelayKey)
         UserDefaults.standard.removeObject(forKey: mosaicBrushesKey)
         UserDefaults.standard.removeObject(forKey: mosaicDraftsKey)
+        UserDefaults.standard.removeObject(forKey: mosaicTemplatesKey)
     }
 }

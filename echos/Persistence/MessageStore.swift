@@ -35,6 +35,8 @@ final class MessageStore {
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
             entity.isRead = message.isRead
+            entity.myReaction = message.myReaction
+            entity.peerReaction = message.peerReaction
             entity.timestamp = message.timestamp
             entity.status = Int16(message.status.rawValue)
             
@@ -44,6 +46,8 @@ final class MessageStore {
             if let entity = existing.first {
                 entity.status = Int16(message.status.rawValue)
                 entity.isRead = message.isRead
+                entity.myReaction = message.myReaction
+                entity.peerReaction = message.peerReaction
                 try viewContext.save()
                 print("[MessageStore] Update status for: \(message.id)")
             }
@@ -67,7 +71,9 @@ final class MessageStore {
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
                     status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
-                    isRead: entity.isRead)
+                    isRead: entity.isRead,
+                    myReaction: entity.myReaction,
+                    peerReaction: entity.peerReaction)
         }
         print("[MessageStore] Loaded \(messages.count) messages")
         return messages
@@ -98,7 +104,9 @@ final class MessageStore {
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
                     status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
-                    isRead: entity.isRead
+                    isRead: entity.isRead,
+                    myReaction: entity.myReaction,
+                    peerReaction: entity.peerReaction
             )
         }
         print("[MessageStore] Loaded \(messages.count) messages with \(address)")

@@ -425,9 +425,18 @@ final class ChatViewController: UIViewController {
         textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
     }
     
+    /// Открытый ряд реакций — над одним сообщением за раз.
+    private var reactionPicker: ReactionPickerView?
+
     private func setupTableView() {
         tableView.dataSource = self
         tableView.delegate = self
+
+        // Нажатие на сообщение — ряд реакций. Одно нажатие свободно:
+        // выделение — долгое, ссылки — свои, и они отсеиваются в делегате.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(messageTapped))
+        tap.delegate = self
+        tableView.addGestureRecognizer(tap)
         tableView.register(MessageCell.self, forCellReuseIdentifier: MessageCell.reuseID)
     }
     
@@ -561,6 +570,66 @@ final class ChatViewController: UIViewController {
         UISelectionFeedbackGenerator().selectionChanged()
         updateMosaicChrome()
         saveMosaicDraft()
+    }
+
+    // MARK: - Реакции
+
+    @objc
+    private func messageTapped(_ recognizer: UITapGestureRecognizer) {
+        let point = recognizer.location(in: tableView)
+
+        // Ряд открыт — любое нажатие мимо него закрывает.
+        if reactionPicker != nil {
+            dismissReactionPicker()
+            return
+        }
+
+        guard let indexPath = tableView.indexPathForRow(at: point),
+              let cell = tableView.cellForRow(at: indexPath) else {
+            return
+        }
+        let message = viewModel.messages[indexPath.row]
+
+        let picker = ReactionPickerView(current: message.myReaction)
+        picker.onPick = { [weak self] emoji in
+            self?.dismissReactionPicker()
+            Task {
+                await self?.viewModel.react(to: message.id, with: emoji)
+            }
+        }
+        tableView.addSubview(picker)
+        reactionPicker = picker
+
+        // Над сообщением, с его стороны: своё — справа, чужое — слева.
+        var constraints = [
+            picker.bottomAnchor.constraint(equalTo: cell.topAnchor, constant: -Space.hair),
+            picker.heightAnchor.constraint(equalToConstant: 44)
+        ]
+        if message.isFromMe {
+            constraints.append(picker.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -Space.margin))
+        } else {
+            constraints.append(picker.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: Space.margin))
+        }
+        NSLayoutConstraint.activate(constraints)
+
+        picker.alpha = 0
+        picker.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        UIView.animate(withDuration: 0.2, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5) {
+            picker.alpha = 1
+            picker.transform = .identity
+        }
+    }
+
+    private func dismissReactionPicker() {
+        guard let picker = reactionPicker else {
+            return
+        }
+        reactionPicker = nil
+        UIView.animate(withDuration: 0.15, animations: {
+            picker.alpha = 0
+        }, completion: { _ in
+            picker.removeFromSuperview()
+        })
     }
 
     @objc
@@ -1014,8 +1083,29 @@ extension ChatViewController: UITableViewDelegate {
                 })
             }
 
+            // Наружу — картинкой: сетку в другом мессенджере не повторить,
+            // а картинку — можно.
+            actions.append(UIAction(title: "Поделиться картинкой",
+                                    image: UIImage(systemName: "square.and.arrow.up")) { _ in
+                self?.share(mosaic: message.mosaic)
+            })
+
+            actions.append(UIAction(title: "Сохранить картинку",
+                                    image: UIImage(systemName: "arrow.down.to.line")) { _ in
+                self?.saveToPhotos(mosaic: message.mosaic)
+            })
+
+            // Своя мозаика пригодится ещё раз: как основа или чтобы
+            // послать другому.
+            actions.append(UIAction(title: "Сохранить мозаику",
+                                    image: UIImage(systemName: "square.grid.2x2")) { _ in
+                guard let mosaic = message.mosaic else { return }
+                UserSettings.saveMosaicTemplate(mosaic)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            })
+
             // В чужом мессенджере ровно не встанет, но это лучшее, что там
-            // возможно.
+            // возможно текстом.
             actions.append(UIAction(title: "Скопировать как текст",
                                     image: UIImage(systemName: "doc.on.doc")) { _ in
                 UIPasteboard.general.string = message.text
@@ -1023,6 +1113,90 @@ extension ChatViewController: UITableViewDelegate {
 
             return UIMenu(children: actions)
         }
+    }
+}
+
+extension ChatViewController {
+
+    private func share(mosaic: Mosaic?) {
+        guard let mosaic, !mosaic.isEmpty else {
+            return
+        }
+        let image = MosaicImageRenderer.render(mosaic)
+        let sheet = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceView = view
+        present(sheet, animated: true)
+    }
+
+    /// В фотоплёнку. Отдельно от «поделиться»: сохранить себе — не то же
+    /// самое, что отправить кому-то, и через лист это лишние два нажатия.
+    private func saveToPhotos(mosaic: Mosaic?) {
+        guard let mosaic, !mosaic.isEmpty else {
+            return
+        }
+        let image = MosaicImageRenderer.render(mosaic)
+        UIImageWriteToSavedPhotosAlbum(image, self,
+                                       #selector(imageSaved(_:error:contextInfo:)), nil)
+    }
+
+    @objc
+    private func imageSaved(_ image: UIImage, error: Error?, contextInfo: UnsafeRawPointer?) {
+        guard error == nil else {
+            // Разрешения нет — сказать об этом и показать, где его дать.
+            let alert = UIAlertController(
+                title: "Не сохранилось",
+                message: "echos нужен доступ к фото, чтобы сохранить картинку. Его можно дать в настройках телефона.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Настройки", style: .default) { _ in
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            })
+            alert.addAction(UIAlertAction(title: "Ладно", style: .cancel))
+            present(alert, animated: true)
+            return
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+}
+
+// MARK: - UIGestureRecognizerDelegate
+
+extension ChatViewController: UIGestureRecognizerDelegate {
+
+    /// У текста свои распознаватели, и без этого они выигрывают у нашего:
+    /// нажатие на текст до ряда реакций не доходило.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    /// Нажатие на ссылку — ссылке, на подпись «повторить» — ей, на сам
+    /// ряд реакций — ему. Остальное — ряд реакций.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let view = touch.view else {
+            return true
+        }
+        if let picker = reactionPicker, view.isDescendant(of: picker) {
+            return false
+        }
+        if view is UIControl {
+            return false
+        }
+        if let textView = view as? UITextView {
+            let point = touch.location(in: textView)
+            if let position = textView.closestPosition(to: point),
+               let range = textView.tokenizer.rangeEnclosingPosition(position, with: .character, inDirection: .layout(.left)),
+               textView.textStyling(at: range.start, in: .forward)?[.link] != nil {
+                return false
+            }
+        }
+        if view.isUserInteractionEnabled, view is UILabel {
+            // Подпись «повторить» — у неё свой обработчик.
+            return false
+        }
+        return true
     }
 }
 
@@ -1096,6 +1270,44 @@ extension ChatViewController: MosaicPaletteDelegate {
         textField.text = ""
         textField.inputView = nil
         textField.reloadInputViews()
+    }
+
+    // MARK: - Сохранённые мозаики
+
+    func paletteDidAskToSaveTemplate(_ palette: MosaicPaletteView) {
+        guard !mosaicDraft.isEmpty else {
+            return
+        }
+        UserSettings.saveMosaicTemplate(mosaicDraft)
+        // Показываем, куда она легла: иначе непонятно, сохранилось ли.
+        palette.showTemplates()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// Взяли сохранённую за основу: она становится черновиком целиком,
+    /// вместе с размером.
+    func palette(_ palette: MosaicPaletteView, didPickTemplate mosaic: Mosaic) {
+        mosaicDraft = mosaic
+        palette.showSide(mosaic.columns)
+        draftView.show(mosaicDraft)
+        draftView.isHidden = false
+        updateMosaicChrome()
+        saveMosaicDraft()
+    }
+
+    func palette(_ palette: MosaicPaletteView, didAskToDelete mosaic: Mosaic) {
+        UserSettings.deleteMosaicTemplate(mosaic)
+        palette.reloadTemplates()
+    }
+
+    // MARK: - Картинка
+
+    func paletteDidAskToSaveImage(_ palette: MosaicPaletteView) {
+        saveToPhotos(mosaic: mosaicDraft)
+    }
+
+    func paletteDidAskToShare(_ palette: MosaicPaletteView) {
+        share(mosaic: mosaicDraft)
     }
 }
 
