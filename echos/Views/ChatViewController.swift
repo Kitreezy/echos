@@ -1090,6 +1090,20 @@ extension ChatViewController: UITableViewDelegate {
                 self?.share(mosaic: message.mosaic)
             })
 
+            actions.append(UIAction(title: "Сохранить картинку",
+                                    image: UIImage(systemName: "arrow.down.to.line")) { _ in
+                self?.saveToPhotos(mosaic: message.mosaic)
+            })
+
+            // Своя мозаика пригодится ещё раз: как основа или чтобы
+            // послать другому.
+            actions.append(UIAction(title: "Сохранить мозаику",
+                                    image: UIImage(systemName: "square.grid.2x2")) { _ in
+                guard let mosaic = message.mosaic else { return }
+                UserSettings.saveMosaicTemplate(mosaic)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            })
+
             // В чужом мессенджере ровно не встанет, но это лучшее, что там
             // возможно текстом.
             actions.append(UIAction(title: "Скопировать как текст",
@@ -1105,13 +1119,45 @@ extension ChatViewController: UITableViewDelegate {
 extension ChatViewController {
 
     private func share(mosaic: Mosaic?) {
-        guard let mosaic else {
+        guard let mosaic, !mosaic.isEmpty else {
             return
         }
         let image = MosaicImageRenderer.render(mosaic)
         let sheet = UIActivityViewController(activityItems: [image], applicationActivities: nil)
         sheet.popoverPresentationController?.sourceView = view
         present(sheet, animated: true)
+    }
+
+    /// В фотоплёнку. Отдельно от «поделиться»: сохранить себе — не то же
+    /// самое, что отправить кому-то, и через лист это лишние два нажатия.
+    private func saveToPhotos(mosaic: Mosaic?) {
+        guard let mosaic, !mosaic.isEmpty else {
+            return
+        }
+        let image = MosaicImageRenderer.render(mosaic)
+        UIImageWriteToSavedPhotosAlbum(image, self,
+                                       #selector(imageSaved(_:error:contextInfo:)), nil)
+    }
+
+    @objc
+    private func imageSaved(_ image: UIImage, error: Error?, contextInfo: UnsafeRawPointer?) {
+        guard error == nil else {
+            // Разрешения нет — сказать об этом и показать, где его дать.
+            let alert = UIAlertController(
+                title: "Не сохранилось",
+                message: "echos нужен доступ к фото, чтобы сохранить картинку. Его можно дать в настройках телефона.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "Настройки", style: .default) { _ in
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            })
+            alert.addAction(UIAlertAction(title: "Ладно", style: .cancel))
+            present(alert, animated: true)
+            return
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 }
 
@@ -1224,6 +1270,44 @@ extension ChatViewController: MosaicPaletteDelegate {
         textField.text = ""
         textField.inputView = nil
         textField.reloadInputViews()
+    }
+
+    // MARK: - Сохранённые мозаики
+
+    func paletteDidAskToSaveTemplate(_ palette: MosaicPaletteView) {
+        guard !mosaicDraft.isEmpty else {
+            return
+        }
+        UserSettings.saveMosaicTemplate(mosaicDraft)
+        // Показываем, куда она легла: иначе непонятно, сохранилось ли.
+        palette.showTemplates()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// Взяли сохранённую за основу: она становится черновиком целиком,
+    /// вместе с размером.
+    func palette(_ palette: MosaicPaletteView, didPickTemplate mosaic: Mosaic) {
+        mosaicDraft = mosaic
+        palette.showSide(mosaic.columns)
+        draftView.show(mosaicDraft)
+        draftView.isHidden = false
+        updateMosaicChrome()
+        saveMosaicDraft()
+    }
+
+    func palette(_ palette: MosaicPaletteView, didAskToDelete mosaic: Mosaic) {
+        UserSettings.deleteMosaicTemplate(mosaic)
+        palette.reloadTemplates()
+    }
+
+    // MARK: - Картинка
+
+    func paletteDidAskToSaveImage(_ palette: MosaicPaletteView) {
+        saveToPhotos(mosaic: mosaicDraft)
+    }
+
+    func paletteDidAskToShare(_ palette: MosaicPaletteView) {
+        share(mosaic: mosaicDraft)
     }
 }
 
