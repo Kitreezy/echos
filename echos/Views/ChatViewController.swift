@@ -220,6 +220,7 @@ final class ChatViewController: UIViewController {
         draftView.show(mosaicDraft)
         draftView.isHidden = false
         updateMosaicChrome()
+        draftVisibilityChanged()
     }
 
     /// Открытый чат начинается с конца — с последних сообщений. Крутить
@@ -227,20 +228,40 @@ final class ChatViewController: UIViewController {
     /// первый раз это делается здесь, после раскладки, без анимации.
     private var needsScrollToBottom = true
 
-    /// Черновик лежит поверх ленты и не должен закрывать последние
-    /// сообщения: лента получает отступ снизу на его высоту.
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        let inset = draftView.isHidden ? 0 : draftView.bounds.height + Space.tight
-        let insetChanged = tableView.contentInset.bottom != inset
-        if insetChanged {
-            tableView.contentInset.bottom = inset
-            tableView.verticalScrollIndicatorInsets.bottom = inset
-        }
+        let insetChanged = updateDraftInset()
 
         if needsScrollToBottom || insetChanged {
             needsScrollToBottom = false
+            scrollToBottom(animated: false)
+        }
+    }
+
+    /// Черновик лежит поверх ленты и не должен закрывать последние
+    /// сообщения: лента получает отступ снизу на его высоту.
+    ///
+    /// Зовётся и из раскладки, и руками — при каждом появлении и уходе
+    /// черновика. Одной раскладки мало: после отправки черновик прячется,
+    /// а размеры экрана не меняются, раскладка не случается, и отступ
+    /// оставался висеть пустым местом под последним сообщением.
+    @discardableResult
+    private func updateDraftInset() -> Bool {
+        let inset = draftView.isHidden ? 0 : draftView.bounds.height + Space.tight
+        guard tableView.contentInset.bottom != inset else {
+            return false
+        }
+        tableView.contentInset.bottom = inset
+        tableView.verticalScrollIndicatorInsets.bottom = inset
+        return true
+    }
+
+    /// Черновик показался или спрятался: пересчитать отступ и не оставить
+    /// ленту сдвинутой.
+    private func draftVisibilityChanged() {
+        view.layoutIfNeeded()
+        if updateDraftInset() {
             scrollToBottom(animated: false)
         }
     }
@@ -534,6 +555,7 @@ final class ChatViewController: UIViewController {
         }
 
         updateMosaicChrome()
+        draftVisibilityChanged()
     }
 
     /// Кнопка сетки и подсказка в поле говорят, в каком мы режиме — и что
@@ -1293,6 +1315,7 @@ extension ChatViewController: MosaicPaletteDelegate {
         draftView.isHidden = false
         updateMosaicChrome()
         saveMosaicDraft()
+        draftVisibilityChanged()
     }
 
     func palette(_ palette: MosaicPaletteView, didAskToDelete mosaic: Mosaic) {
