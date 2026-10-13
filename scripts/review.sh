@@ -14,6 +14,12 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
+gate=false
+if [ "${1:-}" = "--gate" ]; then
+  gate=true
+  shift
+fi
+
 range=${1:-origin/develop}
 workdir=$root
 
@@ -48,8 +54,22 @@ fi
 
 checklist=$(cat "$root/docs/review-checklist.md")
 
+# Машинный блок просится только с --gate: человеку он не нужен, а модель,
+# которой велели выдать JSON, пишет прозу короче. Текст — отдельным файлом:
+# в нём тройные обратные кавычки, и в шелле они живут плохо.
+machine=""
+if $gate; then
+  machine=$(cat "$root/scripts/gate-prompt.txt")
+fi
+
 cd "$workdir"
-claude -p \
+
+# Код возврата самого claude отделяется от вердикта. Иначе сбой вызова —
+# нет сети, кончились лимиты, модель не ответила — приходит кодом 1 и
+# превращается в «блокирующее замечание», то есть этап начинает
+# останавливать работу из-за собственной поломки.
+set +e
+answer=$(claude -p \
   --allowedTools "Read,Grep,Glob" \
   --output-format text \
   "Проект echos, iOS, Swift 6. Сделай ревью diff по чек-листу ниже.
@@ -60,11 +80,38 @@ claude -p \
 загляни в код рядом через Read, не гадай по diff. Не пересказывай diff, не
 хвали, не предлагай стиль и именование — их в чек-листе нет. В конце одна
 фраза: стоит ли вливать как есть.
-
+$machine
 Чек-лист:
 
 $checklist
 
 Diff:
 
-$diff"
+$diff")
+called=$?
+set -e
+
+if [ $called -ne 0 ]; then
+  echo "ревью не состоялось: claude вернул $called" >&2
+  if ! $gate; then
+    exit 2
+  fi
+  # С --gate молчать нельзя: вызывающему нужен комментарий о том, что
+  # проверка не прошла, и нулевой код — чтобы не блокировать.
+  mkdir -p "$root/build"
+  printf 'вызов claude вернул %s\n' "$called" > "$root/build/review.md"
+  python3 "$root/scripts/gate.py" /nonexistent "${TESTS_RESULT:-}"
+  exit 0
+fi
+
+if ! $gate; then
+  printf '%s\n' "$answer"
+  exit 0
+fi
+
+# Ответ сохраняется: при разборе вердикта нужно видеть, что именно сказала
+# модель, а не только решение.
+mkdir -p "$root/build"
+printf '%s\n' "$answer" > "$root/build/review.md"
+
+python3 "$root/scripts/gate.py" "$root/build/review.md" "${TESTS_RESULT:-}"

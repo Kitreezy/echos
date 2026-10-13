@@ -36,8 +36,13 @@ jobs:
         with:
           xcode: ${{ steps.xcode.outputs.version }}
 
+      # Версия обязательна: без неё и без .ruby-version в репозитории
+      # setup-ruby падает, не дойдя до тестов. Берётся не локальная 2.7.2,
+      # а 3.2: на ней проверено локально, и на неё же зафиксирован Gemfile.lock.
+      # Fastlane на 2.7 уже предупреждает, что поддержка уходит.
       - uses: ruby/setup-ruby@v1
         with:
+          ruby-version: '3.2'
           bundler-cache: true
 
       - name: Тесты
@@ -77,7 +82,15 @@ jobs:
             xcrun xcresulttool get test-results tests --path "$bundle" \
               | python3 scripts/failures.py > build/failures.txt || true
           fi
-          test -s build/failures.txt || echo "Падений нет." > build/failures.txt
+          # Отличать «тестов не было падений» от «разбор не удался»:
+          # иначе ревью получает заведомо ложный ввод и объясняет не то.
+          if [ ! -s build/failures.txt ]; then
+            if [ -n "$bundle" ]; then
+              echo "Падений нет." > build/failures.txt
+            else
+              echo "Результатов тестов нет — разбирать нечего." > build/failures.txt
+            fi
+          fi
           cat build/failures.txt
 
       - uses: actions/upload-artifact@v4
@@ -87,21 +100,24 @@ jobs:
           path: build/failures.txt
           retention-days: 7
 
-  # Третий шаг цикла. Модель не собирает и не тестирует — это уже сделано
-  # выше. Она читает: diff и падения. Один комментарий в PR: если тесты
-  # упали — что сломалось и где; если прошли — что в diff стоит поправить
-  # и чего не хватает по тестам.
+  # Проверка кода этапом, а не советом: результат виден статусом, и
+  # блокирующее замечание останавливает вливание без участия человека.
   #
-  # Ходит по подписке через CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`).
-  # Секрета нет — job пропускается, а не падает.
-  review:
+  # Делится ответственность так: тесты и сборка выше — детерминированы,
+  # здесь только то, что требует чтения. Модель получает diff, чек-лист и
+  # падения тестов, отвечает прозой и машинным блоком; решение принимает
+  # scripts/gate.py, он же собирает комментарий.
+  #
+  # Ходит по подписке через CLAUDE_CODE_OAUTH_TOKEN (claude setup-token).
+  # Секрета нет — этап пропускается зелёным: включать проверку должен тот,
+  # кто готов её читать.
+  gate:
     needs: tests
     if: github.event_name == 'pull_request' && always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
-      issues: write
     steps:
       - name: Есть ли токен
         id: token
@@ -109,40 +125,71 @@ jobs:
           TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: echo "present=${{ env.TOKEN != '' }}" >> "$GITHUB_OUTPUT"
 
+      - name: Проверка выключена
+        if: steps.token.outputs.present != 'true'
+        run: |
+          echo "CLAUDE_CODE_OAUTH_TOKEN не задан — проверка кода пропущена." \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@v4
         if: steps.token.outputs.present == 'true'
         with:
+          # Полная история: ревью смотрит diff относительно базовой ветки.
           fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         if: steps.token.outputs.present == 'true'
+        continue-on-error: true
         with:
           name: failures
           path: build
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-node@v4
         if: steps.token.outputs.present == 'true'
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          allowed_tools: "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(cat:*)"
-          # Чек-лист — docs/review-checklist.md, тот же, что у scripts/review.sh.
-          # Здесь только рамка: что читать и как отвечать.
-          prompt: |
-            Проект echos, iOS, Swift 6. Это pull request в ${{ github.base_ref }};
-            тесты уже прошли в предыдущем job, их результат: ${{ needs.tests.result }}.
-            Падения, если были, лежат в build/failures.txt.
+          node-version: '22'
 
-            Если тесты упали: прочитай build/failures.txt, найди код под
-            упавшими тестами и объясни, что сломано и где. Не предлагай
-            ослабить тест. Чек-лист в этом случае не применяй.
+      - name: Claude Code
+        if: steps.token.outputs.present == 'true'
+        run: npm install -g @anthropic-ai/claude-code
 
-            Если прошли: возьми diff (git diff origin/${{ github.base_ref }}...HEAD)
-            и сделай ревью по чек-листу из docs/review-checklist.md — прочитай
-            файл целиком. Пройди по пунктам по порядку, по каждому либо
-            «чисто», либо замечания с файлом и строкой и объяснением, почему
-            это подпадает под пункт. Замечание без файла и строки не пиши.
-            Сомневаешься — загляни в код рядом, не гадай по diff. Не
-            пересказывай diff, не хвали, не предлагай стиль и именование. В
-            конце одна фраза: стоит ли вливать как есть.
+      # Ревью запускается тем же скриптом, что и локально: иначе CI и
+      # машина разработчика расходятся, и «у меня проходило» становится
+      # обычным разговором. Скрипт сам прогоняет ответ через gate.py.
+      - name: Ревью и решение
+        id: decision
+        if: steps.token.outputs.present == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+        run: |
+          set +e
+          scripts/review.sh --gate "origin/${{ github.base_ref }}" > comment.md
+          verdict=$?
+          set -e
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
 
-            Один комментарий, по-русски.
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.token.outputs.present == 'true'
+        with:
+          name: review
+          path: |
+            build/review.md
+            comment.md
+          retention-days: 7
+
+      # Один комментарий на pull request, обновляемый при каждом push:
+      # десять комментариев на одну ветку читать перестают.
+      - name: Комментарий
+        if: steps.token.outputs.present == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: review
+          path: comment.md
+
+      - name: Блокирующие замечания
+        if: steps.decision.outputs.verdict == '1'
+        run: |
+          echo "Проверка кода нашла блокирующие замечания — смотри комментарий в pull request."
+          exit 1
