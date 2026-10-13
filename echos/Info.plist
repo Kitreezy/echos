@@ -7,6 +7,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Чтобы сохранять мозаики из эмодзи в фотоплёнку.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_echos-chat._tcp</string>

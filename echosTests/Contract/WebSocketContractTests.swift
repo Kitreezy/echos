@@ -117,10 +117,13 @@ class WebSocketContractTests: XCTestCase {
         alice.connect()
         bob.connect()
 
-        _ = await waitUntil(timeout: .seconds(5)) { self.server.connectedClientCount == 2 }
+        // Два сокета — ещё не двое представившихся: сервер пересылает
+        // только от тех, чей hello уже принял.
+        _ = await waitUntil(timeout: .seconds(5)) {
+            self.server.received.filter { $0.kind == .hello }.count == 2
+        }
 
-        let payload = MessagePayload(from: Message(text: "контракт", isFromMe: true),
-                                     senderName: "Alice")
+        let payload = SealedPayload(version: 1, box: Data("контракт".utf8))
         await alice.send(try RelayEnvelope.message(payload,
                                                    from: "Alice",
                                                    to: identity(for: "Bob").fingerprint).encoded())
@@ -218,14 +221,13 @@ class WebSocketContractTests: XCTestCase {
         monitor.goOffline()
         _ = await waitUntil(timeout: .seconds(5)) { client.state == .waitingForNetwork }
 
-        let payload = MessagePayload(from: Message(text: "из оффлайна", isFromMe: true),
-                                     senderName: "Alice")
+        let payload = SealedPayload(version: 1, box: Data("из оффлайна".utf8))
         await client.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         monitor.goOnline()
 
         let delivered = await waitUntil(timeout: .seconds(15)) {
-            self.server.receivedMessageTexts.contains("из оффлайна")
+            self.server.receivedMessageMarkers.contains("из оффлайна")
         }
 
         XCTAssertTrue(delivered, "\(configurationName): отложенное сообщение потеряно")

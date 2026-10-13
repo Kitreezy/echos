@@ -9,8 +9,14 @@
 //  первом запуске, достаточно. Имя — это ярлык, который человек выбрал сам,
 //  а доказательством права на имя служит подпись.
 //
-//  Ключ лежит в Keychain, а не в UserDefaults: переустановку он переживать
-//  не обязан, а вот резервную копию чужого устройства — не должен.
+//  Ключей два. Подписывающий (Ed25519) — это и есть личность: его отпечаток
+//  служит адресом, им подтверждается право на имя. Ключ соглашения (X25519)
+//  нужен для переписки: из него и чужого выводится общий секрет, которым
+//  шифруются сообщения. Подписью первого второй привязан к личности — иначе
+//  релей мог бы подсунуть собеседнику свой.
+//
+//  Ключи лежат в Keychain, а не в UserDefaults: переустановку они переживать
+//  не обязаны, а вот резервную копию чужого устройства — не должны.
 //
 
 import CryptoKit
@@ -29,22 +35,55 @@ struct DeviceIdentity: Sendable {
     /// Само по себе ничего не защищает, но по нему видно, что «Bob» сегодня
     /// и «Bob» вчера — один человек.
     var fingerprint: String {
-        let digest = SHA256.hash(data: publicKey)
-        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+        Self.fingerprint(of: publicKey)
     }
 
-    private let privateKey: Curve25519.Signing.PrivateKey
+    /// Отпечаток чужого ключа — тот же, что считает релей.
+    static func fingerprint(of publicKey: Data) -> String {
+        SHA256.hash(data: publicKey).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
 
-    /// Личность вокруг готового ключа. Обычный путь — `current()`, а здесь
+    /// Открытая часть ключа соглашения. Вместе с `publicKey` и подписью
+    /// под ней образует `KeyBundle` — то, чем представляемся собеседникам.
+    let agreementKey: Data
+
+    private let privateKey: Curve25519.Signing.PrivateKey
+    private let agreementPrivateKey: Curve25519.KeyAgreement.PrivateKey
+
+    /// Личность вокруг готовых ключей. Обычный путь — `current()`, а здесь
     /// заходят тесты, которым Keychain не нужен.
-    init(privateKey: Curve25519.Signing.PrivateKey = Curve25519.Signing.PrivateKey()) {
+    init(privateKey: Curve25519.Signing.PrivateKey = Curve25519.Signing.PrivateKey(),
+         agreementKey: Curve25519.KeyAgreement.PrivateKey = Curve25519.KeyAgreement.PrivateKey()) {
         self.privateKey = privateKey
         self.publicKey = privateKey.publicKey.rawRepresentation
+        self.agreementPrivateKey = agreementKey
+        self.agreementKey = agreementKey.publicKey.rawRepresentation
     }
 
     /// Подписать вызов сервера.
     func signature(for challenge: Data) throws -> Data {
         try privateKey.signature(for: challenge)
+    }
+
+    /// Чем представляемся в этой сессии: открытые ключи и доказательства,
+    /// что ключи соглашения принадлежат этой же личности.
+    ///
+    /// Подписывается не голый ключ, а строка с префиксом: вызовы, которые мы
+    /// подписываем для кого угодно, — тоже 32 случайных байта, и без префикса
+    /// чужой «вызов» мог бы оказаться чужим ключом соглашения с нашей
+    /// подписью под ним.
+    func keyBundle(session: SessionKey) throws -> KeyBundle {
+        KeyBundle(publicKey: publicKey,
+                  agreementKey: agreementKey,
+                  agreementProof: try privateKey.signature(for: KeyBundle.bindingMessage(for: agreementKey)),
+                  sessionKey: session.publicKey,
+                  sessionProof: session.proof)
+    }
+
+    /// Статическая часть общего секрета — сырая, до вывода ключа шифрования.
+    func sharedSecret(with peer: PeerIdentity) throws -> SharedSecret {
+        let theirKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: peer.agreementKey)
+        return try agreementPrivateKey.sharedSecretFromKeyAgreement(with: theirKey)
     }
 
     // MARK: - Access
@@ -55,92 +94,5 @@ struct DeviceIdentity: Sendable {
         try store.identity()
     }
 
-    private static let store = IdentityStore()
-}
-
-/// Хранилище ключа.
-///
-/// Отдельный тип нужен из-за кэша: обращаться в Keychain на каждое
-/// переподключение незачем, а кэш переживает потоки, поэтому под замком.
-private final class IdentityStore: @unchecked Sendable {
-
-    private let lock = NSLock()
-    private var cached: DeviceIdentity?
-
-    private let service = "com.echos.identity"
-    private let account = "device-signing-key"
-
-    func identity() throws -> DeviceIdentity {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if let cached {
-            return cached
-        }
-
-        let identity = try loadOrCreate()
-        cached = identity
-        return identity
-    }
-
-    private func loadOrCreate() throws -> DeviceIdentity {
-        if let raw = try read() {
-            let key = try Curve25519.Signing.PrivateKey(rawRepresentation: raw)
-            return DeviceIdentity(privateKey: key)
-        }
-
-        let key = Curve25519.Signing.PrivateKey()
-        try write(key.rawRepresentation)
-        return DeviceIdentity(privateKey: key)
-    }
-
-    // MARK: - Keychain
-
-    private var query: [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-    }
-
-    private func read() throws -> Data? {
-        var query = self.query
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        switch status {
-        case errSecSuccess:    return result as? Data
-        case errSecItemNotFound: return nil
-        default:               throw DeviceIdentityError.keychainFailed(status)
-        }
-    }
-
-    private func write(_ data: Data) throws {
-        var item = query
-        item[kSecValueData as String] = data
-
-        // Ключ нужен и в фоне: транспорт переподключается, пока экран
-        // заблокирован, и без этого hello уходить перестанет.
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw DeviceIdentityError.keychainFailed(status)
-        }
-    }
-}
-
-enum DeviceIdentityError: Error, LocalizedError, Equatable {
-    case keychainFailed(OSStatus)
-
-    var errorDescription: String? {
-        switch self {
-        case .keychainFailed(let status):
-            return "Keychain вернул ошибку \(status)"
-        }
-    }
+    private static let store = IdentityStore(store: KeychainSecretStore(service: "com.echos.identity"))
 }

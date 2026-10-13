@@ -31,12 +31,46 @@ final class MessageCell: UITableViewCell {
         return label
     }()
 
-    private let messageLabel: UILabel = {
-        let label = UILabel()
-        label.numberOfLines = 0
-        label.font = Typography.body
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
+    /// Текст — в `UITextView`, а не в `UILabel`: так его можно выделить
+    /// прямо в ленте и скопировать штатным меню, а ссылки в нём живые.
+    /// Не редактируется, не прокручивается, размер задаёт содержимое.
+    private let messageLabel: UITextView = {
+        let view = UITextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.font = Typography.body
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.dataDetectorTypes = [.link]
+        view.linkTextAttributes = [
+            .foregroundColor: UIColor.action,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        view.tintColor = .own
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
+    /// Что делать по нажатию на «не отправлено». `nil` — нажимать нечего.
+    var onRetry: (() -> Void)?
+
+    /// Мозаика — вместо текста, когда сообщение ею и является.
+    private let mosaicView: MosaicView = {
+        let view = MosaicView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
+
+    /// Текст или мозаика — что-то одно; скрытое в стеке не занимает места.
+    private let body: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
     }()
 
     private let footnoteLabel: UILabel = {
@@ -46,6 +80,27 @@ final class MessageCell: UITableViewCell {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
+
+    /// Реакции под сообщением: сначала собеседника, потом своя. Пусто —
+    /// метки нет и места она не занимает.
+    private let reactionsLabel: UILabel = {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 15)
+        label.backgroundColor = .surfaceRaised
+        label.layer.cornerRadius = 11
+        label.layer.masksToBounds = true
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
+    private lazy var reactionsGap = footnoteLabel.topAnchor.constraint(equalTo: reactionsLabel.bottomAnchor,
+                                                                        constant: Space.tight)
+    private lazy var noReactionsGap = footnoteLabel.topAnchor.constraint(equalTo: body.bottomAnchor,
+                                                                          constant: Space.tight)
+
+    /// Подпись нажимается только у неотправленного — там она и есть кнопка.
+    private lazy var retryTap = UITapGestureRecognizer(target: self, action: #selector(retryTapped))
 
     private let column = UIView()
 
@@ -72,8 +127,12 @@ final class MessageCell: UITableViewCell {
         column.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(column)
         column.addSubview(senderNameLabel)
-        column.addSubview(messageLabel)
+        column.addSubview(body)
+        column.addSubview(reactionsLabel)
         column.addSubview(footnoteLabel)
+        footnoteLabel.addGestureRecognizer(retryTap)
+        body.addArrangedSubview(messageLabel)
+        body.addArrangedSubview(mosaicView)
 
         columnLeading = column.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
                                                         constant: Space.margin)
@@ -89,11 +148,15 @@ final class MessageCell: UITableViewCell {
             senderNameLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             senderNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
 
-            messageLabel.topAnchor.constraint(equalTo: senderNameLabel.bottomAnchor, constant: Space.hair),
-            messageLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
-            messageLabel.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            body.topAnchor.constraint(equalTo: senderNameLabel.bottomAnchor, constant: Space.hair),
+            body.leadingAnchor.constraint(equalTo: column.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: column.trailingAnchor),
+            messageLabel.widthAnchor.constraint(equalTo: body.widthAnchor),
 
-            footnoteLabel.topAnchor.constraint(equalTo: messageLabel.bottomAnchor, constant: Space.tight),
+            reactionsLabel.topAnchor.constraint(equalTo: body.bottomAnchor, constant: Space.tight),
+            reactionsLabel.heightAnchor.constraint(equalToConstant: 22),
+            noReactionsGap,
+
             footnoteLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor),
             footnoteLabel.trailingAnchor.constraint(lessThanOrEqualTo: column.trailingAnchor),
             footnoteLabel.bottomAnchor.constraint(equalTo: column.bottomAnchor)
@@ -103,7 +166,17 @@ final class MessageCell: UITableViewCell {
     // MARK: - Configure
 
     func configure(with message: Message) {
-        messageLabel.text = message.text
+        showReactions(of: message)
+
+        if let mosaic = message.mosaic {
+            mosaicView.show(mosaic)
+            mosaicView.isHidden = false
+            messageLabel.isHidden = true
+        } else {
+            messageLabel.text = message.text
+            messageLabel.isHidden = false
+            mosaicView.isHidden = true
+        }
 
         let time = Self.timeFormatter.string(from: message.timestamp)
 
@@ -113,14 +186,37 @@ final class MessageCell: UITableViewCell {
             senderNameLabel.isHidden = true
             footnoteLabel.text = footnote(time: time, status: message.status)
             footnoteLabel.textColor = message.status == .failed ? .lost : .inkMuted
+            footnoteLabel.isUserInteractionEnabled = message.status == .failed
         } else {
             alignLeft()
             messageLabel.textColor = .other
             footnoteLabel.text = time
             footnoteLabel.textColor = .inkMuted
+            footnoteLabel.isUserInteractionEnabled = false
 
             senderNameLabel.text = message.senderName
             senderNameLabel.isHidden = message.senderName == nil
+        }
+    }
+
+    private var reactionsLeading: NSLayoutConstraint?
+    private var reactionsTrailing: NSLayoutConstraint?
+
+    private func showReactions(of message: Message) {
+        let reactions = [message.peerReaction, message.myReaction].compactMap { $0 }
+        reactionsLabel.isHidden = reactions.isEmpty
+        reactionsLabel.text = reactions.isEmpty ? nil : " " + reactions.joined(separator: " ") + " "
+        reactionsGap.isActive = !reactions.isEmpty
+        noReactionsGap.isActive = reactions.isEmpty
+
+        reactionsLeading?.isActive = false
+        reactionsTrailing?.isActive = false
+        if message.isFromMe {
+            reactionsTrailing = reactionsLabel.trailingAnchor.constraint(equalTo: column.trailingAnchor)
+            reactionsTrailing?.isActive = true
+        } else {
+            reactionsLeading = reactionsLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor)
+            reactionsLeading?.isActive = true
         }
     }
 
@@ -134,8 +230,13 @@ final class MessageCell: UITableViewCell {
             return time
 
         case .failed:
-            return "\(time) · не отправлено"
+            return "\(time) · не отправлено · повторить"
         }
+    }
+
+    @objc
+    private func retryTapped() {
+        onRetry?()
     }
 
     private func alignLeft() {
@@ -143,6 +244,7 @@ final class MessageCell: UITableViewCell {
         columnLeading?.isActive = true
         messageLabel.textAlignment = .left
         footnoteLabel.textAlignment = .left
+        body.alignment = .leading
     }
 
     private func alignRight() {
@@ -150,6 +252,7 @@ final class MessageCell: UITableViewCell {
         columnTrailing?.isActive = true
         messageLabel.textAlignment = .right
         footnoteLabel.textAlignment = .right
+        body.alignment = .trailing
     }
 
     // MARK: - Reuse

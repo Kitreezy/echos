@@ -1,0 +1,73 @@
+//
+//  NearbyHandshake.swift
+//  echos
+//
+//  Подтверждение личности у тех, кто рядом.
+//
+//  На релее личность подтверждается подписью, а у MultipeerConnectivity до сих
+//  пор не подтверждалась ничем: адресом там служило имя устройства, и назваться
+//  чужим именем мог кто угодно. Узнавание собеседника, тёзки, адресная доставка
+//  — всё это рядом работало на доверии к имени.
+//
+//  Порядок тот же, что и с сервером: открытый ключ объявляется при обнаружении,
+//  а подтверждается подписью под случайной строкой уже внутри сессии. Вместе
+//  с ответом приходят ключи соглашения — статический и сессионный, оба
+//  подписанные тем же ключом.
+//
+
+import CryptoKit
+import Foundation
+
+enum NearbyHandshake {
+
+    /// Ключ в объявлении. Короткий намеренно: `discoveryInfo` ходит в
+    /// широковещательных пакетах, и место там не бесплатное.
+    static let discoveryKey = "key"
+
+    /// Длина случайной строки, которую просим подписать.
+    static let nonceSize = 32
+
+    static func newNonce() -> Data {
+        Data((0..<nonceSize).map { _ in UInt8.random(in: .min ... .max) })
+    }
+
+    /// Проверить ответ и получить личность собеседника.
+    ///
+    /// - Parameters:
+    ///   - hello: ключи и подпись, пришедшие от собеседника.
+    ///   - nonce: строка, которую мы ему выдали.
+    ///   - advertised: ключ, которым он представился при обнаружении. `nil`,
+    ///     если подключились к нам первыми и объявления мы не видели.
+    /// - Returns: адрес и ключ соглашения, если всё сошлось, иначе `nil`.
+    ///
+    /// Объявленный ключ сверяется с присланным намеренно: иначе собеседник мог
+    /// бы показаться в списке одним человеком, а в переписке оказаться другим.
+    /// Ключ соглашения проверяется той же подписью — без него собеседника
+    /// нет: писать ему было бы нечем.
+    static func verify(hello: HelloPayload,
+                       nonce: Data,
+                       advertised: Data?) -> PeerIdentity? {
+        guard let key = try? Curve25519.Signing.PublicKey(
+            rawRepresentation: hello.publicKey) else {
+            return nil
+        }
+
+        guard key.isValidSignature(hello.signature, for: nonce) else {
+            return nil
+        }
+
+        if let advertised, advertised != hello.publicKey {
+            return nil
+        }
+
+        return hello.keyBundle.verified()
+    }
+
+    /// Ответ на чужой вызов. Сессионный ключ — тот, что заведён на эту
+    /// сессию с этим устройством: он же пойдёт в вывод ключа переписки.
+    static func answer(to nonce: Data,
+                       as identity: DeviceIdentity,
+                       session: SessionKey) throws -> HelloPayload {
+        try HelloPayload(answering: nonce, as: identity, session: session)
+    }
+}

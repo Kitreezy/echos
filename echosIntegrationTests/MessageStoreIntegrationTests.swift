@@ -50,6 +50,55 @@ final class MessageStoreIntegrationTests: XCTestCase {
                        accuracy: 0.001)
     }
     
+    /// Мозаика лежит рядом с текстом и возвращается сеткой, а не текстом.
+    func test_mosaic_survivesTheStore() async throws {
+        let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟥", "", "", "🟦"])!
+        let message = Message(text: mosaic.text, mosaic: mosaic,
+                              peerAddress: "bob", isFromMe: true, status: .sent)
+
+        try await store.saveMessage(message)
+        let loaded = try await store.loadMessages(with: "bob")
+        let restored = try XCTUnwrap(loaded.first)
+
+        XCTAssertEqual(restored.mosaic, mosaic)
+        XCTAssertEqual(restored.text, mosaic.text)
+    }
+
+    func test_markAsRead_touchesOnlyIncomingInThatConversation() async throws {
+        try await store.saveMessage(Message(text: "от Кэрол", peerAddress: "carol", isFromMe: false, status: .sent, isRead: false))
+        try await store.saveMessage(Message(text: "от Боба", peerAddress: "bob", isFromMe: false, status: .sent, isRead: false))
+        try await store.saveMessage(Message(text: "Кэрол от меня", peerAddress: "carol", isFromMe: true, status: .sent, isRead: false))
+
+        try await store.markAsRead(with: "carol")
+        let all = try await store.loadMessages()
+
+        XCTAssertEqual(all.first { $0.text == "от Кэрол" }?.isRead, true)
+        XCTAssertEqual(all.first { $0.text == "от Боба" }?.isRead, false, "Чужая переписка не трогается")
+        XCTAssertEqual(all.filter(\.isUnread).count, 1)
+    }
+
+    func test_reactions_areStoredAndUpdated() async throws {
+        var message = Message(text: "привет", peerAddress: "bob", isFromMe: true, status: .sent)
+        try await store.saveMessage(message)
+
+        message.myReaction = "❤️"
+        message.peerReaction = "👍"
+        try await store.saveMessage(message)
+
+        let loaded = try await store.loadMessages(with: "bob")
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded.first?.myReaction, "❤️")
+        XCTAssertEqual(loaded.first?.peerReaction, "👍")
+    }
+
+    func test_plainMessage_loadsWithoutMosaic() async throws {
+        try await store.saveMessage(CoreDataTestStack.message("текст", isFromMe: true, status: .sent))
+        let loaded = try await store.loadMessages()
+        let restored = try XCTUnwrap(loaded.first)
+
+        XCTAssertNil(restored.mosaic)
+    }
+
     func test_loadMessages_returnsEmptyArrayOnFreshStore() async throws {
         let loaded = try await store.loadMessages()
         

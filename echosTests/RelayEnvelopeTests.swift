@@ -12,17 +12,18 @@ final class RelayEnvelopeTests: XCTestCase {
 
     // MARK: - Round trip
 
-    func test_messageEnvelope_roundTrip_preservesPayload() throws {
-        let payload = MessagePayload(from: Message(text: "привет", isFromMe: true),
-                                     senderName: "Alice")
+    /// Сообщение в конверте лежит запечатанным: конверт переносит его как
+    /// есть, не заглядывая внутрь.
+    func test_messageEnvelope_roundTrip_preservesSealedPayload() throws {
+        let sealed = SealedPayload(version: 1, box: Data([1, 2, 3, 4]))
 
         let restored = try RelayEnvelope.decode(
-            from: try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded()
+            from: try RelayEnvelope.message(sealed, from: "Alice", to: "Bob").encoded()
         )
 
         XCTAssertEqual(restored.kind, .message)
         XCTAssertEqual(restored.sender, "Alice")
-        XCTAssertEqual(try restored.decodeMessage().text, "привет")
+        XCTAssertEqual(try restored.decodeMessage(), sealed)
     }
 
     func test_typingEnvelope_roundTrip_preservesEvent() throws {
@@ -67,15 +68,14 @@ final class RelayEnvelopeTests: XCTestCase {
     /// Сервер проставляет отправителя сам: имя из конверта клиента —
     /// это то, чем он назвался, а не то, кем он является.
     func test_stamped_replacesSenderKeepingPayload() throws {
-        let payload = MessagePayload(from: Message(text: "текст", isFromMe: true),
-                                     senderName: "Mallory")
+        let sealed = SealedPayload(version: 1, box: Data([9, 8, 7]))
 
-        let forged = try RelayEnvelope.message(payload, from: "Alice", to: "Bob")
+        let forged = try RelayEnvelope.message(sealed, from: "Alice", to: "Bob")
         let corrected = forged.stamped(sender: "Mallory")
 
         XCTAssertEqual(corrected.sender, "Mallory")
         XCTAssertEqual(corrected.kind, .message)
-        XCTAssertEqual(try corrected.decodeMessage().text, "текст")
+        XCTAssertEqual(try corrected.decodeMessage(), sealed)
     }
 
     // MARK: - Ошибки
@@ -92,9 +92,8 @@ final class RelayEnvelopeTests: XCTestCase {
     }
 
     func test_decodingMessageAsTyping_throws() throws {
-        let payload = MessagePayload(from: Message(text: "привет", isFromMe: true),
-                                     senderName: "Alice")
-        let envelope = try RelayEnvelope.message(payload, from: "Alice", to: "Bob")
+        let sealed = SealedPayload(version: 1, box: Data([1]))
+        let envelope = try RelayEnvelope.message(sealed, from: "Alice", to: "Bob")
 
         XCTAssertThrowsError(try envelope.decodeTyping())
     }

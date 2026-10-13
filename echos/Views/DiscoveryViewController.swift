@@ -44,6 +44,20 @@ final class DiscoveryViewController: UIViewController {
         return button
     }()
 
+    /// Свой адрес — под именем. Это то, что собеседник сверяет со своим
+    /// экраном, и единственный способ заметить посредника: имя можно
+    /// повторить, отпечаток ключа — нет. Нажатием копируется.
+    private lazy var addressButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.contentInsets = .zero
+        config.baseForegroundColor = .inkMuted
+
+        let button = UIButton(configuration: config)
+        button.contentHorizontalAlignment = .leading
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
     /// Сколько рядом. Пусто — значит ноль, и говорить об этом незачем.
     private let peerCountLabel: UILabel = {
         let label = UILabel()
@@ -90,9 +104,21 @@ final class DiscoveryViewController: UIViewController {
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто рядом."
+        label.text = "Разговоров пока нет."
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }()
+
+    /// Чем держим связь. Раньше выбора не было вовсе: приложение работало
+    /// только с теми, кто рядом, а дальняя связь включалась аргументом
+    /// запуска в схеме Xcode — то есть была доступна одному человеку в мире.
+    private lazy var linkButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.baseForegroundColor = .inkMuted
+
+        let button = UIButton(configuration: config)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
     }()
 
     /// Одна строка вместо крутящейся иконки с надписью капсом.
@@ -151,6 +177,8 @@ final class DiscoveryViewController: UIViewController {
         setupAppLifecycleObservers()
 
         updateNameButton()
+        updateAddressButton()
+        updateLinkButton()
 
         // Поиск не начинается, пока не спросили имя: иначе собеседники
         // увидят «Без имени», и переименование уже ничего не исправит —
@@ -167,6 +195,67 @@ final class DiscoveryViewController: UIViewController {
         }
     }
 
+    // MARK: - Связь
+
+    private var usesRelay: Bool {
+        PeerTransportFactory.kind(usesRelay: UserSettings.usesRelay,
+                                  customURL: UserSettings.relayURL) != .nearby
+    }
+
+    private func updateLinkButton() {
+        linkButton.configuration?.attributedTitle = AttributedString(
+            usesRelay ? "связь · через сервер" : "связь · рядом",
+            attributes: AttributeContainer([
+                .font: Typography.micro,
+                .kern: Typography.narrow
+            ])
+        )
+    }
+
+    @objc
+    private func chooseLink() {
+        let sheet = UIAlertController(
+            title: "Как держать связь",
+            message: "Рядом — напрямую между устройствами, без интернета, "
+                   + "метров на сто. Через сервер — с кем угодно, где есть сеть; "
+                   + "кто рядом, останется рядом.",
+            preferredStyle: .actionSheet
+        )
+
+        sheet.addAction(UIAlertAction(title: "Только рядом", style: .default) { [weak self] _ in
+            self?.setUsesRelay(false)
+        })
+
+        sheet.addAction(UIAlertAction(title: "Рядом и через сервер", style: .default) { [weak self] _ in
+            self?.setUsesRelay(true)
+        })
+
+        sheet.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+
+        // На широком экране лист привязывается к кнопке, иначе упадёт.
+        sheet.popoverPresentationController?.sourceView = linkButton
+        sheet.popoverPresentationController?.sourceRect = linkButton.bounds
+
+        present(sheet, animated: true)
+    }
+
+    private func setUsesRelay(_ enabled: Bool) {
+        guard enabled != UserSettings.usesRelay else {
+            return
+        }
+
+        UserSettings.usesRelay = enabled
+        updateLinkButton()
+
+        // Транспорт выбирается при создании, поэтому меняем не настройку
+        // на лету, а собираем его заново.
+        Task {
+            viewModel.multipeerService?.stopDeviceDiscovery()
+            await startDiscovery()
+            updateUI()
+        }
+    }
+
     // MARK: - Имя
 
     private func updateNameButton() {
@@ -177,6 +266,40 @@ final class DiscoveryViewController: UIViewController {
                 .kern: Typography.narrow
             ])
         )
+    }
+
+    // MARK: - Адрес
+
+    private var ownAddress: String {
+        (try? DeviceIdentity.current().fingerprint) ?? ""
+    }
+
+    private func updateAddressButton(text: String? = nil) {
+        let address = ownAddress
+        addressButton.isHidden = address.isEmpty
+        addressButton.configuration?.attributedTitle = AttributedString(
+            text ?? "адрес · \(Fingerprint.display(address))",
+            attributes: AttributeContainer([
+                .font: Typography.micro,
+                .kern: Typography.narrow
+            ])
+        )
+    }
+
+    @objc
+    private func copyAddress() {
+        let address = ownAddress
+        guard !address.isEmpty else {
+            return
+        }
+
+        UIPasteboard.general.string = Fingerprint.display(address)
+        updateAddressButton(text: "адрес скопирован")
+
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            self?.updateAddressButton()
+        }
     }
 
     @objc
@@ -275,6 +398,8 @@ final class DiscoveryViewController: UIViewController {
         )
     }
 
+    /// Связь в фоне — дело транспортов: Multipeer останавливается сам,
+    /// релей ещё полминуты живёт ради уведомлений. Здесь только экран.
     @objc
     private func appDidEnterBackground() {
         guard viewModel.isDiscovering else {
@@ -282,7 +407,6 @@ final class DiscoveryViewController: UIViewController {
         }
 
         shouldResumeDiscovery = true
-        viewModel.stopDeviceDiscovery()
         radarState.isScanning = false
         stopAnimations()
     }
@@ -295,11 +419,7 @@ final class DiscoveryViewController: UIViewController {
 
         shouldResumeDiscovery = false
         startAnimations()
-
-        Task {
-            await viewModel.startDeviceDiscovery()
-            radarState.isScanning = true
-        }
+        radarState.isScanning = true
     }
 
     deinit {
@@ -331,11 +451,15 @@ final class DiscoveryViewController: UIViewController {
             nameButton.trailingAnchor.constraint(lessThanOrEqualTo: peerCountLabel.leadingAnchor,
                                                  constant: -Space.step),
 
+            addressButton.topAnchor.constraint(equalTo: nameButton.bottomAnchor,
+                                               constant: Space.tight),
+            addressButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+
             peerCountLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             peerCountLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
                                                      constant: -Space.margin),
 
-            radarView.topAnchor.constraint(equalTo: nameButton.bottomAnchor, constant: Space.ma),
+            radarView.topAnchor.constraint(equalTo: addressButton.bottomAnchor, constant: Space.ma),
             radarView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             radarView.widthAnchor.constraint(equalToConstant: 240),
             radarView.heightAnchor.constraint(equalToConstant: 240),
@@ -346,7 +470,11 @@ final class DiscoveryViewController: UIViewController {
             tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: linkButton.topAnchor),
+
+            linkButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            linkButton.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
+
 
             noConversationsLabel.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
             noConversationsLabel.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
@@ -372,15 +500,19 @@ final class DiscoveryViewController: UIViewController {
     private func setupLayout() {
         view.addSubview(titleLabel)
         view.addSubview(nameButton)
+        view.addSubview(addressButton)
         view.addSubview(peerCountLabel)
         view.addSubview(radarView)
         view.addSubview(statusLabel)
         view.addSubview(tableView)
         view.addSubview(noConversationsLabel)
+        view.addSubview(linkButton)
         view.addSubview(wallButton)
 
         wallButton.addTarget(self, action: #selector(showOwnWall), for: .touchUpInside)
+        linkButton.addTarget(self, action: #selector(chooseLink), for: .touchUpInside)
         nameButton.addTarget(self, action: #selector(changeName), for: .touchUpInside)
+        addressButton.addTarget(self, action: #selector(copyAddress), for: .touchUpInside)
 
         // Круг был украшением: он показывал, что поиск идёт, но нажать на
         // него было нельзя. Теперь это единственный вход к тем, кто вокруг.
@@ -435,6 +567,66 @@ final class DiscoveryViewController: UIViewController {
     private func bindViewModel() {
         updateUI()
         scheduleObservation()
+        observeNotices()
+    }
+
+    // MARK: - Входящее
+
+    /// Главный экран живёт всё время — корень навигации, — поэтому именно он
+    /// слушает входящее и показывает баннер, на каком бы экране мы ни были.
+    private var shownNoticeID: UUID?
+
+    private func observeNotices() {
+        withObservationTracking {
+            _ = viewModel.latestNotice
+            _ = viewModel.unreadCounts
+            _ = viewModel.persistedBatches
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.handleNotice()
+                self.observeNotices()
+            }
+        }
+    }
+
+    private func handleNotice() {
+        // Список разговоров — с точками непрочитанного.
+        reloadConversations()
+
+        guard let notice = viewModel.latestNotice, notice.messageID != shownNoticeID else {
+            return
+        }
+        shownNoticeID = notice.messageID
+
+        // Свёрнутому приложению баннер не нужен: сообщение сохранится и
+        // при возврате будет ждать числом в списке. Уведомлений на экране
+        // блокировки нет намеренно — см. ADR 005.
+        guard UIApplication.shared.applicationState == .active else {
+            return
+        }
+
+        // Окно — у навигации, не у своей вью: когда сверху другой экран,
+        // навигация снимает нашу вью с иерархии, и `view.window` пуст.
+        guard let window = navigationController?.view.window ?? view.window else {
+            return
+        }
+        NoticeBanner.show(notice, in: window) { [weak self] in
+            self?.open(conversationWith: notice.address, named: notice.name)
+        }
+    }
+
+    /// Открыть чат с человеком, откуда бы ни нажали: назад к корню и в чат.
+    private func open(conversationWith address: String, named name: String) {
+        guard let navigation = navigationController else {
+            return
+        }
+        navigation.popToRootViewController(animated: false)
+
+        Task {
+            await viewModel.switchToConversation(with: address, named: name)
+            navigation.pushViewController(ChatViewController(viewModel: viewModel), animated: true)
+        }
     }
     
     private func scheduleObservation() {
@@ -468,9 +660,14 @@ final class DiscoveryViewController: UIViewController {
 
         // Строка под кругом — про то, кто вокруг, и она же подсказывает, что
         // круг нажимается.
-        statusLabel.text = displayPeers.isEmpty
-            ? "Пока никого рядом"
-            : "Рядом \(displayPeers.count) — посмотреть"
+        // «Рядом» через сервер было бы неправдой: собеседник может быть в
+        // другом городе.
+        if displayPeers.isEmpty {
+            statusLabel.text = usesRelay ? "Пока никого на связи" : "Пока никого рядом"
+        } else {
+            let word = usesRelay ? "На связи" : "Рядом"
+            statusLabel.text = "\(word) \(displayPeers.count) — посмотреть"
+        }
 
         // Кто на связи, видно по точке в строке разговора, поэтому список
         // пересобирается и при изменении присутствия.
@@ -493,6 +690,10 @@ final class DiscoveryViewController: UIViewController {
             conversations = await viewModel.getAllConversations()
             isReloadingConversations = false
 
+            // Подсказка про круг зависит от способа связи: «кто рядом» через
+            // сервер было бы неправдой.
+            noConversationsLabel.text = "Разговоров пока нет.\nНажмите на круг, чтобы "
+                + (usesRelay ? "посмотреть, кто на связи." : "посмотреть, кто рядом.")
             noConversationsLabel.isHidden = !conversations.isEmpty
             tableView.reloadData()
         }

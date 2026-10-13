@@ -20,6 +20,15 @@ enum TransportEvent: Sendable {
     case wallRequest(String)
 }
 
+/// О чём сказать баннером: кто, что, куда открыть.
+struct IncomingNotice: Equatable, Sendable {
+    let messageID: UUID
+    let address: String
+    let name: String
+    let preview: String
+    let mosaic: Mosaic?
+}
+
 @Observable
 @MainActor
 final class ChatViewModel {
@@ -31,6 +40,31 @@ final class ChatViewModel {
     var connectionStatus: String = "Не подключён"
     var isDiscovering: Bool = false
     var typingPeerName: String? = nil  // nil - никто не печатает
+
+    /// Непрочитанное по переписке: адрес → сколько. Считается при запуске
+    /// из хранилища, растёт на входящем не в открытый чат, обнуляется при
+    /// открытии.
+    var unreadCounts: [String: Int] = [:]
+
+    var totalUnread: Int {
+        unreadCounts.values.reduce(0, +)
+    }
+
+    /// Сколько раз хранилище получало пачку сообщений. Список разговоров
+    /// читает хранилище, а запись идёт с задержкой: перечитывать его надо
+    /// после записи, а не в момент прихода.
+    var persistedBatches = 0
+
+    /// Экран чата сейчас на экране. `currentConversationPeer` для этого не
+    /// годится: модель назначает собеседника и без экрана — у Multipeer в
+    /// момент принятого приглашения, — а прочитанным считается только то,
+    /// что человек действительно видел.
+    var isConversationOnScreen = false
+
+    /// Последнее входящее не в открытый чат — то, о чём стоит сказать
+    /// баннером. Меняется на каждое такое сообщение; наблюдатель сравнивает
+    /// по `id`, чтобы одно и то же не показать дважды.
+    var latestNotice: IncomingNotice? = nil
 
     /// Адрес того, кто печатает. Отдельно от имени: гасить индикатор надо по
     /// тому же адресу, с которого он зажёгся, а имена могут совпадать.
@@ -102,6 +136,7 @@ final class ChatViewModel {
     private var connectionStateTask: Task<Void, Never>?
     private var typingTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
+    private var remoteChangesTask: Task<Void, Never>?
     
     /// Как часто ViewModel применяла обновление списка пиров. Диагностика для
     /// тестов: показывает, что `removeDuplicates` действительно схлопывает
@@ -139,6 +174,10 @@ final class ChatViewModel {
         
         multipeerService = transport ?? PeerTransportFactory.make()
         messageStore = store ?? MessageStore()
+
+        Task { [weak self] in
+            await self?.loadUnreadCounts()
+        }
         
         transportTask = Task { [weak self] in
             await self?.consumeTransportEvents()
@@ -159,6 +198,19 @@ final class ChatViewModel {
                 await self?.consumePersistenceQueue()
             }
         }
+
+        // Знакомые могут прийти из iCloud с другого устройства. Контекст
+        // их уже видит, а `recognizer` собран из снимка — перечитываем.
+        if remoteChangesTask == nil {
+            remoteChangesTask = Task { [weak self] in
+                let changes = NotificationCenter.default.notifications(
+                    named: PersistenceController.remoteChangesNotification
+                )
+                for await _ in changes {
+                    await self?.loadKnownPeers()
+                }
+            }
+        }
     }
     
     // MARK: - Persistence
@@ -171,6 +223,12 @@ final class ChatViewModel {
             let filtered = try await messageStore.loadMessages(with: address)
             messages = filtered
             currentConversationPeer = address
+
+            // Открыли — значит, прочитали. И в памяти, и в хранилище.
+            if unreadCounts[address] != nil {
+                unreadCounts[address] = nil
+                try await messageStore.markAsRead(with: address)
+            }
             // Имя ищем по порядку: что передали, кто сейчас на связи, что
             // осталось в истории. Собеседника может не быть рядом, а чат
             // всё равно открывается.
@@ -201,7 +259,7 @@ final class ChatViewModel {
             }
             let summaries = conversations.map { address, messages in
                 let lastMessage = messages.max(by: { $0.timestamp < $1.timestamp })
-                let unreadCount = 0
+                let unreadCount = messages.filter(\.isUnread).count
 
                 // Имя берём то, под которым собеседник известен сейчас, а
                 // если его нет рядом — то, под которым он писал в последний раз.
@@ -401,7 +459,19 @@ final class ChatViewModel {
     }
 
     private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
-        let message = incoming.value.toMessage(from: incoming.sender)
+        // Реакция — не сообщение: она меняет то, на что поставлена, и в
+        // ленту не попадает.
+        if let reaction = incoming.value.reaction {
+            apply(reaction, from: incoming.sender)
+            return
+        }
+
+        var message = incoming.value.toMessage(from: incoming.sender)
+
+        // Прочитано — только если пришло в открытый чат. Остальное ждёт
+        // человека: в списке точкой, сверху баннером.
+        let isInOpenChat = isConversationOnScreen && incoming.sender == currentConversationPeer
+        message.isRead = isInOpenChat
         
         // Сравниваем адреса. По имени было нельзя: тёзка попадал бы в чужую
         // переписку, а при адресации по ключу — и вовсе кто угодно, назвавшись
@@ -412,8 +482,93 @@ final class ChatViewModel {
         } else {
             print("[ChatViewModel] Silently saved message from \(incoming.sender) (different conversation)")
         }
+
+        if !isInOpenChat {
+            unreadCounts[incoming.sender, default: 0] += 1
+            latestNotice = IncomingNotice(
+                messageID: message.id,
+                address: incoming.sender,
+                name: peers.first { $0.address == incoming.sender }?.displayName ?? message.senderName ?? incoming.sender,
+                preview: message.mosaic == nil ? message.text : "мозаика",
+                mosaic: message.mosaic
+            )
+        }
         
         persist(message)
+    }
+
+    // MARK: - Реакции
+
+    /// Шесть на выбор. Немного — чтобы выбирать нажатием, а не искать.
+    static let reactionChoices = ["❤️", "👍", "😂", "🔥", "😮", "😢"]
+
+    /// Поставить или снять свою реакцию. Та же — снять.
+    func react(to id: UUID, with emoji: String) async {
+        guard let idx = messages.firstIndex(where: { $0.id == id }),
+              let multipeerService,
+              let address = messages[idx].peerAddress ?? currentConversationPeer else {
+            return
+        }
+
+        let next = messages[idx].myReaction == emoji ? nil : emoji
+        messages[idx].myReaction = next
+        persist(messages[idx])
+
+        let payload = MessagePayload(reaction: ReactionPayload(targetID: id.uuidString, emoji: next ?? ""),
+                                     senderName: multipeerService.myDisplayName)
+        do {
+            try await multipeerService.sendMessage(payload, to: address)
+        } catch {
+            print("[ChatViewModel] Failed to send reaction: \(error)")
+        }
+    }
+
+    private func apply(_ reaction: ReactionPayload, from sender: String) {
+        guard let target = UUID(uuidString: reaction.targetID) else {
+            return
+        }
+        let emoji: String? = reaction.emoji.isEmpty ? nil : String(reaction.emoji.prefix(1))
+
+        if let idx = messages.firstIndex(where: { $0.id == target }) {
+            // Реакция от того, с кем эта переписка, — иначе чужая.
+            guard messages[idx].peerAddress == sender || messages[idx].peerAddress == nil else {
+                return
+            }
+            messages[idx].peerReaction = emoji
+            persist(messages[idx])
+            return
+        }
+
+        // Сообщение не на экране — в другой переписке или чат закрыт.
+        // Хранилище найдёт его по идентификатору.
+        Task { [weak self] in
+            guard let self, let store = self.messageStore else { return }
+            if var stored = try? await store.loadMessages(with: sender).first(where: { $0.id == target }) {
+                stored.peerReaction = emoji
+                self.persist(stored)
+            }
+        }
+    }
+
+    /// Непрочитанное из хранилища — при запуске, чтобы точки в списке были
+    /// на месте с первого экрана.
+    func loadUnreadCounts() async {
+        guard let messageStore else {
+            return
+        }
+        do {
+            let all = try await messageStore.loadMessages()
+            var counts: [String: Int] = [:]
+            for message in all where message.isUnread {
+                if let address = message.peerAddress {
+                    counts[address, default: 0] += 1
+                }
+            }
+            unreadCounts = counts
+        }
+        catch {
+            print("[ChatViewModel] Failed to count unread: \(error)")
+        }
     }
     
     private func handlePeers(_ discoveredPeers: [Peer]) async {
@@ -510,6 +665,7 @@ final class ChatViewModel {
                     print("[ChatViewModel] Failed to save message: \(error)")
                 }
             }
+            persistedBatches += 1
         }
     }
     
@@ -578,8 +734,12 @@ final class ChatViewModel {
             }
 
             // Имя собеседника уже стоит в заголовке — повторять его незачем.
-            // Сказать есть что, только когда его нет рядом.
-            connectionStatus = isReachable ? "" : "не на связи"
+            // Зато адрес — то, что стоит показать: это единственное, чем
+            // человек может сверить, с кем говорит. И раз он на связи —
+            // переписка с ним зашифрована: без ключей в список не попасть.
+            connectionStatus = isReachable
+                ? "зашифровано · \(Fingerprint.display(address))"
+                : "не на связи"
             return
         }
         
@@ -590,27 +750,62 @@ final class ChatViewModel {
     
     /// Отправка сообщения
     func sendMessage(_ text: String) async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
         }
-        // Адрес проставляется сразу: без него сообщение не принадлежит ни
+        await send(Message(text: trimmed,
+                           senderName: nil,
+                           peerAddress: currentConversationPeer,
+                           isFromMe: true,
+                           status: .sending))
+    }
+
+    /// Отправка мозаики. Текст — её текстовая форма: превью и старые сборки
+    /// получают его, сетка едет рядом.
+    func sendMosaic(_ mosaic: Mosaic) async {
+        guard !mosaic.isEmpty else {
+            return
+        }
+        await send(Message(text: mosaic.text,
+                           mosaic: mosaic,
+                           senderName: nil,
+                           peerAddress: currentConversationPeer,
+                           isFromMe: true,
+                           status: .sending))
+    }
+
+    /// Общий путь для всего, что уходит собеседнику как сообщение.
+    private func send(_ message: Message) async {
+        // Адрес проставлен сразу: без него сообщение не принадлежит ни
         // одной переписке и в чате собеседника не покажется.
-        let message = Message(text: trimmed,
-                              senderName: nil,
-                              peerAddress: currentConversationPeer,
-                              isFromMe: true,
-                              status: .sending)
         messages.append(message)
-        
         stopTyping()
-        
+        await deliver(message)
+    }
+
+    /// Отправить снова то, что не ушло. Сообщение то же, с тем же
+    /// идентификатором: собеседник, если первая попытка всё-таки дошла,
+    /// второй раз его не сохранит.
+    func resend(_ id: UUID) async {
+        guard let message = messages.first(where: { $0.id == id }),
+              message.isFromMe, message.status == .failed else {
+            return
+        }
+        updateStatus(.sending, for: id)
+        await deliver(message)
+    }
+
+    /// Доставка: собеседнику, по адресу переписки. Статус — по итогу.
+    private func deliver(_ message: Message) async {
+        guard let multipeerService = multipeerService else {
+            updateStatus(.failed, for: message.id)
+            return
+        }
+
         // Сообщение адресное, и без собеседника отправлять его некому.
         // Раньше в этом случае оно уходило всем подряд.
-        guard let address = currentConversationPeer else {
+        guard let address = message.peerAddress ?? currentConversationPeer else {
             updateStatus(.failed, for: message.id)
             print("[ChatViewModel] No conversation selected, message not sent")
             return

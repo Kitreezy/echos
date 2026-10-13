@@ -28,9 +28,15 @@ final class MessageStore {
             let entity = MessageEntity(context: viewContext)
             entity.id = message.id
             entity.text = message.text
+            // Сетка лежит рядом с текстом как JSON: отдельная сущность
+            // под неё — лишняя, а бинарный атрибут переживает миграцию сам.
+            entity.mosaic = try message.mosaic.map { try JSONEncoder().encode($0) }
             entity.senderName = message.senderName
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
+            entity.isRead = message.isRead
+            entity.myReaction = message.myReaction
+            entity.peerReaction = message.peerReaction
             entity.timestamp = message.timestamp
             entity.status = Int16(message.status.rawValue)
             
@@ -39,6 +45,9 @@ final class MessageStore {
         } else {
             if let entity = existing.first {
                 entity.status = Int16(message.status.rawValue)
+                entity.isRead = message.isRead
+                entity.myReaction = message.myReaction
+                entity.peerReaction = message.peerReaction
                 try viewContext.save()
                 print("[MessageStore] Update status for: \(message.id)")
             }
@@ -56,11 +65,15 @@ final class MessageStore {
         let messages = entities.map { entity in
             Message(id: entity.id ?? UUID(),
                     text: entity.text ?? "",
+                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
                     senderName: entity.senderName,
                     peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent)
+                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
+                    isRead: entity.isRead,
+                    myReaction: entity.myReaction,
+                    peerReaction: entity.peerReaction)
         }
         print("[MessageStore] Loaded \(messages.count) messages")
         return messages
@@ -85,17 +98,36 @@ final class MessageStore {
         let messages = entities.map { entity in
             Message(id: entity.id ?? UUID(),
                     text: entity.text ?? "",
+                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
                     senderName: entity.senderName,
                     peerAddress: entity.peerAddress,
                     isFromMe: entity.isFromMe,
                     timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent
+                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
+                    isRead: entity.isRead,
+                    myReaction: entity.myReaction,
+                    peerReaction: entity.peerReaction
             )
         }
         print("[MessageStore] Loaded \(messages.count) messages with \(address)")
         return messages
     }
     
+    // MARK: - Read
+
+    /// Чат открыли — всё входящее в нём прочитано.
+    func markAsRead(with address: String) async throws {
+        let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "peerAddress == %@ AND isFromMe == NO AND isRead == NO", address)
+
+        let unread = try viewContext.fetch(fetchRequest)
+        guard !unread.isEmpty else {
+            return
+        }
+        unread.forEach { $0.isRead = true }
+        try viewContext.save()
+    }
+
     // MARK: - DeleteOld
     
     func deleteOldMessages(olderThan days: Int) async throws {

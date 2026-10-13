@@ -55,6 +55,20 @@ final class ConversationCell: UITableViewCell {
         return label
     }()
 
+    /// Сколько непрочитанного. Пусто — ничего, и метки нет.
+    private let unreadBadge: UILabel = {
+        let label = UILabel()
+        label.font = Typography.micro
+        label.textColor = .surface
+        label.backgroundColor = .own
+        label.textAlignment = .center
+        label.layer.cornerRadius = 9
+        label.layer.masksToBounds = true
+        label.isHidden = true
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+
     private let separator: UIView = {
         let view = UIView()
         view.backgroundColor = .hairline
@@ -83,6 +97,7 @@ final class ConversationCell: UITableViewCell {
         contentView.addSubview(nameLabel)
         contentView.addSubview(timeLabel)
         contentView.addSubview(lastMessageLabel)
+        contentView.addSubview(unreadBadge)
         contentView.addSubview(separator)
 
         NSLayoutConstraint.activate([
@@ -106,10 +121,16 @@ final class ConversationCell: UITableViewCell {
             lastMessageLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor,
                                                   constant: Space.tight),
             lastMessageLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            lastMessageLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
-                                                       constant: -Space.margin),
+            lastMessageLabel.trailingAnchor.constraint(lessThanOrEqualTo: unreadBadge.leadingAnchor,
+                                                       constant: -Space.tight),
             lastMessageLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor,
                                                      constant: -Space.room),
+
+            unreadBadge.centerYAnchor.constraint(equalTo: lastMessageLabel.centerYAnchor),
+            unreadBadge.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
+                                                  constant: -Space.margin),
+            unreadBadge.heightAnchor.constraint(equalToConstant: 18),
+            unreadBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
             separator.heightAnchor.constraint(equalToConstant: 1),
             separator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
@@ -135,6 +156,12 @@ final class ConversationCell: UITableViewCell {
         presenceDot.backgroundColor = conversation.isActive
             ? .alive
             : .hairline
+
+        // Непрочитанное — числом в кружке; последнее сообщение при этом
+        // светлее обычного, чтобы разговор заметить и не считая.
+        unreadBadge.isHidden = conversation.unreadCount == 0
+        unreadBadge.text = " \(conversation.unreadCount) "
+        lastMessageLabel.textColor = conversation.unreadCount == 0 ? .inkMuted : .ink
     }
 
     /// Язык задан явно, а не берётся у системы.

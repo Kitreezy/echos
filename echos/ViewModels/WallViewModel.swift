@@ -28,6 +28,7 @@ final class WallViewModel {
 
     private var incomingTask: Task<Void, Never>?
     private var wallStateTask: Task<Void, Never>?
+    private var remoteChangesTask: Task<Void, Never>?
 
     init(owner: String?,
          transport: any PeerTransport,
@@ -42,6 +43,7 @@ final class WallViewModel {
     func start() async {
         await loadHistory()
         observeIncoming()
+        observeRemoteChanges()
         await reconcileWithOwner()
     }
 
@@ -51,6 +53,26 @@ final class WallViewModel {
 
         wallStateTask?.cancel()
         wallStateTask = nil
+
+        remoteChangesTask?.cancel()
+        remoteChangesTask = nil
+    }
+
+    /// Стена синхронизируется через iCloud: нарисованное на другом своём
+    /// устройстве появляется здесь без транспорта — просто перечитыванием.
+    private func observeRemoteChanges() {
+        guard remoteChangesTask == nil else {
+            return
+        }
+
+        remoteChangesTask = Task { [weak self] in
+            let changes = NotificationCenter.default.notifications(
+                named: PersistenceController.remoteChangesNotification
+            )
+            for await _ in changes {
+                await self?.loadHistory()
+            }
+        }
     }
 
     private func loadHistory() async {

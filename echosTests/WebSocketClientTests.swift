@@ -141,15 +141,15 @@ final class WebSocketClientTests: XCTestCase {
         await server.stop()
         _ = await waitUntil { sender.state != .connected }
 
-        let payload = MessagePayload(from: Message(text: "из оффлайна", isFromMe: true),
-                                     senderName: "Alice")
+        // Содержимое серверу не видно, поэтому метка — в самом конверте.
+        let payload = SealedPayload(version: 1, box: Data("из оффлайна".utf8))
         await sender.send(try RelayEnvelope.message(payload, from: "Alice", to: "Bob").encoded())
 
         // Поднимаем обратно — дальше клиент возвращается и представляется сам.
         try await server.start()
 
         let delivered = await waitUntil(timeout: .seconds(15)) {
-            self.server.receivedMessageTexts.contains("из оффлайна")
+            self.server.receivedMessageMarkers.contains("из оффлайна")
         }
 
         XCTAssertTrue(delivered, "Отложенное сообщение должно уйти после восстановления связи")

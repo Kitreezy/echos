@@ -17,6 +17,8 @@ protocol MessageStoring: AnyObject {
     
     func loadMessages() async throws -> [Message]
     func loadMessages(with address: String) async throws -> [Message]
+
+    func markAsRead(with address: String) async throws
     
     func deleteOldMessages(olderThan days: Int) async throws
     func deleteConverstaion(with address: String) async throws

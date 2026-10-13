@@ -24,7 +24,8 @@ final class NearbyViewController: UIViewController {
         label.font = Typography.micro
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.setTracked("кто рядом", tracking: Typography.wide)
+        label.setTracked(UserSettings.usesRelay ? "кто на связи" : "кто рядом",
+                         tracking: Typography.wide)
         return label
     }()
 
@@ -34,7 +35,7 @@ final class NearbyViewController: UIViewController {
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Пока никого рядом.\nЭкран сам оживёт, когда кто-нибудь появится."
+        label.text = "Пока никого.\nЭкран сам оживёт, когда кто-нибудь появится."
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
