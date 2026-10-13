@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: macos-latest
+    env:
+      # В pbxproj есть кириллица, и без UTF-8 локали xcodeproj падает
+      # на чтении файла ещё до запуска xcodebuild.
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+
+      # Раннер несёт несколько версий Xcode; берётся старшая, чтобы не
+      # переписывать путь при каждом обновлении образа.
+      - name: Выбрать Xcode
+        id: xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Xcode: $latest"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+          echo "version=$(xcodebuild -version | head -1 | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/xcode-cache
+        id: cache
+        with:
+          xcode: ${{ steps.xcode.outputs.version }}
+
+      # Версия обязательна: без неё и без .ruby-version в репозитории
+      # setup-ruby падает, не дойдя до тестов. Берётся не локальная 2.7.2,
+      # а 3.2: на ней проверено локально, и на неё же зафиксирован Gemfile.lock.
+      # Fastlane на 2.7 уже предупреждает, что поддержка уходит.
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      - name: Тесты
+        run: |
+          start=$(date +%s)
+          bundle exec fastlane tests
+          echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+        id: tests
+
+      # Итог виден на странице прогона без раскрытия логов: попал ли кэш
+      # и сколько заняли тесты. По этим цифрам и сравниваются прогоны.
+      - name: Сводка
+        if: always()
+        run: |
+          {
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Пакеты SPM из кэша | ${{ steps.cache.outputs.spm-hit || 'нет' }} |"
+            echo "| DerivedData из кэша | ${{ steps.cache.outputs.derived-data-key || 'нет' }} |"
+            echo "| Тесты, сек | ${{ steps.tests.outputs.seconds || '—' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output
+          path: build/test_output
+          retention-days: 7
+
+      # Падения — отдельно и в читаемом виде, чтобы ревью ниже читало их,
+      # а не лог на десятки тысяч строк.
+      - name: Падения
+        if: always()
+        run: |
+          bundle=$(ls -d build/test_output/*.xcresult 2>/dev/null | head -1)
+          if [ -n "$bundle" ]; then
+            xcrun xcresulttool get test-results tests --path "$bundle" \
+              | python3 scripts/failures.py > build/failures.txt || true
+          fi
+          # Отличать «тестов не было падений» от «разбор не удался»:
+          # иначе ревью получает заведомо ложный ввод и объясняет не то.
+          if [ ! -s build/failures.txt ]; then
+            if [ -n "$bundle" ]; then
+              echo "Падений нет." > build/failures.txt
+            else
+              echo "Результатов тестов нет — разбирать нечего." > build/failures.txt
+            fi
+          fi
+          cat build/failures.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failures
+          path: build/failures.txt
+          retention-days: 7
+
+  # Проверка кода этапом, а не советом: результат виден статусом, и
+  # блокирующее замечание останавливает вливание без участия человека.
+  #
+  # Делится ответственность так: тесты и сборка выше — детерминированы,
+  # здесь только то, что требует чтения. Модель получает diff, чек-лист и
+  # падения тестов, отвечает прозой и машинным блоком; решение принимает
+  # scripts/gate.py, он же собирает комментарий.
+  #
+  # Ходит по подписке через CLAUDE_CODE_OAUTH_TOKEN (claude setup-token).
+  # Секрета нет — этап пропускается зелёным: включать проверку должен тот,
+  # кто готов её читать.
+  gate:
+    needs: tests
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Есть ли токен
+        id: token
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: echo "present=${{ env.TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      - name: Проверка выключена
+        if: steps.token.outputs.present != 'true'
+        run: |
+          echo "CLAUDE_CODE_OAUTH_TOKEN не задан — проверка кода пропущена." \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          # Полная история: ревью смотрит diff относительно базовой ветки.
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        if: steps.token.outputs.present == 'true'
+        continue-on-error: true
+        with:
+          name: failures
+          path: build
+
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          node-version: '22'
+
+      - name: Claude Code
+        if: steps.token.outputs.present == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Ревью запускается тем же скриптом, что и локально: иначе CI и
+      # машина разработчика расходятся, и «у меня проходило» становится
+      # обычным разговором. Скрипт сам прогоняет ответ через gate.py.
+      - name: Ревью и решение
+        id: decision
+        if: steps.token.outputs.present == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+        run: |
+          set +e
+          scripts/review.sh --gate "origin/${{ github.base_ref }}" > comment.md
+          verdict=$?
+          set -e
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.token.outputs.present == 'true'
+        with:
+          name: review
+          path: |
+            build/review.md
+            comment.md
+          retention-days: 7
+
+      # Один комментарий на pull request, обновляемый при каждом push:
+      # десять комментариев на одну ветку читать перестают.
+      - name: Комментарий
+        if: steps.token.outputs.present == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: review
+          path: comment.md
+
+      - name: Блокирующие замечания
+        if: steps.decision.outputs.verdict == '1'
+        run: |
+          echo "Проверка кода нашла блокирующие замечания — смотри комментарий в pull request."
+          exit 1
