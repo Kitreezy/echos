@@ -242,10 +242,7 @@ final class ChatViewModel {
             messages = filtered
             currentConversationPeer = address
             missedMessages = filtered.filter(\.isUnread)
-            // Греть модель ради языка, которого она не знает, незачем.
-            if canDigest, digester.languageProblem(in: missedMessages) == nil {
-                digester.prepare()
-            }
+            await prepareDigest()
 
             // Открыли — значит, прочитали. И в памяти, и в хранилище.
             if unreadCounts[address] != nil {
@@ -265,6 +262,21 @@ final class ChatViewModel {
         }
     }
     
+    /// Прогреть модель, если пересказ скорее всего попросят. Ради
+    /// переписки, которую она не прочтёт, — незачем; если языки для
+    /// перевода ещё не скачаны — тоже: сначала будет вопрос о скачивании.
+    private func prepareDigest() async {
+        guard canDigest else {
+            return
+        }
+        switch await digester.plan(for: missedMessages) {
+        case .direct, .translate:
+            digester.prepare()
+        case .download, .impossible:
+            break
+        }
+    }
+
     func getAllConversations() async -> [ConversationSummary] {
         guard let messageStore = messageStore else {
             return []

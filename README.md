@@ -62,7 +62,7 @@ echosIntegrationTests/  с настоящими Core Data и Keychain
 - Личность — ключ устройства в Keychain: адресуют по отпечатку ключа, имя — просто подпись на экране, назваться чужим нельзя
 - Переписка зашифрована между устройствами: релей её переносит, но прочитать не может; ключ свой на каждую сессию, так что записанное прошлое не открыть даже утёкшим ключом
 - Свой адрес — на главном экране, адрес собеседника — под его именем в чате: сверить и заметить посредника можно глазами
-- Пересказ пропущенного: о чём говорили, чего ждут, о чём договорились. Делает его модель Apple прямо на телефоне — переписка остаётся зашифрованной и никуда не уходит (iOS 26, Apple Intelligence; русский модель пока не поддерживает, ADR 006)
+- Пересказ пропущенного: о чём говорили, чего ждут, о чём договорились. Делает его модель Apple прямо на телефоне — переписка остаётся зашифрованной и никуда не уходит (iOS 26, Apple Intelligence). Языки, которых модель не знает, — русский в их числе — пересказываются через перевод, тоже на телефоне (ADR 006)
 
 ### Планы на будущее
 
@@ -430,6 +430,7 @@ match упадёт, читать его ошибку, а не гадать.
 - [Observation framework](https://developer.apple.com/documentation/observation)  
 - [FoundationModels](https://developer.apple.com/documentation/foundationmodels)
 - [WWDC25: Meet the Foundation Models framework](https://developer.apple.com/videos/play/wwdc2025/286/)
+- [Translation](https://developer.apple.com/documentation/translation)
 - [WWDC23: Discover Observation in SwiftUI](https://developer.apple.com/videos/play/wwdc2023/10149/)  
 - [AsyncStream (Swift Evolution #0314)](https://github.com/apple/swift-evolution/blob/main/proposals/0314-async-stream.md)  
 - [@MainActor](https://developer.apple.com/documentation/swift/mainactor)

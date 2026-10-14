@@ -18,7 +18,8 @@
 //
 //  Инструкции — по-английски: на них модель обучалась следовать лучше
 //  всего. Язык ответа задаётся отдельно — «как в переписке». Русского среди
-//  языков модели нет; что она с ним делает, показывает только живой прогон.
+//  языков модели нет вовсе: такую переписку пересказывает цепочка через
+//  перевод на устройстве — см. `plan(for:)` и DigestViewModel.
 //
 //  Модель ничего не умеет делать, кроме ответа по схеме: инструментов у
 //  сессии нет. Поэтому чужое сообщение вида «забудь инструкции» худшее,
@@ -27,6 +28,7 @@
 
 import Foundation
 import FoundationModels
+import Translation
 
 @available(iOS 26.0, *)
 @Generable(description: "A summary of chat messages the user missed")
@@ -92,19 +94,36 @@ final class OnDeviceDigester: Digesting {
         }
     }
 
-    func languageProblem(in messages: [Message]) -> String? {
-        // Не распознали — пробуем: худшее, что будет, — та же ошибка от
-        // модели, только позже.
-        guard let language = DigestTranscript.dominantLanguage(of: messages) else {
-            return nil
+    /// Язык-посредник для перевода. Английский — не только потому, что
+    /// модель его знает: на нём она и обучалась следовать инструкциям лучше
+    /// всего, и пары с ним у переводчика есть почти для любого языка.
+    private let pivot = Locale.Language(identifier: "en")
+
+    func plan(for messages: [Message]) async -> DigestPlan {
+        // Не распознали — пробуем напрямую: худшее, что будет, — та же
+        // ошибка о языке от модели, только позже.
+        guard let language = DigestTranscript.dominantLanguage(of: messages),
+              !model.supportedLanguages.contains(where: { $0.languageCode == language.languageCode }) else {
+            return .direct
         }
-        let supported = model.supportedLanguages.contains { $0.languageCode == language.languageCode }
-        guard !supported else {
-            return nil
+
+        // Переводить надо в обе стороны: туда — переписку, обратно — пересказ.
+        let languages = LanguageAvailability()
+        let there = await languages.status(from: language, to: pivot)
+        let back = await languages.status(from: pivot, to: language)
+        switch (there, back) {
+        case (.installed, .installed):
+            return .translate(from: language, via: pivot)
+        case (.supported, .supported), (.supported, .installed), (.installed, .supported):
+            return .download(from: language, via: pivot)
+        default:
+            return .impossible("Модель на устройстве не знает языка этой переписки (\(language.displayName)), "
+                + "и перевести его на телефоне нельзя. Список языков задаёт Apple.")
         }
-        let name = Locale.current.localizedString(forLanguageCode: language.languageCode?.identifier ?? "")
-            ?? language.minimalIdentifier
-        return "Модель на устройстве пока не знает языка этой переписки (\(name)). Список языков задаёт Apple."
+    }
+
+    func translator(from source: Locale.Language, to target: Locale.Language) -> any Translating {
+        InstalledTranslator(source: source, target: target)
     }
 
     /// Загрузить модель в память, пока человек читает чат. Первый ответ

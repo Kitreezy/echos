@@ -9,11 +9,16 @@
 //
 
 import SwiftUI
+import Translation
 
 struct DigestView: View {
 
     @State var viewModel: DigestViewModel
     @Environment(\.dismiss) private var dismiss
+
+    /// Что скачать. Пока `nil`, `.translationTask` ничего не делает; как
+    /// только задано — система спрашивает человека и качает языки.
+    @State private var download: TranslationSession.Configuration?
 
     var body: some View {
         NavigationStack {
@@ -21,7 +26,7 @@ struct DigestView: View {
                 content
                 Section {
                 } footer: {
-                    Text("Пересказ составлен на этом телефоне. Переписка никуда не отправлялась. Модель может ошибаться — сверяйтесь с сообщениями.")
+                    Text(footnote)
                 }
             }
             .listStyle(.insetGrouped)
@@ -36,6 +41,30 @@ struct DigestView: View {
         .task {
             await viewModel.start()
         }
+        // Замыкание — вне главного актора: сессия не Sendable, а
+        // `prepareTranslation` в нём не живёт. Модель экрана захвачена
+        // явно — она на главном акторе, и к ней возвращаемся через await.
+        .translationTask(download) { @Sendable [viewModel] session in
+            do {
+                // Системный запрос «скачать языки?». Отказ — ошибка.
+                try await session.prepareTranslation()
+            } catch is CancellationError {
+                return  // экран закрыли
+            } catch {
+                print("[DigestView] prepareTranslation: \(error)")
+                await viewModel.downloadFailed()
+                return
+            }
+            await viewModel.waitForLanguages()
+        }
+    }
+
+    private var footnote: String {
+        var text = "Пересказ составлен на этом телефоне. Переписка никуда не отправлялась."
+        if let pivot = viewModel.translatedVia {
+            text += " Модель не знает языка переписки, поэтому она переведена на \(pivot) язык, а пересказ — обратно; перевод тоже сделан на телефоне."
+        }
+        return text + " Модель может ошибаться — сверяйтесь с сообщениями."
     }
 
     @ViewBuilder
@@ -43,6 +72,36 @@ struct DigestView: View {
         switch viewModel.state {
         case .starting:
             progress("Читаю \(viewModel.messageCount) сообщений от \(viewModel.peerName)…")
+        case let .needsDownload(language):
+            Section {
+                Text("Модель на устройстве не знает языка переписки (\(language)). Пересказ получится через перевод на телефоне, но для него нужны языковые файлы.")
+                Button("Скачать языки") {
+                    // Повторное нажатие после отказа: та же конфигурация задачу
+                    // не перезапустит — её надо объявить недействительной.
+                    viewModel.beginDownload()
+                    if download != nil {
+                        download?.invalidate()
+                    } else if let pair = viewModel.pendingDownload {
+                        download = TranslationSession.Configuration(source: pair.source, target: pair.target)
+                    }
+                }
+            }
+        case let .downloading(language):
+            Section {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Система скачивает языки для перевода (\(language) и язык модели). Пересказ начнётся сам, как только они будут готовы.")
+                        .foregroundStyle(Color.inkMuted)
+                }
+            } footer: {
+                Text("Загрузка идёт в системе и продолжится, даже если закрыть этот экран. Если она стоит на месте — проверьте её в Настройки → Приложения → Перевод → Языки: там видно, качается ли она вообще.")
+            }
+        case .translating:
+            progress("Перевожу переписку для модели…")
+        case .composing:
+            progress("Пишу пересказ…")
+        case .translatingBack:
+            progress("Перевожу пересказ обратно…")
         case let .reading(part, total):
             progress("Переписка длинная, читаю частями: \(part) из \(total)…")
         case let .writing(digest):

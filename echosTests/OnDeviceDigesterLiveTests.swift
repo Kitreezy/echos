@@ -64,19 +64,46 @@ final class OnDeviceDigesterLiveTests: XCTestCase {
 
     /// Знает ли модель язык, решает сам фреймворк, а не модель: проверка
     /// работает и там, где модели нет. Поэтому без `liveDigester()`.
-    func test_russian_isKnownToBeUnsupportedBeforeTheCall() throws {
+    func test_russian_goesThroughTranslation_englishDirect() async throws {
         guard #available(iOS 26.0, *) else {
             throw XCTSkip("FoundationModels — с iOS 26")
         }
-        let messages = ["Привет! Сборка опять сломалась", "Посмотришь до пятницы?"]
+        let russian = ["Привет! Сборка опять сломалась", "Посмотришь до пятницы?"]
             .map { Message(text: $0, isFromMe: false) }
         let english = ["Hey, the build is broken again", "Can you look before Friday?"]
             .map { Message(text: $0, isFromMe: false) }
 
-        let problem = OnDeviceDigester().languageProblem(in: messages)
-        print("[live] русский: \(problem ?? "поддерживается")")
+        let plan = await OnDeviceDigester().plan(for: russian)
+        print("[live] русский: \(plan)")
 
-        XCTAssertNil(OnDeviceDigester().languageProblem(in: english))
+        XCTAssertNotEqual(plan, .direct, "Русского среди языков модели нет")
+        let englishPlan = await OnDeviceDigester().plan(for: english)
+        XCTAssertEqual(englishPlan, .direct)
+    }
+
+    /// Вся цепочка живьём: перевод, пересказ, перевод обратно. Нужны
+    /// модель и скачанные языки — без них пропускается.
+    func test_russian_fullChain() async throws {
+        let digester = try liveDigester()
+        let messages = [
+            "Привет! Сборка опять сломалась",
+            "Падает на запуске на iOS 18, логи в задаче",
+            "Посмотришь до пятницы?",
+            "И созвон завтра перенесли на 10:30",
+            "Аня хочет дизайн-ревью в четверг в 15:00"
+        ].map { Message(text: $0, isFromMe: false) }
+        guard case .translate = await digester.plan(for: messages) else {
+            throw XCTSkip("Языки для перевода не скачаны или недоступны")
+        }
+
+        let viewModel = DigestViewModel(messages: messages, peerName: "Боб", digester: digester)
+        await viewModel.start()
+
+        print("[live] цепочка: \(viewModel.state)")
+        guard case let .done(digest) = viewModel.state else {
+            return XCTFail("\(viewModel.state)")
+        }
+        XCTAssertFalse(digest.points.isEmpty)
     }
 
     /// Русского среди языков модели нет. Тест не утверждает, что пересказ

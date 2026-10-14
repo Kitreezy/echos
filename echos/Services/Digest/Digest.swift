@@ -49,6 +49,27 @@ enum DigestAvailability: Equatable, Sendable {
     case never
 }
 
+/// Как пересказывать эту переписку. Модель знает не все языки, и узнать
+/// это лучше до вызова, а не от неё.
+enum DigestPlan: Equatable, Sendable {
+    /// Язык модели знаком — пересказываем как есть.
+    case direct
+    /// Модель языка не знает, но переводчик на устройстве знает: переписка
+    /// переводится на язык-посредник, пересказ — обратно.
+    case translate(from: Locale.Language, via: Locale.Language)
+    /// То же, но языки для перевода ещё не скачаны. Скачивание — с
+    /// согласия человека, через системный запрос.
+    case download(from: Locale.Language, via: Locale.Language)
+    /// Ни модель, ни переводчик языка не знают.
+    case impossible(String)
+}
+
+/// Перевод списка строк с одного языка на другой — по строке на строку.
+@MainActor
+protocol Translating {
+    func translate(_ texts: [String]) async throws -> [String]
+}
+
 /// Что сказать человеку, если пересказ не получился.
 struct DigestFailure: Error, Equatable {
     let message: String
@@ -59,9 +80,11 @@ struct DigestFailure: Error, Equatable {
 protocol Digesting {
     var availability: DigestAvailability { get }
 
-    /// Почему эти сообщения не пересказать, если не пересказать: модель
-    /// знает не все языки, и узнать это лучше до вызова, а не от неё.
-    func languageProblem(in messages: [Message]) -> String?
+    /// Как пересказывать эти сообщения: напрямую, через перевод или никак.
+    func plan(for messages: [Message]) async -> DigestPlan
+
+    /// Переводчик для цепочки. Языки к этому моменту уже скачаны.
+    func translator(from source: Locale.Language, to target: Locale.Language) -> any Translating
 
     /// Подготовить модель заранее, пока человек ещё не нажал кнопку.
     func prepare()
@@ -75,12 +98,30 @@ protocol Digesting {
 struct UnavailableDigester: Digesting {
     var availability: DigestAvailability { .never }
 
-    func languageProblem(in messages: [Message]) -> String? { nil }
+    func plan(for messages: [Message]) async -> DigestPlan { .direct }
+
+    func translator(from source: Locale.Language, to target: Locale.Language) -> any Translating {
+        NoTranslator()
+    }
 
     func prepare() {}
 
     func digest(of messages: [Message], with peerName: String) -> AsyncThrowingStream<DigestProgress, Error> {
         AsyncThrowingStream { $0.finish(throwing: DigestFailure(message: "На этом устройстве пересказ недоступен.")) }
+    }
+}
+
+private struct NoTranslator: Translating {
+    func translate(_ texts: [String]) async throws -> [String] {
+        throw DigestFailure(message: "На этом устройстве перевод недоступен.")
+    }
+}
+
+extension Locale.Language {
+    /// Название языка для человека — на языке его системы.
+    var displayName: String {
+        languageCode.flatMap { Locale.current.localizedString(forLanguageCode: $0.identifier) }
+            ?? minimalIdentifier
     }
 }
 

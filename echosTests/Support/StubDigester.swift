@@ -13,11 +13,25 @@ final class StubDigester: Digesting {
 
     var availability: DigestAvailability = .ready
 
-    /// Что сказать про язык: `nil` — язык знаком.
-    var languageProblem: String?
+    var plan: DigestPlan = .direct
 
-    func languageProblem(in messages: [Message]) -> String? {
-        languageProblem
+    /// Планы на ближайшие вызовы — прежде `plan`. Так изображается
+    /// загрузка, которая заканчивается не сразу.
+    var upcomingPlans: [DigestPlan] = []
+
+    func plan(for messages: [Message]) async -> DigestPlan {
+        upcomingPlans.isEmpty ? plan : upcomingPlans.removeFirst()
+    }
+
+    /// Переводчик по умолчанию помечает строку языком назначения:
+    /// «привет» → «[en] привет». Так видно, что и куда переводилось.
+    var translationFailure: Error?
+    private(set) var translators: [StubTranslator] = []
+
+    func translator(from source: Locale.Language, to target: Locale.Language) -> any Translating {
+        let translator = StubTranslator(target: target, failure: translationFailure)
+        translators.append(translator)
+        return translator
     }
 
     /// Что отдать по порядку.
@@ -43,5 +57,26 @@ final class StubDigester: Digesting {
             }
             continuation.finish(throwing: failure)
         }
+    }
+}
+
+@MainActor
+final class StubTranslator: Translating {
+
+    let target: Locale.Language
+    let failure: Error?
+    private(set) var received: [[String]] = []
+
+    init(target: Locale.Language, failure: Error?) {
+        self.target = target
+        self.failure = failure
+    }
+
+    func translate(_ texts: [String]) async throws -> [String] {
+        received.append(texts)
+        if let failure {
+            throw failure
+        }
+        return texts.map { "[\(target.minimalIdentifier)] \($0)" }
     }
 }
