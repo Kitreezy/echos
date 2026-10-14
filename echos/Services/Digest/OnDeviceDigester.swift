@@ -41,11 +41,27 @@ struct GeneratedDigest {
 
     @Guide(description: "Questions the other person asked the user that still wait for an answer. Empty if there are none.",
            .maximumCount(3))
-    var questions: [String]
+    var questions: [GeneratedQuestion]
 
     @Guide(description: "Agreed times, places or tasks: who does what and when. Empty if there are none.",
            .maximumCount(3))
     var plans: [String]
+}
+
+/// Вопрос вместе с вариантами ответа — в том же проходе, что и пересказ.
+/// Отдельным запросом пришлось бы заново отдать модели всю переписку:
+/// у сессий нет общей памяти, а окно и так почти занято ею.
+@available(iOS 26.0, *)
+@Generable(description: "A question waiting for the user's answer")
+struct GeneratedQuestion {
+    @Guide(description: "The question, as one short sentence.")
+    var question: String
+
+    // Сначала вопрос, потом ответы: так модель пишет ответы, уже
+    // сформулировав, на что отвечает.
+    @Guide(description: "Replies the user could send to the other person, written as the user, one short sentence each. Each reply gives a different answer: agree, decline, or ask to clarify.",
+           .count(2...3))
+    var replies: [String]
 }
 
 @available(iOS 26.0, *)
@@ -64,7 +80,9 @@ final class OnDeviceDigester: Digesting {
 
     /// Сколько токенов окна держать под ответ. Это же — потолок ответа:
     /// модель, которая разговорилась, упрётся в него, а не в край окна.
-    private let responseReserve = 800
+    /// Варианты ответа добавили к пересказу до девяти коротких фраз —
+    /// запас под них взят из места под переписку.
+    private let responseReserve = 1000
 
     /// Сколько раз сжимать заметки в заметки. На практике хватает одного:
     /// из части в полторы тысячи токенов выходит пять коротких строк.
@@ -247,6 +265,7 @@ final class OnDeviceDigester: Digesting {
         other lines by the other person.
         Use only what is written in the messages. Never invent names, times, places or facts.
         Write every item as one short sentence in the same language as the messages.
+        Replies to questions are written by the user to the other person: natural, friendly, not formal.
         """
 
     private static let notesInstructions = """
@@ -288,7 +307,13 @@ final class OnDeviceDigester: Digesting {
 extension Digest {
     init(_ partial: GeneratedDigest.PartiallyGenerated) {
         self.init(points: partial.points ?? [],
-                  questions: partial.questions ?? [],
+                  // Вопрос без текста — ещё не начатый: в черновик не идёт.
+                  questions: (partial.questions ?? []).compactMap { question in
+                      guard let text = question.question, !text.isEmpty else {
+                          return nil
+                      }
+                      return DigestQuestion(text: text, replies: question.replies ?? [])
+                  },
                   plans: partial.plans ?? [])
     }
 }

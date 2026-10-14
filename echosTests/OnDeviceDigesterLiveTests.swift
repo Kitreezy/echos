@@ -42,7 +42,11 @@ final class OnDeviceDigesterLiveTests: XCTestCase {
             // Это не поведение модели, а её отсутствие.
             throw XCTSkip(failure.message)
         }
-        print("[live] points: \(latest.points)\n[live] questions: \(latest.questions)\n[live] plans: \(latest.plans)")
+        print("[live] points: \(latest.points)")
+        for question in latest.questions {
+            print("[live] question: \(question.text) → \(question.replies)")
+        }
+        print("[live] plans: \(latest.plans)")
         return latest
     }
 
@@ -59,6 +63,8 @@ final class OnDeviceDigesterLiveTests: XCTestCase {
 
         XCTAssertFalse(digest.points.isEmpty)
         XCTAssertFalse(digest.questions.isEmpty, "Вопрос к человеку в переписке есть")
+        XCTAssertTrue(digest.questions.allSatisfy { (2...3).contains($0.replies.count) },
+                      "На каждый вопрос — два-три ответа: это ограничение схемы, а не просьба")
         XCTAssertFalse(digest.plans.isEmpty, "Время в переписке есть")
     }
 

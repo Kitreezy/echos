@@ -1022,17 +1022,33 @@ final class ChatViewController: UIViewController {
 
     @objc
     private func showDigest() {
-        let digestView = DigestView(viewModel: DigestViewModel(
-            messages: viewModel.missedMessages,
-            peerName: viewModel.currentConversationName ?? "собеседник",
-            digester: viewModel.digester
-        ))
+        let digestView = DigestView(
+            viewModel: DigestViewModel(
+                messages: viewModel.missedMessages,
+                peerName: viewModel.currentConversationName ?? "собеседник",
+                digester: viewModel.digester
+            ),
+            onReply: { [weak self] reply in
+                self?.draftReply(reply)
+            }
+        )
         let hostingVC = UIHostingController(rootView: digestView)
         if let sheet = hostingVC.sheetPresentationController {
             sheet.detents = [.medium(), .large()]
             sheet.prefersGrabberVisible = true
         }
         present(hostingVC, animated: true)
+    }
+
+    /// Готовый ответ из пересказа — в поле ввода, с клавиатурой: поправить
+    /// и отправить, как обычное сообщение.
+    private func draftReply(_ reply: String) {
+        if isComposingMosaic {
+            setComposingMosaic(false)
+        }
+        textField.text = reply
+        textFieldDidChange()
+        textField.becomeFirstResponder()
     }
 
     @objc

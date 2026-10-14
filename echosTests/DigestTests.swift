@@ -96,6 +96,35 @@ final class DigestTranscriptTests: XCTestCase {
     }
 }
 
+// MARK: - Строки пересказа
+
+final class DigestTextsTests: XCTestCase {
+
+    func test_translatedTexts_landInTheirPlaces() {
+        let digest = Digest(points: ["p"],
+                            questions: [DigestQuestion(text: "q1", replies: ["a", "b"]),
+                                        DigestQuestion(text: "q2", replies: ["c"])],
+                            plans: ["d"])
+
+        XCTAssertEqual(digest.texts, ["p", "q1", "a", "b", "q2", "c", "d"])
+
+        let translated = digest.replacingTexts(digest.texts.map { $0.uppercased() })
+
+        XCTAssertEqual(translated, Digest(points: ["P"],
+                                          questions: [DigestQuestion(text: "Q1", replies: ["A", "B"]),
+                                                      DigestQuestion(text: "Q2", replies: ["C"])],
+                                          plans: ["D"]),
+                       "Ответы остаются при своём вопросе, а не съезжают к соседнему")
+    }
+
+    func test_questionWithoutReplies_staysAQuestion() {
+        let digest = Digest(questions: [DigestQuestion(text: "q")], plans: ["d"])
+
+        XCTAssertEqual(digest.replacingTexts(["Q", "D"]),
+                       Digest(questions: [DigestQuestion(text: "Q")], plans: ["D"]))
+    }
+}
+
 // MARK: - Экран пересказа
 
 @MainActor
@@ -109,7 +138,7 @@ final class DigestViewModelTests: XCTestCase {
 
     func test_draftsArrive_thenTheLastOneIsTheResult() async {
         let digester = StubDigester()
-        let final = Digest(points: ["Боб зовёт в кино"], questions: ["Пойдёшь?"], plans: ["Суббота, 19:00"])
+        let final = Digest(points: ["Боб зовёт в кино"], questions: [DigestQuestion(text: "Пойдёшь?", replies: ["Да", "Не смогу"])], plans: ["Суббота, 19:00"])
         digester.script = [
             .reading(part: 1, of: 2),
             .reading(part: 2, of: 2),
@@ -289,7 +318,9 @@ final class TranslatedDigestTests: XCTestCase {
         digester.plan = .translate(from: russian, via: english)
         digester.script = [
             .draft(Digest(points: ["Bob"])),
-            .draft(Digest(points: ["Bob invites to the cinema"], questions: ["Are you coming?"], plans: ["Saturday 7pm"]))
+            .draft(Digest(points: ["Bob invites to the cinema"],
+                          questions: [DigestQuestion(text: "Are you coming?", replies: ["Yes", "Can't make it"])],
+                          plans: ["Saturday 7pm"]))
         ]
         let viewModel = makeViewModel(digester, messages: [
             Message(text: "пойдём в кино?", isFromMe: false),
@@ -301,7 +332,8 @@ final class TranslatedDigestTests: XCTestCase {
         XCTAssertEqual(digester.digested.first?.map(\.text), ["[en] пойдём в кино?", "[en] в субботу в семь"],
                        "Модель читает переведённое")
         XCTAssertEqual(viewModel.state, .done(Digest(points: ["[ru] Bob invites to the cinema"],
-                                                     questions: ["[ru] Are you coming?"],
+                                                     questions: [DigestQuestion(text: "[ru] Are you coming?",
+                                                                                replies: ["[ru] Yes", "[ru] Can't make it"])],
                                                      plans: ["[ru] Saturday 7pm"])),
                        "Пересказ возвращается на язык переписки, разделы не перепутаны")
         XCTAssertNotNil(viewModel.translatedVia, "Под пересказом сказано, что он шёл через перевод")
@@ -310,7 +342,7 @@ final class TranslatedDigestTests: XCTestCase {
     func test_backTranslation_isOneBatch() async {
         let digester = StubDigester()
         digester.plan = .translate(from: russian, via: english)
-        digester.script = [.draft(Digest(points: ["a", "b"], questions: ["c"], plans: ["d"]))]
+        digester.script = [.draft(Digest(points: ["a", "b"], questions: [DigestQuestion(text: "c", replies: ["c1"])], plans: ["d"]))]
         let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
 
         await viewModel.start()

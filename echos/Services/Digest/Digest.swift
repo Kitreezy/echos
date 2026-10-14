@@ -21,12 +21,41 @@ import Foundation
 /// о чём говорили, чего от меня ждут, о чём договорились.
 struct Digest: Equatable, Sendable {
     var points: [String] = []
-    var questions: [String] = []
+    var questions: [DigestQuestion] = []
     var plans: [String] = []
 
     var isEmpty: Bool {
         points.isEmpty && questions.isEmpty && plans.isEmpty
     }
+
+    /// Все строки по порядку — чтобы перевести их одной пачкой.
+    var texts: [String] {
+        points + questions.flatMap { [$0.text] + $0.replies } + plans
+    }
+
+    /// Тот же пересказ, строки которого заменены на `texts` в том же
+    /// порядке, — переведённые. Раскладывается по счёту, поэтому строк
+    /// должно быть столько же, сколько отдал `texts`.
+    func replacingTexts(_ texts: [String]) -> Digest {
+        var rest = texts[...]
+        func take(_ count: Int) -> [String] {
+            defer { rest = rest.dropFirst(count) }
+            return Array(rest.prefix(count))
+        }
+        let points = take(points.count)
+        let questions = questions.map { question in
+            DigestQuestion(text: take(1).first ?? question.text, replies: take(question.replies.count))
+        }
+        return Digest(points: points, questions: questions, plans: take(plans.count))
+    }
+}
+
+/// Вопрос, который ждёт ответа, и чем на него можно ответить.
+struct DigestQuestion: Equatable, Sendable {
+    var text: String
+    /// Готовые ответы от лица человека — разные по смыслу: согласиться,
+    /// отказаться, уточнить. Только черновики: отправляет человек.
+    var replies: [String] = []
 }
 
 /// Ход работы. Длинная переписка в окно модели не влезает и читается

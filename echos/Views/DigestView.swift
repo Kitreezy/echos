@@ -14,6 +14,10 @@ import Translation
 struct DigestView: View {
 
     @State var viewModel: DigestViewModel
+
+    /// Человек выбрал готовый ответ. Он идёт в поле ввода, а не в
+    /// переписку: модель может ошибиться, отправляет человек.
+    var onReply: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
 
     /// Что скачать. Пока `nil`, `.translationTask` ничего не делает; как
@@ -105,10 +109,12 @@ struct DigestView: View {
         case let .reading(part, total):
             progress("Переписка длинная, читаю частями: \(part) из \(total)…")
         case let .writing(digest):
-            sections(of: digest)
+            // Ответы — только в готовом: недописанный вариант можно было
+            // бы нажать на полуслове.
+            sections(of: digest, withReplies: false)
             progress("Пишу…")
         case let .done(digest):
-            sections(of: digest)
+            sections(of: digest, withReplies: true)
         case let .failed(message):
             Section {
                 Label(message, systemImage: "exclamationmark.bubble")
@@ -118,10 +124,40 @@ struct DigestView: View {
     }
 
     @ViewBuilder
-    private func sections(of digest: Digest) -> some View {
+    private func sections(of digest: Digest, withReplies: Bool) -> some View {
         items("Главное", digest.points)
-        items("Ждут ответа", digest.questions)
+        if !digest.questions.isEmpty {
+            Section("Ждут ответа") {
+                ForEach(Array(digest.questions.enumerated()), id: \.offset) { _, question in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(question.text)
+                        if withReplies, !question.replies.isEmpty {
+                            replies(question.replies)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
         items("Договорились", digest.plans)
+    }
+
+    private func replies(_ replies: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(replies, id: \.self) { reply in
+                    Button(reply) {
+                        onReply(reply)
+                        dismiss()
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    // Золото — «своё»: это мои будущие сообщения.
+                    .tint(Color.own)
+                    .font(.subheadline)
+                }
+            }
+        }
     }
 
     @ViewBuilder

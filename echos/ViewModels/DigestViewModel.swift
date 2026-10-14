@@ -166,16 +166,8 @@ final class DigestViewModel {
         state = .translatingBack
         let back = digester.translator(from: pivot, to: source)
         // Одной пачкой, а не по разделу: переводчик поднимается один раз.
-        let all = digest.points + digest.questions + digest.plans
-        let returned = try await translating { try await back.translate(all) }
-        var rest = returned[...]
-        func take(_ count: Int) -> [String] {
-            defer { rest = rest.dropFirst(count) }
-            return Array(rest.prefix(count))
-        }
-        return Digest(points: take(digest.points.count),
-                      questions: take(digest.questions.count),
-                      plans: take(digest.plans.count))
+        let returned = try await translating { try await back.translate(digest.texts) }
+        return digest.replacingTexts(returned)
     }
 
     /// Ошибки переводчика — своими словами: его ошибки человеку ничего не
