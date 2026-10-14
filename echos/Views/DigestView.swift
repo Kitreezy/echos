@@ -15,9 +15,13 @@ struct DigestView: View {
 
     @State var viewModel: DigestViewModel
 
-    /// Человек выбрал готовый ответ. Он идёт в поле ввода, а не в
-    /// переписку: модель может ошибиться, отправляет человек.
-    var onReply: (String) -> Void = { _ in }
+    /// Человек выбрал готовый ответ: текст и сообщение, на которое он.
+    /// Ответ идёт в поле ввода, а не в переписку: модель может ошибиться,
+    /// отправляет человек.
+    var onReply: (String, UUID?) -> Void = { _, _ in }
+
+    /// Показать сообщение, из которого вопрос, в ленте.
+    var onShowMessage: (UUID) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
 
     /// Что скачать. Пока `nil`, `.translationTask` ничего не делает; как
@@ -43,7 +47,7 @@ struct DigestView: View {
             }
         }
         .task {
-            await viewModel.start()
+            await viewModel.startIfNeeded()
         }
         // Замыкание — вне главного актора: сессия не Sendable, а
         // `prepareTranslation` в нём не живёт. Модель экрана захвачена
@@ -129,25 +133,53 @@ struct DigestView: View {
         if !digest.questions.isEmpty {
             Section("Ждут ответа") {
                 ForEach(Array(digest.questions.enumerated()), id: \.offset) { _, question in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(question.text)
-                        if withReplies, !question.replies.isEmpty {
-                            replies(question.replies)
+                    if viewModel.isAnswered(question) {
+                        // Отвеченное остаётся в списке, но гаснет: видно,
+                        // что сделано и что ещё нет.
+                        Label(question.text, systemImage: "checkmark")
+                            .foregroundStyle(Color.inkMuted)
+                    } else {
+                        VStack(alignment: .leading, spacing: 10) {
+                            questionText(question)
+                            if withReplies, !question.replies.isEmpty {
+                                replies(question.replies, to: question)
+                            }
                         }
+                        .padding(.vertical, 2)
                     }
-                    .padding(.vertical, 2)
                 }
             }
         }
         items("Договорились", digest.plans)
     }
 
-    private func replies(_ replies: [String]) -> some View {
+    /// Вопрос со ссылкой на сообщение — нажимается: показать, где спросили.
+    @ViewBuilder
+    private func questionText(_ question: DigestQuestion) -> some View {
+        if let id = question.messageID {
+            Button {
+                onShowMessage(id)
+                dismiss()
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(question.text)
+                    Image(systemName: "arrow.up.forward")
+                        .font(.caption)
+                        .foregroundStyle(Color.inkMuted)
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            Text(question.text)
+        }
+    }
+
+    private func replies(_ replies: [String], to question: DigestQuestion) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(replies, id: \.self) { reply in
                     Button(reply) {
-                        onReply(reply)
+                        onReply(reply, question.messageID)
                         dismiss()
                     }
                     .buttonStyle(.bordered)

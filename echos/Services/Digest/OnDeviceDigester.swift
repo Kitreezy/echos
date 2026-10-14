@@ -54,6 +54,11 @@ struct GeneratedDigest {
 @available(iOS 26.0, *)
 @Generable(description: "A question waiting for the user's answer")
 struct GeneratedQuestion {
+    // Номер — первым: модель сначала находит сообщение, потом пересказывает
+    // вопрос из него. Наоборот она чаще ссылается на соседнее.
+    @Guide(description: "The number in square brackets of the message where the question was asked.")
+    var messageNumber: Int
+
     @Guide(description: "The question, as one short sentence.")
     var question: String
 
@@ -161,7 +166,7 @@ final class OnDeviceDigester: Digesting {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await self.run(lines, with: peerName, into: continuation)
+                    try await self.run(lines, of: messages, with: peerName, into: continuation)
                     continuation.finish()
                 } catch let error as LanguageModelSession.GenerationError {
                     continuation.finish(throwing: DigestFailure(message: Self.explain(error)))
@@ -184,6 +189,7 @@ final class OnDeviceDigester: Digesting {
     // MARK: - Пересказ
 
     private func run(_ lines: [String],
+                     of messages: [Message],
                      with peerName: String,
                      into continuation: AsyncThrowingStream<DigestProgress, Error>.Continuation) async throws {
         let budget = await transcriptBudget()
@@ -221,7 +227,7 @@ final class OnDeviceDigester: Digesting {
         // Каждый снимок — вся структура целиком на текущий момент: поля,
         // до которых модель не дошла, пустые, последний пункт — недописан.
         for try await snapshot in stream {
-            continuation.yield(.draft(Digest(snapshot.content)))
+            continuation.yield(.draft(Digest(snapshot.content, numbering: messages)))
         }
     }
 
@@ -261,8 +267,8 @@ final class OnDeviceDigester: Digesting {
     // MARK: - Промпты
 
     private static let digestInstructions = """
-        You summarize chat messages the user missed. Lines starting with "Я:" are written by the user, \
-        other lines by the other person.
+        You summarize chat messages the user missed. Each line is "[number] author: text". \
+        Lines by "Я" are written by the user, other lines by the other person.
         Use only what is written in the messages. Never invent names, times, places or facts.
         Write every item as one short sentence in the same language as the messages.
         Replies to questions are written by the user to the other person: natural, friendly, not formal.
@@ -270,8 +276,9 @@ final class OnDeviceDigester: Digesting {
 
     private static let notesInstructions = """
         You read one part of a longer chat and write short notes for a summary made later. \
-        Lines starting with "Я:" are written by the user, other lines by the other person.
+        Each line is "[number] author: text". Lines by "Я" are written by the user, other lines by the other person.
         Keep names, times, places, questions and agreements. Use only what is written.
+        Start every note about a question with the number of its message in square brackets, like "[12] ..."
         Write the notes in the same language as the messages.
         """
 
@@ -305,14 +312,19 @@ final class OnDeviceDigester: Digesting {
 
 @available(iOS 26.0, *)
 extension Digest {
-    init(_ partial: GeneratedDigest.PartiallyGenerated) {
+    /// `numbering` — сообщения в том порядке, в каком модель видела их
+    /// номера: по ним номер вопроса становится ссылкой на сообщение.
+    init(_ partial: GeneratedDigest.PartiallyGenerated, numbering messages: [Message]) {
         self.init(points: partial.points ?? [],
                   // Вопрос без текста — ещё не начатый: в черновик не идёт.
                   questions: (partial.questions ?? []).compactMap { question in
                       guard let text = question.question, !text.isEmpty else {
                           return nil
                       }
-                      return DigestQuestion(text: text, replies: question.replies ?? [])
+                      return DigestQuestion(text: text,
+                                            replies: question.replies ?? [],
+                                            messageID: DigestTranscript.message(numbered: question.messageNumber,
+                                                                                in: messages)?.id)
                   },
                   plans: partial.plans ?? [])
     }

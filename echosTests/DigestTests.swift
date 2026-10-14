@@ -27,7 +27,7 @@ final class DigestTranscriptTests: XCTestCase {
         ]
 
         XCTAssertEqual(DigestTranscript.lines(of: messages, with: "Боб"),
-                       ["Боб: привет, как ты?", "Я: норм"],
+                       ["[1] Боб: привет, как ты?", "[2] Я: норм"],
                        "Продолжение сообщения с новой строки не должно выглядеть репликой без автора")
     }
 
@@ -35,7 +35,17 @@ final class DigestTranscriptTests: XCTestCase {
         let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟨", "", "", "🟨"])!
         let message = Message(text: mosaic.text, mosaic: mosaic, isFromMe: false)
 
-        XCTAssertEqual(DigestTranscript.lines(of: [message], with: "Боб"), ["Боб: [рисунок]"])
+        XCTAssertEqual(DigestTranscript.lines(of: [message], with: "Боб"), ["[1] Боб: [рисунок]"])
+    }
+
+    func test_numberedMessage_isFoundOnlyIfItIsTheirs() {
+        let messages = [Message(text: "вопрос?", isFromMe: false), Message(text: "ответ", isFromMe: true)]
+
+        XCTAssertEqual(DigestTranscript.message(numbered: 1, in: messages)?.id, messages[0].id)
+        XCTAssertNil(DigestTranscript.message(numbered: 2, in: messages), "Вопрос ко мне задаю не я")
+        XCTAssertNil(DigestTranscript.message(numbered: 0, in: messages), "Номера — с единицы")
+        XCTAssertNil(DigestTranscript.message(numbered: 7, in: messages), "Выдуманный номер — не ссылка")
+        XCTAssertNil(DigestTranscript.message(numbered: nil, in: messages))
     }
 
     func test_shortConversation_isOneChunk() async {
@@ -117,6 +127,13 @@ final class DigestTextsTests: XCTestCase {
                        "Ответы остаются при своём вопросе, а не съезжают к соседнему")
     }
 
+    func test_translation_keepsTheLinkToTheMessage() {
+        let id = UUID()
+        let digest = Digest(questions: [DigestQuestion(text: "q", replies: ["a"], messageID: id)])
+
+        XCTAssertEqual(digest.replacingTexts(["Q", "A"]).questions.first?.messageID, id)
+    }
+
     func test_questionWithoutReplies_staysAQuestion() {
         let digest = Digest(questions: [DigestQuestion(text: "q")], plans: ["d"])
 
@@ -182,6 +199,46 @@ final class DigestViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.state, .failed("Ни модель, ни переводчик не знают языка"))
         XCTAssertTrue(digester.digested.isEmpty, "Отказ известен заранее — звать модель незачем")
+    }
+
+    func test_reopening_showsTheReadyDigestWithoutTheModel() async {
+        let digester = StubDigester()
+        digester.script = [.draft(Digest(points: ["a"]))]
+        let viewModel = makeViewModel(digester)
+        await viewModel.startIfNeeded()
+
+        await viewModel.startIfNeeded()
+
+        XCTAssertEqual(digester.digested.count, 1, "Второе открытие — готовый пересказ, модель не зовём")
+    }
+
+    func test_interruptedDigest_startsAgain() async {
+        let digester = StubDigester()
+        digester.failure = CancellationError()
+        let viewModel = makeViewModel(digester)
+        await viewModel.startIfNeeded()
+
+        digester.failure = nil
+        digester.script = [.draft(Digest(points: ["a"]))]
+        await viewModel.startIfNeeded()
+
+        XCTAssertEqual(viewModel.state, .done(Digest(points: ["a"])))
+    }
+
+    func test_answeredQuestions_areNotCountedAsWaiting() async {
+        let digester = StubDigester()
+        let asked = UUID()
+        digester.script = [.draft(Digest(questions: [
+            DigestQuestion(text: "пойдёшь?", replies: ["да"], messageID: asked),
+            DigestQuestion(text: "когда?", replies: ["в семь"], messageID: UUID()),
+            DigestQuestion(text: "без ссылки", replies: ["ок"])
+        ]))]
+        let viewModel = makeViewModel(digester)
+        await viewModel.start()
+
+        viewModel.answered = [asked]
+
+        XCTAssertEqual(viewModel.unansweredCount, 2)
     }
 
     func test_emptyAnswer_isNotPresentedAsASummary() async {

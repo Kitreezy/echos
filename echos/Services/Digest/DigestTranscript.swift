@@ -17,18 +17,21 @@ import NaturalLanguage
 
 enum DigestTranscript {
 
-    /// По строке на сообщение: «кто: что». Переводы строк внутри сообщения
-    /// схлопываются — иначе продолжение сообщения выглядит для модели как
-    /// реплика без автора.
+    /// По строке на сообщение: «[номер] кто: что». Переводы строк внутри
+    /// сообщения схлопываются — иначе продолжение сообщения выглядит для
+    /// модели как реплика без автора.
+    ///
+    /// Номер — чтобы модель могла сослаться на сообщение: идентификатор
+    /// ей ни о чём не говорит и стоит три десятка токенов, а номер — один.
     static func lines(of messages: [Message], with peerName: String) -> [String] {
-        messages.map { message in
+        messages.enumerated().map { index, message in
             let author = message.isFromMe ? "Я" : peerName
             let content = message.mosaic == nil
                 ? message.text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
                 // Мозаика в текстовой форме — сетка эмодзи. Пересказывать
                 // её нечего, а токенов она съедает как абзац.
                 : "[рисунок]"
-            return "\(author): \(content)"
+            return "[\(index + 1)] \(author): \(content)"
         }
     }
 
@@ -87,6 +90,17 @@ enum DigestTranscript {
             return nil
         }
         return Locale.Language(identifier: language.rawValue)
+    }
+
+    /// Сообщение, на которое сослалась модель номером. Только чужое: вопрос
+    /// ко мне задаёт собеседник, а номер своего сообщения или выдуманный
+    /// номер — ошибка модели, и связи лучше не быть, чем быть неверной.
+    static func message(numbered number: Int?, in messages: [Message]) -> Message? {
+        guard let number, messages.indices.contains(number - 1) else {
+            return nil
+        }
+        let message = messages[number - 1]
+        return message.isFromMe ? nil : message
     }
 
     /// Оценка без модели: с запасом, по два символа на токен. Для латиницы

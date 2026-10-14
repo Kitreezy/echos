@@ -44,7 +44,9 @@ struct Digest: Equatable, Sendable {
         }
         let points = take(points.count)
         let questions = questions.map { question in
-            DigestQuestion(text: take(1).first ?? question.text, replies: take(question.replies.count))
+            DigestQuestion(text: take(1).first ?? question.text,
+                           replies: take(question.replies.count),
+                           messageID: question.messageID)
         }
         return Digest(points: points, questions: questions, plans: take(plans.count))
     }
@@ -56,6 +58,10 @@ struct DigestQuestion: Equatable, Sendable {
     /// Готовые ответы от лица человека — разные по смыслу: согласиться,
     /// отказаться, уточнить. Только черновики: отправляет человек.
     var replies: [String] = []
+    /// Сообщение, в котором вопрос задан. На него уходит ответ — со
+    /// ссылкой, как ответ на сообщение. `nil` — модель не указала или
+    /// указала мимо.
+    var messageID: UUID? = nil
 }
 
 /// Ход работы. Длинная переписка в окно модели не влезает и читается

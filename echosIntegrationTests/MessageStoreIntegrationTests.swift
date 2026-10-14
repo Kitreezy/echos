@@ -50,6 +50,17 @@ final class MessageStoreIntegrationTests: XCTestCase {
                        accuracy: 0.001)
     }
     
+    /// Ответ лежит рядом с текстом, как мозаика, и переживает хранилище.
+    func test_reply_survivesTheStore() async throws {
+        let reply = MessageReply(id: UUID(), preview: "пойдёшь?", isFromMe: false)
+        let message = Message(text: "да", peerAddress: "bob", isFromMe: true, status: .sent, replyTo: reply)
+
+        try await store.saveMessage(message)
+        let loaded = try await store.loadMessages(with: "bob")
+
+        XCTAssertEqual(loaded.first?.replyTo, reply)
+    }
+
     /// Мозаика лежит рядом с текстом и возвращается сеткой, а не текстом.
     func test_mosaic_survivesTheStore() async throws {
         let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟥", "", "", "🟦"])!

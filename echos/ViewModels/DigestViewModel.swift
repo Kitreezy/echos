@@ -50,6 +50,22 @@ final class DigestViewModel {
     /// `.translationTask`: скачать языки можно только так.
     private(set) var pendingDownload: (source: Locale.Language, target: Locale.Language)?
 
+    /// На какие сообщения человек уже ответил. Вопросы из них отмечаются
+    /// отвеченными, и вариантов под ними больше нет.
+    var answered: Set<UUID> = []
+
+    /// Сколько вопросов готового пересказа ещё ждут ответа.
+    var unansweredCount: Int {
+        guard case let .done(digest) = state else {
+            return 0
+        }
+        return digest.questions.filter { !isAnswered($0) }.count
+    }
+
+    func isAnswered(_ question: DigestQuestion) -> Bool {
+        question.messageID.map(answered.contains) ?? false
+    }
+
     /// Как часто спрашивать систему, скачались ли языки.
     var downloadPollInterval: Duration = .seconds(2)
 
@@ -64,6 +80,16 @@ final class DigestViewModel {
         self.peerName = peerName
         self.messageCount = messages.count
         self.digester = digester
+    }
+
+    /// Пересказать, если пересказа ещё нет. Экран живёт, пока не сменилось
+    /// пропущенное: открыть его второй раз — значит увидеть готовое, а не
+    /// ждать модель заново. Прерванное закрытием — начинается сначала.
+    func startIfNeeded() async {
+        if case .done = state {
+            return
+        }
+        await start()
     }
 
     /// Пересказать. Отмена задачи — закрытый экран — останавливает модель.
