@@ -207,6 +207,10 @@ final class ChatViewController: UIViewController {
         // Пока экран чата на экране, входящее в него — прочитанное, и
         // баннер о нём не нужен.
         viewModel.isConversationOnScreen = true
+
+        // Чат мог смениться из списка разговоров, не пересоздавая экран:
+        // заголовок и кнопки — от нового собеседника.
+        setupNavigationBar()
     }
 
     /// Набросок этой переписки — сразу на экран, без палитры: видно, что
@@ -353,6 +357,19 @@ final class ChatViewController: UIViewController {
                 target: self,
                 action: #selector(openPeerWall)
             ))
+        }
+
+        // Пересказ — только когда есть что пересказывать. Остаётся до
+        // выхода из чата: прочитать пересказ можно и второй раз.
+        if viewModel.canDigest {
+            let digest = UIBarButtonItem(
+                image: UIImage(systemName: "text.badge.star"),
+                style: .plain,
+                target: self,
+                action: #selector(showDigest)
+            )
+            digest.accessibilityLabel = "Что я пропустил"
+            items.append(digest)
         }
 
         navigationItem.rightBarButtonItems = items
@@ -1001,6 +1018,21 @@ final class ChatViewController: UIViewController {
         )
         let hostingVC = UIHostingController(rootView: networkView)
         navigationController?.pushViewController(hostingVC, animated: true)
+    }
+
+    @objc
+    private func showDigest() {
+        let digestView = DigestView(viewModel: DigestViewModel(
+            messages: viewModel.missedMessages,
+            peerName: viewModel.currentConversationName ?? "собеседник",
+            digester: viewModel.digester
+        ))
+        let hostingVC = UIHostingController(rootView: digestView)
+        if let sheet = hostingVC.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(hostingVC, animated: true)
     }
 
     @objc

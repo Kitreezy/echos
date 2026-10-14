@@ -1,0 +1,275 @@
+//
+//  OnDeviceDigester.swift
+//  echos
+//
+//  Пересказ моделью Apple на устройстве — через FoundationModels.
+//
+//  Модель небольшая, около трёх миллиардов параметров, и это определяет
+//  всё устройство пересказа:
+//
+//  Ответ — не текст, а тип. `@Generable` описывает структуру, и модель
+//  при декодировании физически не может выйти за её схему: нет «вот ваш
+//  JSON:», нет лишних полей, нет разбора строк. Описания в `@Guide` —
+//  часть промпта, а ограничения вроде `.maximumCount` — часть декодера.
+//
+//  Окно мало, поэтому длинное читается частями, и каждая часть — в новой
+//  сессии: сессия копит историю, и вторая часть в старой сессии ехала бы
+//  вместе с первой и её ответом.
+//
+//  Инструкции — по-английски: на них модель обучалась следовать лучше
+//  всего. Язык ответа задаётся отдельно — «как в переписке». Русского среди
+//  языков модели нет; что она с ним делает, показывает только живой прогон.
+//
+//  Модель ничего не умеет делать, кроме ответа по схеме: инструментов у
+//  сессии нет. Поэтому чужое сообщение вида «забудь инструкции» худшее,
+//  чего добьётся, — неверного пересказа, а не действия от имени человека.
+//
+
+import Foundation
+import FoundationModels
+
+@available(iOS 26.0, *)
+@Generable(description: "A summary of chat messages the user missed")
+struct GeneratedDigest {
+    // Порядок полей — порядок генерации. Главное первым: при потоковом
+    // выводе оно появляется на экране раньше, пока дописывается остальное.
+    @Guide(description: "Main topics of the messages, most important first. One short sentence each.",
+           .maximumCount(4))
+    var points: [String]
+
+    @Guide(description: "Questions the other person asked the user that still wait for an answer. Empty if there are none.",
+           .maximumCount(3))
+    var questions: [String]
+
+    @Guide(description: "Agreed times, places or tasks: who does what and when. Empty if there are none.",
+           .maximumCount(3))
+    var plans: [String]
+}
+
+@available(iOS 26.0, *)
+@Generable(description: "Notes on one part of a longer chat")
+struct PartNotes {
+    @Guide(description: "Short notes keeping names, times, places, questions and agreements.",
+           .maximumCount(5))
+    var notes: [String]
+}
+
+@available(iOS 26.0, *)
+@MainActor
+final class OnDeviceDigester: Digesting {
+
+    private let model = SystemLanguageModel.default
+
+    /// Сколько токенов окна держать под ответ. Это же — потолок ответа:
+    /// модель, которая разговорилась, упрётся в него, а не в край окна.
+    private let responseReserve = 800
+
+    /// Сколько раз сжимать заметки в заметки. На практике хватает одного:
+    /// из части в полторы тысячи токенов выходит пять коротких строк.
+    private let maximumRounds = 3
+
+    /// Жадная выборка — всегда самый вероятный токен. Пересказу фантазия
+    /// не нужна, а одинаковый ответ на одинаковую переписку проще проверять.
+    private var options: GenerationOptions {
+        GenerationOptions(sampling: .greedy, maximumResponseTokens: responseReserve)
+    }
+
+    /// Сессия, прогретая заранее. Забирается первым же пересказом.
+    private var warmSession: LanguageModelSession?
+
+    var availability: DigestAvailability {
+        switch model.availability {
+        case .available:
+            return .ready
+        case .unavailable(.deviceNotEligible):
+            return .never
+        case .unavailable(.appleIntelligenceNotEnabled):
+            return .notNow("Пересказ делает Apple Intelligence прямо на телефоне. Включите его в Настройках → Apple Intelligence и Siri.")
+        case .unavailable(.modelNotReady):
+            return .notNow("Модель ещё загружается на телефон. Попробуйте чуть позже.")
+        case .unavailable:
+            return .notNow("Модель на устройстве сейчас недоступна.")
+        }
+    }
+
+    func languageProblem(in messages: [Message]) -> String? {
+        // Не распознали — пробуем: худшее, что будет, — та же ошибка от
+        // модели, только позже.
+        guard let language = DigestTranscript.dominantLanguage(of: messages) else {
+            return nil
+        }
+        let supported = model.supportedLanguages.contains { $0.languageCode == language.languageCode }
+        guard !supported else {
+            return nil
+        }
+        let name = Locale.current.localizedString(forLanguageCode: language.languageCode?.identifier ?? "")
+            ?? language.minimalIdentifier
+        return "Модель на устройстве пока не знает языка этой переписки (\(name)). Список языков задаёт Apple."
+    }
+
+    /// Загрузить модель в память, пока человек читает чат. Первый ответ
+    /// без этого заметно дольше: веса поднимаются с диска.
+    func prepare() {
+        guard case .ready = availability, warmSession == nil else {
+            return
+        }
+        let session = LanguageModelSession(model: model, instructions: Self.digestInstructions)
+        session.prewarm()
+        warmSession = session
+    }
+
+    func digest(of messages: [Message], with peerName: String) -> AsyncThrowingStream<DigestProgress, Error> {
+        let lines = DigestTranscript.lines(of: messages, with: peerName)
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await self.run(lines, with: peerName, into: continuation)
+                    continuation.finish()
+                } catch let error as LanguageModelSession.GenerationError {
+                    continuation.finish(throwing: DigestFailure(message: Self.explain(error)))
+                } catch is CancellationError {
+                    continuation.finish(throwing: CancellationError())
+                } catch {
+                    // Не всё приходит перечислением: сбой внутри системной
+                    // службы модели долетает сырым NSError. «Доступна» в
+                    // `availability` ещё не значит «ответит».
+                    print("[OnDeviceDigester] \(error)")
+                    continuation.finish(throwing: DigestFailure(message: "Модель на устройстве не ответила. Попробуйте позже."))
+                }
+            }
+            // Закрыли экран — модель останавливается, а не дописывает
+            // пересказ, который никто не увидит.
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    // MARK: - Пересказ
+
+    private func run(_ lines: [String],
+                     with peerName: String,
+                     into continuation: AsyncThrowingStream<DigestProgress, Error>.Continuation) async throws {
+        let budget = await transcriptBudget()
+        var lines = lines
+        var chunks = await DigestTranscript.chunks(of: lines, budget: budget, measure: measure)
+
+        // Длинное — частями: каждая часть в заметки, заметки — заново
+        // в части, пока всё не уляжется в одно окно.
+        var round = 0
+        while chunks.count > 1 {
+            round += 1
+            guard round <= maximumRounds else {
+                // Не сошлось — пересказываем самое свежее, а не падаем.
+                chunks = [chunks[chunks.count - 1]]
+                break
+            }
+            var notes: [String] = []
+            for (index, chunk) in chunks.enumerated() {
+                try Task.checkCancellation()
+                continuation.yield(.reading(part: index + 1, of: chunks.count))
+                let session = LanguageModelSession(model: model, instructions: Self.notesInstructions)
+                let response = try await session.respond(to: Self.prompt(chunk, with: peerName),
+                                                         generating: PartNotes.self,
+                                                         options: options)
+                notes += response.content.notes
+            }
+            lines = notes
+            chunks = await DigestTranscript.chunks(of: lines, budget: budget, measure: measure)
+        }
+
+        let session = takeWarmSession()
+        let stream = session.streamResponse(to: Self.prompt(chunks.first ?? [], with: peerName),
+                                            generating: GeneratedDigest.self,
+                                            options: options)
+        // Каждый снимок — вся структура целиком на текущий момент: поля,
+        // до которых модель не дошла, пустые, последний пункт — недописан.
+        for try await snapshot in stream {
+            continuation.yield(.draft(Digest(snapshot.content)))
+        }
+    }
+
+    private func takeWarmSession() -> LanguageModelSession {
+        defer { warmSession = nil }
+        return warmSession ?? LanguageModelSession(model: model, instructions: Self.digestInstructions)
+    }
+
+    // MARK: - Окно
+
+    /// Сколько токенов окна остаётся на переписку: всё, кроме инструкций,
+    /// схемы ответа и места под сам ответ. Считается по пересказу — его
+    /// инструкции и схема длиннее, чем у заметок.
+    ///
+    /// Счёт — вспомогательный: не удалось посчитать точно — считаем по
+    /// оценке, но пересказ из-за этого не срываем.
+    private func transcriptBudget() async -> Int {
+        let framing = 60  // «The other person is …» и заголовок над перепиской
+        // Схему модель тоже читает: она уходит в промпт вместе с описаниями
+        // полей. До 26.4 её не измерить — берём с запасом.
+        var overhead = DigestTranscript.estimatedTokens(Self.digestInstructions) + 400
+        if #available(iOS 26.4, *),
+           let instructions = try? await model.tokenCount(for: Instructions(Self.digestInstructions)),
+           let schema = try? await model.tokenCount(for: GeneratedDigest.generationSchema) {
+            overhead = instructions + schema
+        }
+        return model.contextSize - overhead - responseReserve - framing
+    }
+
+    private func measure(_ text: String) async -> Int {
+        if #available(iOS 26.4, *), let exact = try? await model.tokenCount(for: text) {
+            return exact
+        }
+        return DigestTranscript.estimatedTokens(text)
+    }
+
+    // MARK: - Промпты
+
+    private static let digestInstructions = """
+        You summarize chat messages the user missed. Lines starting with "Я:" are written by the user, \
+        other lines by the other person.
+        Use only what is written in the messages. Never invent names, times, places or facts.
+        Write every item as one short sentence in the same language as the messages.
+        """
+
+    private static let notesInstructions = """
+        You read one part of a longer chat and write short notes for a summary made later. \
+        Lines starting with "Я:" are written by the user, other lines by the other person.
+        Keep names, times, places, questions and agreements. Use only what is written.
+        Write the notes in the same language as the messages.
+        """
+
+    private static func prompt(_ lines: [String], with peerName: String) -> String {
+        "The other person is \(peerName). Messages:\n" + lines.joined(separator: "\n")
+    }
+
+    // MARK: - Ошибки
+
+    static func explain(_ error: LanguageModelSession.GenerationError) -> String {
+        switch error {
+        case .unsupportedLanguageOrLocale:
+            return "Модель на устройстве не работает с языком этой переписки: список языков задаёт Apple."
+        case .guardrailViolation, .refusal:
+            return "Модель отказалась пересказывать эту переписку: встроенный фильтр Apple счёл её содержание чувствительным."
+        case .exceededContextWindowSize:
+            return "Переписка не поместилась в память модели."
+        case .assetsUnavailable:
+            return "Модель сейчас недоступна — возможно, ещё загружается. Попробуйте позже."
+        case .rateLimited:
+            return "Система притормозила модель. Попробуйте ещё раз."
+        case .concurrentRequests:
+            return "Модель занята предыдущим пересказом."
+        case .decodingFailure, .unsupportedGuide:
+            return "Модель ответила не по форме. Попробуйте ещё раз."
+        @unknown default:
+            return "Пересказ не получился: \(error.localizedDescription)"
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+extension Digest {
+    init(_ partial: GeneratedDigest.PartiallyGenerated) {
+        self.init(points: partial.points ?? [],
+                  questions: partial.questions ?? [],
+                  plans: partial.plans ?? [])
+    }
+}

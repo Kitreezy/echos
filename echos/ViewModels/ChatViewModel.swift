@@ -79,6 +79,24 @@ final class ChatViewModel {
     /// Имя собеседника для заголовка. Держится отдельно, потому что адрес
     /// показывать человеку незачем, а имени в адресе нет.
     var currentConversationName: String? = nil
+
+    /// Что пришло в открытый сейчас чат, пока его не было на экране.
+    /// Запоминается до того, как чат помечен прочитанным: иначе к моменту,
+    /// когда человек попросит пересказ, пересказывать будет нечего.
+    var missedMessages: [Message] = []
+
+    /// С какого числа пропущенных предлагать пересказ. Два-три сообщения
+    /// быстрее прочитать, чем ждать модель.
+    static let digestThreshold = 5
+
+    /// Кто пересказывает пропущенное. Тесты подставляют заглушку.
+    var digester: any Digesting = Digesters.system()
+
+    /// Предлагать ли пересказ: пропущенного много, а модель есть или
+    /// может появиться.
+    var canDigest: Bool {
+        missedMessages.count >= Self.digestThreshold && digester.availability != .never
+    }
     
     // MARK: - Services
     
@@ -223,6 +241,11 @@ final class ChatViewModel {
             let filtered = try await messageStore.loadMessages(with: address)
             messages = filtered
             currentConversationPeer = address
+            missedMessages = filtered.filter(\.isUnread)
+            // Греть модель ради языка, которого она не знает, незачем.
+            if canDigest, digester.languageProblem(in: missedMessages) == nil {
+                digester.prepare()
+            }
 
             // Открыли — значит, прочитали. И в памяти, и в хранилище.
             if unreadCounts[address] != nil {
@@ -291,6 +314,7 @@ final class ChatViewModel {
         }
         try await messageStore.deleteConverstaion(with: address)
         messages = []
+        missedMessages = []
         currentConversationPeer = nil
         currentConversationName = nil
         print("[ChatViewModel] Cleared conversation with \(address)")
@@ -303,6 +327,7 @@ final class ChatViewModel {
         
         try await messageStore.clearAll()
         messages = []
+        missedMessages = []
         print("[ChatViewModel] Cleared all messages")
     }
     
@@ -316,6 +341,7 @@ final class ChatViewModel {
         
         multipeerService.disconnect(from: address)
         messages = []
+        missedMessages = []
         currentConversationPeer = nil
         currentConversationName = nil
         print("[ChatViewModel] Disconnected from \(address)")
