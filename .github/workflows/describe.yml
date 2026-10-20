@@ -1,0 +1,85 @@
+# Описание pull request'а по коммитам и diff — scripts/describe.py.
+#
+# Отдельно от ci.yml: описанию нужен только diff, и ждать сборки и тестов
+# на macOS ему незачем. Пишет в тело PR, только если там пусто или стоят
+# его метки; текст человека не трогает — тогда описание идёт комментарием
+# (scripts/pr_body.py). Сбой генерации ничего не роняет: описания просто нет.
+
+name: describe
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+# Новый коммит отменяет описание прошлого: оно всё равно устареет.
+concurrency:
+  group: describe-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  describe:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Есть ли токен
+        id: token
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: echo "present=$([ -n "$TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Описание выключено
+        if: steps.token.outputs.present != 'true'
+        run: echo "Нет секрета CLAUDE_CODE_OAUTH_TOKEN — описание не генерируется."
+
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          node-version: '22'
+
+      - name: Claude Code
+        if: steps.token.outputs.present == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Описание
+        id: describe
+        if: steps.token.outputs.present == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if python3 scripts/describe.py --base "origin/${{ github.base_ref }}" > description.md; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Описания нет — PR остаётся как был."
+          fi
+
+      - name: В тело или комментарием
+        id: place
+        if: steps.describe.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # Тело читается заново, а не из события: человек мог поправить его,
+          # пока шла генерация.
+          gh pr view "$PR" --json body --jq .body > body.md
+          python3 scripts/pr_body.py body.md description.md > decision.md
+          decision=$(head -n1 decision.md)
+          tail -n +2 decision.md > text.md
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+          if [ "$decision" = "edit" ]; then
+            gh pr edit "$PR" --body-file text.md
+          fi
+
+      - uses: marocchino/sticky-pull-request-comment@v2
+        if: steps.place.outputs.decision == 'comment'
+        with:
+          header: describe
+          path: text.md
