@@ -6,23 +6,22 @@
 //  которое поставлена, и в ленту не попадает.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class ReactionTests: XCTestCase {
+struct ReactionTests {
 
-    private var transport: LoopbackTransport!
-    private var store: SpyMessageStore!
-    private var viewModel: ChatViewModel!
+    private let transport = LoopbackTransport()
+    private let store = SpyMessageStore()
+    private let viewModel = ChatViewModel()
 
-    override func setUp() async throws {
-        transport = LoopbackTransport()
-        store = SpyMessageStore()
-        viewModel = ChatViewModel()
+    init() async {
         viewModel.persistenceFlushInterval = .milliseconds(50)
         viewModel.initialize(transport: transport, store: store, strokes: SpyStrokeStore())
-        _ = await waitUntil { self.transport.pipelinesConnected >= 1 }
+        let transport = transport
+        _ = await waitUntil { transport.pipelinesConnected >= 1 }
         viewModel.currentConversationPeer = "bob"
         viewModel.isConversationOnScreen = true
     }
@@ -33,43 +32,43 @@ final class ReactionTests: XCTestCase {
 
     // MARK: - Своя
 
-    func test_react_setsMineAndSendsIt() async {
+    @Test func react_setsMineAndSendsIt() async {
         await viewModel.sendMessage("привет")
         let id = viewModel.messages[0].id
 
         await viewModel.react(to: id, with: "❤️")
 
-        XCTAssertEqual(viewModel.messages[0].myReaction, "❤️")
+        #expect(viewModel.messages[0].myReaction == "❤️")
         let sent = transport.sentMessages.last
-        XCTAssertEqual(sent?.payload.reaction, ReactionPayload(targetID: id.uuidString, emoji: "❤️"))
-        XCTAssertEqual(sent?.payload.text, "❤️", "Старая сборка увидит эмодзи текстом")
-        XCTAssertEqual(sent?.recipient, "bob")
+        #expect(sent?.payload.reaction == ReactionPayload(targetID: id.uuidString, emoji: "❤️"))
+        #expect(sent?.payload.text == "❤️", "Старая сборка увидит эмодзи текстом")
+        #expect(sent?.recipient == "bob")
     }
 
-    func test_sameReactionAgain_removesIt() async {
+    @Test func sameReactionAgain_removesIt() async {
         await viewModel.sendMessage("привет")
         let id = viewModel.messages[0].id
 
         await viewModel.react(to: id, with: "❤️")
         await viewModel.react(to: id, with: "❤️")
 
-        XCTAssertNil(viewModel.messages[0].myReaction)
-        XCTAssertEqual(transport.sentMessages.last?.payload.reaction?.emoji, "", "Снятие тоже уходит")
+        #expect(viewModel.messages[0].myReaction == nil)
+        #expect(transport.sentMessages.last?.payload.reaction?.emoji == "", "Снятие тоже уходит")
     }
 
-    func test_otherReaction_replacesMine() async {
+    @Test func otherReaction_replacesMine() async {
         await viewModel.sendMessage("привет")
         let id = viewModel.messages[0].id
 
         await viewModel.react(to: id, with: "❤️")
         await viewModel.react(to: id, with: "🔥")
 
-        XCTAssertEqual(viewModel.messages[0].myReaction, "🔥")
+        #expect(viewModel.messages[0].myReaction == "🔥")
     }
 
     // MARK: - Чужая
 
-    func test_incomingReaction_landsOnTheTargetAndNotInTheFeed() async {
+    @Test func incomingReaction_landsOnTheTargetAndNotInTheFeed() async {
         await viewModel.sendMessage("моё")
         let id = viewModel.messages[0].id
 
@@ -78,12 +77,12 @@ final class ReactionTests: XCTestCase {
                        from: "bob")
         let landed = await waitUntil { self.viewModel.messages[0].peerReaction == "👍" }
 
-        XCTAssertTrue(landed)
-        XCTAssertEqual(viewModel.messages.count, 1, "Реакция — не сообщение")
-        XCTAssertNil(viewModel.unreadCounts["bob"], "И не непрочитанное")
+        #expect(landed)
+        #expect(viewModel.messages.count == 1, "Реакция — не сообщение")
+        #expect(viewModel.unreadCounts["bob"] == nil, "И не непрочитанное")
     }
 
-    func test_incomingRemoval_clearsTheirs() async {
+    @Test func incomingRemoval_clearsTheirs() async {
         await viewModel.sendMessage("моё")
         let id = viewModel.messages[0].id
         transport.emit(message: MessagePayload(reaction: ReactionPayload(targetID: id.uuidString, emoji: "👍"),
@@ -94,11 +93,11 @@ final class ReactionTests: XCTestCase {
                                                senderName: "Bob"), from: "bob")
         let cleared = await waitUntil { self.viewModel.messages[0].peerReaction == nil }
 
-        XCTAssertTrue(cleared)
+        #expect(cleared)
     }
 
     /// Реакция от третьего лица на переписку с Бобом — не его дело.
-    func test_reactionFromSomeoneElse_isIgnored() async {
+    @Test func reactionFromSomeoneElse_isIgnored() async {
         await viewModel.sendMessage("Бобу")
         let id = viewModel.messages[0].id
 
@@ -106,20 +105,20 @@ final class ReactionTests: XCTestCase {
                                                senderName: "Carol"), from: "carol")
         try? await Task.sleep(for: .milliseconds(150))
 
-        XCTAssertNil(viewModel.messages[0].peerReaction)
+        #expect(viewModel.messages[0].peerReaction == nil)
     }
 
-    func test_reaction_survivesTheWire() throws {
+    @Test func reaction_survivesTheWire() throws {
         let payload = MessagePayload(reaction: ReactionPayload(targetID: "abc", emoji: "🔥"), senderName: "A")
         let restored = try JSONDecoder().decode(MessagePayload.self, from: try JSONEncoder().encode(payload))
 
-        XCTAssertEqual(restored.reaction, payload.reaction)
+        #expect(restored.reaction == payload.reaction)
     }
 
-    func test_plainMessage_hasNoReactionOnTheWire() throws {
+    @Test func plainMessage_hasNoReactionOnTheWire() throws {
         let payload = MessagePayload(from: Message(text: "привет", isFromMe: true), senderName: "A")
         let wire = String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
 
-        XCTAssertFalse(wire.contains("reaction"))
+        #expect(!wire.contains("reaction"))
     }
 }

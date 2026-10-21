@@ -9,15 +9,16 @@
 //  доставляет каждому все.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class AsyncBroadcastTests: XCTestCase {
+struct AsyncBroadcastTests {
 
     // MARK: - Мультикаст
 
-    func test_twoSubscribers_eachReceivesEveryElement() async {
+    @Test func twoSubscribers_eachReceivesEveryElement() async {
         let broadcast = AsyncBroadcast<Int>()
 
         let first = broadcast.stream
@@ -35,22 +36,22 @@ final class AsyncBroadcastTests: XCTestCase {
 
         let (received1, received2) = await (firstValues, secondValues)
 
-        XCTAssertEqual(received1, [1, 2, 3])
-        XCTAssertEqual(received2, [1, 2, 3])
+        #expect(received1 == [1, 2, 3])
+        #expect(received2 == [1, 2, 3])
     }
 
     // MARK: - Реплей последнего значения
 
-    func test_replaysLatest_lateSubscriberSeesLastElement() async {
+    @Test func replaysLatest_lateSubscriberSeesLastElement() async {
         let broadcast = AsyncBroadcast<Int>(replaysLatest: true)
         broadcast.yield(42)
 
         let received = await collect(broadcast.stream, count: 1)
 
-        XCTAssertEqual(received, [42])
+        #expect(received == [42])
     }
 
-    func test_withoutReplay_lateSubscriberWaitsForNextElement() async {
+    @Test func withoutReplay_lateSubscriberWaitsForNextElement() async {
         let broadcast = AsyncBroadcast<Int>()
         broadcast.yield(42)
 
@@ -62,12 +63,12 @@ final class AsyncBroadcastTests: XCTestCase {
 
         let received = await values
 
-        XCTAssertEqual(received, [7], "Подписчик без реплея не должен видеть события до подписки")
+        #expect(received == [7], "Подписчик без реплея не должен видеть события до подписки")
     }
 
     // MARK: - Снятие подписки
 
-    func test_subscriberCount_dropsWhenConsumerStops() async {
+    @Test func subscriberCount_dropsWhenConsumerStops() async {
         let broadcast = AsyncBroadcast<Int>()
 
         let consumer = Task {
@@ -81,10 +82,10 @@ final class AsyncBroadcastTests: XCTestCase {
         await consumer.value
 
         let released = await waitUntil { broadcast.subscriberCount == 0 }
-        XCTAssertTrue(released, "onTermination должен снимать подписку сам")
+        #expect(released, "onTermination должен снимать подписку сам")
     }
 
-    func test_finish_terminatesAllSubscribers() async {
+    @Test func finish_terminatesAllSubscribers() async {
         let broadcast = AsyncBroadcast<Int>()
 
         let consumer = Task {
@@ -101,17 +102,17 @@ final class AsyncBroadcastTests: XCTestCase {
 
         let count = await consumer.value
 
-        XCTAssertEqual(count, 1)
-        XCTAssertEqual(broadcast.subscriberCount, 0)
+        #expect(count == 1)
+        #expect(broadcast.subscriberCount == 0)
     }
 
-    func test_yieldAfterFinish_isIgnored() async {
+    @Test func yieldAfterFinish_isIgnored() async {
         let broadcast = AsyncBroadcast<Int>()
         broadcast.finish()
         broadcast.yield(1)
 
         let received = await collect(broadcast.stream, count: 1, timeout: .milliseconds(200))
 
-        XCTAssertTrue(received.isEmpty)
+        #expect(received.isEmpty)
     }
 }

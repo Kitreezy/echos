@@ -1,0 +1,27 @@
+{
+  "configurations": [
+    {
+      "id": "64880C7E-A0D9-4AFA-BD93-4A8157424FCF",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {},
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA1100000000000000000001",
+        "name": "echosTests"
+      }
+    },
+    {
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA2200000000000000000001",
+        "name": "echosIntegrationTests"
+      }
+    }
+  ],
+  "version": 1
+}

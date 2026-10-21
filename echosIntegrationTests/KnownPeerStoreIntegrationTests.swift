@@ -5,79 +5,71 @@
 //  Список знакомых на настоящем Core Data стеке.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class KnownPeerStoreIntegrationTests: XCTestCase {
+@Suite(.tags(.persistence))
+struct KnownPeerStoreIntegrationTests {
 
-    private var store: KnownPeerStore!
+    private let store = KnownPeerStore(container: CoreDataTestStack.makeInMemory().container)
 
-    override func setUp() async throws {
-        try await super.setUp()
-        store = KnownPeerStore(container: CoreDataTestStack.makeInMemory().container)
-    }
-
-    override func tearDown() async throws {
-        store = nil
-        try await super.tearDown()
-    }
-
-    func test_rememberedPeer_isLoadedBack() async throws {
+    @Test func rememberedPeer_isLoadedBack() async throws {
         try await store.remember(address: "a1b2", name: "Bob")
 
         let known = try await store.loadKnownPeers()
 
-        XCTAssertEqual(known.map(\.address), ["a1b2"])
-        XCTAssertEqual(known.map(\.name), ["Bob"])
+        #expect(known.map(\.address) == ["a1b2"])
+        #expect(known.map(\.name) == ["Bob"])
     }
 
     /// Тёзка — отдельная запись: адрес другой, значит человек другой.
-    func test_sameNameFromAnotherAddress_isASecondEntry() async throws {
+    @Test func sameNameFromAnotherAddress_isASecondEntry() async throws {
         try await store.remember(address: "a1b2", name: "Bob")
         try await store.remember(address: "c3d4", name: "Bob")
 
         let known = try await store.loadKnownPeers()
 
-        XCTAssertEqual(known.count, 2)
-        XCTAssertEqual(Set(known.map(\.address)), ["a1b2", "c3d4"])
+        #expect(known.count == 2)
+        #expect(Set(known.map(\.address)) == ["a1b2", "c3d4"])
     }
 
     /// Повторный разговор под новым именем — принятие нового имени,
     /// а не вторая запись.
-    func test_rememberingAgain_updatesTheNameInPlace() async throws {
+    @Test func rememberingAgain_updatesTheNameInPlace() async throws {
         try await store.remember(address: "a1b2", name: "Bob")
         try await store.remember(address: "a1b2", name: "Роберт")
 
         let known = try await store.loadKnownPeers()
 
-        XCTAssertEqual(known.count, 1)
-        XCTAssertEqual(known.first?.name, "Роберт")
+        #expect(known.count == 1)
+        #expect(known.first?.name == "Роберт")
     }
 
-    func test_firstSeen_survivesRepeatedConversations() async throws {
+    @Test func firstSeen_survivesRepeatedConversations() async throws {
         try await store.remember(address: "a1b2", name: "Bob")
         let first = try await store.loadKnownPeers().first?.firstSeen
 
         try await store.remember(address: "a1b2", name: "Bob")
         let again = try await store.loadKnownPeers().first?.firstSeen
 
-        XCTAssertEqual(first, again, "Знакомство состоялось однажды")
+        #expect(first == again, "Знакомство состоялось однажды")
     }
 
-    func test_forgetAll_leavesNobody() async throws {
+    @Test func forgetAll_leavesNobody() async throws {
         try await store.remember(address: "a1b2", name: "Bob")
         try await store.remember(address: "c3d4", name: "Carol")
 
         try await store.forgetAll()
 
         let known = try await store.loadKnownPeers()
-        XCTAssertTrue(known.isEmpty)
+        #expect(known.isEmpty)
     }
 
     /// Запомненное переживает пересоздание хранилища поверх той же базы —
     /// иначе после перезапуска все снова были бы незнакомцами.
-    func test_memory_outlivesTheStoreObject() async throws {
+    @Test func memory_outlivesTheStoreObject() async throws {
         let container = CoreDataTestStack.makeInMemory().container
 
         let first = KnownPeerStore(container: container)
@@ -86,6 +78,6 @@ final class KnownPeerStoreIntegrationTests: XCTestCase {
         let second = KnownPeerStore(container: container)
         let known = try await second.loadKnownPeers()
 
-        XCTAssertEqual(known.map(\.name), ["Bob"])
+        #expect(known.map(\.name) == ["Bob"])
     }
 }

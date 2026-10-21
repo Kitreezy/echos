@@ -5,11 +5,12 @@
 //  Повтор неотправленного: то же сообщение, с тем же идентификатором.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class ResendTests: XCTestCase {
+struct ResendTests {
 
     private func makeViewModel(transport: LoopbackTransport) async -> ChatViewModel {
         let viewModel = ChatViewModel()
@@ -19,28 +20,27 @@ final class ResendTests: XCTestCase {
         return viewModel
     }
 
-    func test_failedMessage_isSentAgainWithTheSameID() async {
+    @Test func failedMessage_isSentAgainWithTheSameID() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
         transport.sendingFails = true
         await viewModel.sendMessage("не дошло")
         let failed = viewModel.messages[0]
-        XCTAssertEqual(failed.status, .failed)
-        XCTAssertTrue(transport.sentMessages.isEmpty)
+        #expect(failed.status == .failed)
+        #expect(transport.sentMessages.isEmpty)
 
         transport.sendingFails = false
         await viewModel.resend(failed.id)
 
-        XCTAssertEqual(viewModel.messages.count, 1, "Повтор — не новое сообщение")
-        XCTAssertEqual(viewModel.messages[0].status, .sent)
-        XCTAssertEqual(transport.sentMessages.count, 1)
-        XCTAssertEqual(transport.sentMessages[0].payload.id, failed.id.uuidString,
-                       "Тот же идентификатор: собеседник не сохранит дубль")
-        XCTAssertEqual(transport.sentMessages[0].recipient, "bob")
+        #expect(viewModel.messages.count == 1, "Повтор — не новое сообщение")
+        #expect(viewModel.messages[0].status == .sent)
+        #expect(transport.sentMessages.count == 1)
+        #expect(transport.sentMessages[0].payload.id == failed.id.uuidString, "Тот же идентификатор: собеседник не сохранит дубль")
+        #expect(transport.sentMessages[0].recipient == "bob")
     }
 
-    func test_failedMosaic_isSentAgainAsAGrid() async {
+    @Test func failedMosaic_isSentAgainAsAGrid() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
         let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟨", "", "", "🟨"])!
@@ -50,21 +50,21 @@ final class ResendTests: XCTestCase {
         transport.sendingFails = false
         await viewModel.resend(viewModel.messages[0].id)
 
-        XCTAssertEqual(viewModel.messages[0].status, .sent)
-        XCTAssertEqual(transport.sentMessages.first?.payload.mosaic, mosaic)
+        #expect(viewModel.messages[0].status == .sent)
+        #expect(transport.sentMessages.first?.payload.mosaic == mosaic)
     }
 
-    func test_sentMessage_isNotResent() async {
+    @Test func sentMessage_isNotResent() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
         await viewModel.sendMessage("дошло")
         await viewModel.resend(viewModel.messages[0].id)
 
-        XCTAssertEqual(transport.sentMessages.count, 1, "Дошедшее второй раз не уходит")
+        #expect(transport.sentMessages.count == 1, "Дошедшее второй раз не уходит")
     }
 
-    func test_resend_failsAgainQuietly() async {
+    @Test func resend_failsAgainQuietly() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -72,13 +72,13 @@ final class ResendTests: XCTestCase {
         await viewModel.sendMessage("всё ещё нет сети")
         await viewModel.resend(viewModel.messages[0].id)
 
-        XCTAssertEqual(viewModel.messages[0].status, .failed)
-        XCTAssertEqual(viewModel.messages.count, 1)
+        #expect(viewModel.messages[0].status == .failed)
+        #expect(viewModel.messages.count == 1)
     }
 
     /// Повторяется по адресу переписки, а не по открытой сейчас: человек
     /// мог уйти в другой чат, а повторить — из списка позже.
-    func test_resend_goesToTheMessagesOwnConversation() async {
+    @Test func resend_goesToTheMessagesOwnConversation() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -88,6 +88,6 @@ final class ResendTests: XCTestCase {
         viewModel.currentConversationPeer = "carol"
         await viewModel.resend(viewModel.messages[0].id)
 
-        XCTAssertEqual(transport.sentMessages.first?.recipient, "bob")
+        #expect(transport.sentMessages.first?.recipient == "bob")
     }
 }

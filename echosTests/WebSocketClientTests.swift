@@ -7,29 +7,17 @@
 //  проверяется как раз то, что происходит при реальном обрыве TCP.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class WebSocketClientTests: XCTestCase {
+@Suite(.relayServer, .tags(.network))
+struct WebSocketClientTests {
 
-    private var server: RelayServer!
-    private var monitor: FakeNetworkMonitor!
-
-    override func setUp() async throws {
-        try await super.setUp()
-        server = RelayServer()
-        try await server.start()
-        // Подставной монитор, чтобы тесты не зависели от реальной сети машины.
-        monitor = FakeNetworkMonitor()
-    }
-
-    override func tearDown() async throws {
-        await server.stop()
-        server = nil
-        monitor = nil
-        try await super.tearDown()
-    }
+    private var server: RelayServer { RelayFixture.server }
+    // Подставной монитор, чтобы тесты не зависели от реальной сети машины.
+    private let monitor = FakeNetworkMonitor()
 
     /// Клиент, который представляется серверу при каждом подключении —
     /// так же, как это делает `WebSocketTransport`.
@@ -53,7 +41,7 @@ final class WebSocketClientTests: XCTestCase {
 
     // MARK: - Подключение
 
-    func test_connect_reachesConnectedState() async {
+    @Test func connect_reachesConnectedState() async {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -61,22 +49,22 @@ final class WebSocketClientTests: XCTestCase {
 
         let connected = await waitUntil { client.state == .connected }
 
-        XCTAssertTrue(connected)
+        #expect(connected)
     }
 
-    func test_disconnect_returnsToDisconnected() async {
+    @Test func disconnect_returnsToDisconnected() async {
         let client = makeClient()
         client.connect()
         _ = await waitUntil { client.state == .connected }
 
         client.disconnect()
 
-        XCTAssertEqual(client.state, .disconnected)
+        #expect(client.state == .disconnected)
     }
 
     // MARK: - Обмен
 
-    func test_sentEnvelope_reachesAnotherClient() async throws {
+    @Test func sentEnvelope_reachesAnotherClient() async throws {
         let sender = makeClient(named: "Alice")
         let receiver = makeClient(named: "Bob")
         defer {
@@ -102,13 +90,13 @@ final class WebSocketClientTests: XCTestCase {
             return participants.map(\.name).sorted() == ["Alice", "Bob"]
         }
 
-        XCTAssertNotNil(bothPresent, "Оба клиента должны попасть в список присутствия")
+        #expect(bothPresent != nil, "Оба клиента должны попасть в список присутствия")
     }
 
     // MARK: - Живучесть
 
     /// Ключевой сценарий: сервер упал и поднялся, клиент вернулся сам.
-    func test_serverRestart_clientReconnectsOnItsOwn() async throws {
+    @Test func serverRestart_clientReconnectsOnItsOwn() async throws {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -123,12 +111,12 @@ final class WebSocketClientTests: XCTestCase {
             client.state == .connected && client.connectionAttempts > attemptsBefore
         }
 
-        XCTAssertTrue(reconnected, "После перезапуска сервера клиент обязан вернуться сам")
+        #expect(reconnected, "После перезапуска сервера клиент обязан вернуться сам")
     }
 
     /// Сообщение, отправленное без соединения, не теряется — уходит после
     /// восстановления связи.
-    func test_messageSentWhileOffline_isDeliveredAfterReconnect() async throws {
+    @Test func messageSentWhileOffline_isDeliveredAfterReconnect() async throws {
         let sender = makeClient(named: "Alice")
         defer { sender.disconnect() }
 
@@ -152,40 +140,38 @@ final class WebSocketClientTests: XCTestCase {
             self.server.receivedMessageMarkers.contains("из оффлайна")
         }
 
-        XCTAssertTrue(delivered, "Отложенное сообщение должно уйти после восстановления связи")
+        #expect(delivered, "Отложенное сообщение должно уйти после восстановления связи")
 
         // Порядок важен: hello обязан прийти раньше сообщения, иначе сервер
         // не знает, от кого оно, и выбрасывает его.
         let kinds = server.received.map(\.kind)
-        XCTAssertEqual(kinds.first, .hello)
+        #expect(kinds.first == .hello)
     }
 
     // MARK: - Backoff
 
-    func test_reconnectDelay_growsExponentiallyAndIsCapped() {
+    @Test func reconnectDelay_growsExponentiallyAndIsCapped() {
         let client = makeClient()
         client.initialReconnectDelay = .seconds(1)
         client.maxReconnectDelay = .seconds(30)
 
         // Джиттер — половина интервала, поэтому проверяем границы, а не значение.
-        XCTAssertGreaterThanOrEqual(client.reconnectDelay(for: 1).inSeconds, 0.5)
-        XCTAssertLessThanOrEqual(client.reconnectDelay(for: 1).inSeconds, 1.0)
+        #expect(client.reconnectDelay(for: 1).inSeconds >= 0.5)
+        #expect(client.reconnectDelay(for: 1).inSeconds <= 1.0)
 
-        XCTAssertGreaterThanOrEqual(client.reconnectDelay(for: 3).inSeconds, 2.0)
-        XCTAssertLessThanOrEqual(client.reconnectDelay(for: 3).inSeconds, 4.0)
+        #expect(client.reconnectDelay(for: 3).inSeconds >= 2.0)
+        #expect(client.reconnectDelay(for: 3).inSeconds <= 4.0)
 
-        XCTAssertLessThanOrEqual(client.reconnectDelay(for: 50).inSeconds, 30.0,
-                                 "Потолок должен держать задержку конечной")
+        #expect(client.reconnectDelay(for: 50).inSeconds <= 30.0, "Потолок должен держать задержку конечной")
     }
 
-    func test_reconnectDelay_isJittered() {
+    @Test func reconnectDelay_isJittered() {
         let client = makeClient()
         client.initialReconnectDelay = .seconds(10)
         client.maxReconnectDelay = .seconds(60)
 
         let delays = (0..<20).map { _ in client.reconnectDelay(for: 3).inSeconds }
 
-        XCTAssertGreaterThan(Set(delays).count, 1,
-                             "Без разброса все клиенты вернутся одновременно и снова положат сервер")
+        #expect(Set(delays).count > 1, "Без разброса все клиенты вернутся одновременно и снова положат сервер")
     }
 }

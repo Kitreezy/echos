@@ -6,7 +6,8 @@
 //
 
 import Foundation
-import XCTest
+import Foundation
+import Testing
 
 /// Ждёт выполнения условия, опрашивая его до таймаута.
 ///

@@ -72,6 +72,7 @@ final class WebSocketTransport: NSObject {
 
     /// Ключ, которым подписывается рукопожатие.
     private let identity: DeviceIdentity?
+    private let notificationCenter: NotificationCenter
 
     /// Свой сессионный ключ. Один на соединение: создаётся перед hello и
     /// меняется при каждом переподключении, так что записанное в прошлом
@@ -129,11 +130,16 @@ final class WebSocketTransport: NSObject {
     /// - Parameter backgroundGrace: сколько держать соединение после
     ///   сворачивания. По умолчанию — сколько даёт система; тесты ставят
     ///   меньше.
+    /// - Parameter notificationCenter: откуда узнавать об уходе в фон.
+    ///   Тесты дают свой: тесты идут параллельно, и «приложение свернули»
+    ///   из одного теста иначе сворачивало бы транспорты всех остальных.
     init(url: URL,
          displayName: String = UserSettings.displayName,
          identity: DeviceIdentity? = nil,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared,
-         backgroundGrace: Duration = BackgroundLease.duration) {
+         backgroundGrace: Duration = BackgroundLease.duration,
+         notificationCenter: NotificationCenter = .default) {
+        self.notificationCenter = notificationCenter
         self.myDisplayName = displayName
         self.identity = identity ?? (try? DeviceIdentity.current())
         self.myAddress = self.identity?.fingerprint ?? ""
@@ -144,7 +150,7 @@ final class WebSocketTransport: NSObject {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        notificationCenter.removeObserver(self)
     }
 
     // MARK: - App Lifecycle
@@ -155,14 +161,14 @@ final class WebSocketTransport: NSObject {
     /// из чата, минуя радар, оставлял сокет умирать по таймауту. Транспорт же
     /// жив всё время, пока идёт сессия.
     private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(
+        notificationCenter.addObserver(
             self,
             selector: #selector(appDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
 
-        NotificationCenter.default.addObserver(
+        notificationCenter.addObserver(
             self,
             selector: #selector(appWillEnterForeground),
             name: UIApplication.willEnterForegroundNotification,
