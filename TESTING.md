@@ -9,6 +9,8 @@ echosTests/               # Unit — чистая логика, без I/O. Ми
         SpyMessageStore.swift     # хранилище-шпион
         FakeNetworkMonitor.swift  # подставной NWPathMonitor
         RelayServer.swift         # WebSocket-сервер на NWListener
+        RelayFixture.swift        # трейт .relayServer — свой релей на тест
+        Tags.swift                # теги network / crypto / persistence
         AsyncTestSupport.swift    # waitUntil / firstElement / collect
     MultipeerPacketTests.swift
     MessagePayloadTests.swift
@@ -35,19 +37,17 @@ Unit гоняются на каждое сохранение, интеграци
 
 ## Запуск
 
-Всё сразу (схема `echos` собирает приложение и гоняет оба бандла):
+Тесты — на Swift Testing. Два тест-плана: `echos` (по умолчанию) гоняет всё,
+`Fast` — всё, кроме тега `network`, то есть без настоящего сокета и релея.
+Fast идёт вдвое быстрее и годится на каждое сохранение, полный — перед пушем.
 
 ```bash
-xcodebuild test -project echos.xcodeproj -scheme echos -destination 'platform=iOS Simulator,name=iPhone 16 Pro Test'
+xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fast -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-Только быстрые:
-
-```bash
-xcodebuild test -project echos.xcodeproj -scheme echosTests -destination 'platform=iOS Simulator,name=iPhone 16 Pro Test'
-```
-
-Список доступных симуляторов: `xcrun simctl list devices available`.
+Полный — тот же вызов без `-testPlan` или с `-testPlan echos`. Симуляторов с
+одним именем бывает несколько — тогда `-destination 'id=…'`; список —
+`xcrun simctl list devices available`.
 
 ## Как устроена изоляция
 
@@ -73,14 +73,40 @@ xcodebuild test -project echos.xcodeproj -scheme echosTests -destination 'platfo
   Keychain симулятора в интеграционных тестах под одноразовым `service`: там
   важно, как отвечает Security, а не как мы это трактуем.
 
+## Параллельный запуск
+
+Swift Testing гоняет тесты параллельно в одном процессе — и наборы, и тесты
+внутри набора. XCTest гонял класс по одному методу, и всё общее, что тесты
+трогали, никому не мешало. Переход это вскрыл, и правила отсюда:
+
+- **Ничего глобального.** Что код слушает или пишет глобально, тест получает
+  своё. `WebSocketTransport` и `WallViewModel` берут центр уведомлений
+  параметром: «приложение свернули» из одного теста иначе сворачивало
+  транспорты всех соседних, а «изменения из iCloud» перечитывали чужую стену.
+- **Общее хранилище — по очереди.** Тесты, которые пишут в один и тот же
+  UserDefaults, помечены `.serialized` (черновики и шаблоны мозаики).
+  Keychain и Core Data изолированы иначе: свой `service` и свой стек на тест.
+- **Ждать нужную сторону.** Релей считает клиента своим раньше, чем клиент
+  переводит своё состояние, а ключ собеседника приходит отдельным кругом
+  после рукопожатия. Под нагрузкой эти зазоры попадали в проверки: ждите
+  того, что проверяете, а не соседнего события.
+- **Подготовка и уборка.** Подготовка — `init`, синхронная уборка — `deinit`
+  в наборе-классе, асинхронная — трейт с областью действия, как
+  `.relayServer`: асинхронного `deinit` не бывает.
+
+Параллельный прогон нашёл и ошибку в приложении: обработчик ping вызывался
+дважды при обрыве соединения, и второе возобновление продолжения роняло
+процесс. У одного пользователя такое стечение редкое, у десятков соединений
+в тестах — каждый раз.
+
 ## Соглашения
 
-- Имя теста: `test_<что>_<при каких условиях>_<что ожидаем>`.
-- Префикс `test_KNOWN_ISSUE_` — тест описывает **текущее** поведение, а не желаемое.
-  Он зелёный и держит баг под наблюдением. Когда баг чинят: инвертировать
-  ожидание → тест краснеет → править код → зелёный.
-- Никаких `sleep`. Ожидание асинхронного — через `XCTestExpectation`
-  и `await fulfillment(of:timeout:)`.
+- Имя теста: `<что>_<при каких условиях>_<что ожидаем>`.
+- Таблица входов — `@Test(arguments:)`: каждый вход — отдельный случай в
+  отчёте. Пары входа и ожидания — через `zip`, иначе списки перемножаются.
+- Известный дефект — `withKnownIssue`: тест зелёный, пока дефект на месте, и
+  сообщает, когда его починили.
+- Никаких `sleep` ради ожидания результата.
 - Исключение — потоки. `debounce`, `throttle` и `chunked` по своей природе
   отдают результат «через интервал», ждать одного события бессмысленно. Для
   них есть `waitUntil` — опрос условия до таймаута. Чтобы тесты не занимали
@@ -106,17 +132,12 @@ xcodebuild test -project echos.xcodeproj -scheme echosTests -destination 'platfo
 `WebSocketContractTests` — набор сценариев, не привязанный к конкретной
 реализации `RawWebSocket`: подключение, обмен, возврат после падения сервера,
 heartbeat, пауза без сети, мгновенный реконнект, доставка отложенного.
-Наследник подменяет `makeRawSocket(url:)` — код тестов не меняется.
+Реализации — аргументами: каждый сценарий идёт на каждой из
+`RawSocketImplementation.allCases`, и в отчёте видно, на какой упало. В XCTest
+это было наследованием набора, которого в Swift Testing нет.
 
 Так сравнивался свой клиент со Starscream: `docs/adr/001-websocket-client.md`.
 Ветка спайка — `spike/starscream_comparison`.
-
-## Зафиксированные дефекты
-
-| Тест | Суть |
-|---|---|
-| `test_KNOWN_ISSUE_loadMessagesWithPeer_leaksAllOutgoingMessages` | Предикат `isFromMe == YES OR senderName == peer`, а у исходящих `senderName == nil` → в чат с одним собеседником протекают свои реплики из других чатов. Чинится привязкой исходящих к получателю. |
-| `test_KNOWN_ISSUE_deleteConversation_leavesOutgoingMessagesBehind` | Удаление диалога чистит только входящие; свои реплики остаются в базе навсегда. |
 
 ## Что дальше
 

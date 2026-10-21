@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import os
 
 @MainActor
 final class URLSessionRawSocket: NSObject, RawWebSocket {
@@ -79,8 +80,22 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
             throw RelayError.notConnected
         }
 
+        // Обработчик бывает вызван дважды: когда соединение рвётся в момент
+        // ping, приходит и ответ, и ошибка обрыва. Второе возобновление
+        // продолжения — немедленный крэш, поэтому возобновляет только первый
+        // вызов. Нашёл это параллельный прогон тестов: десятки соединений
+        // рвутся одновременно, и стечение, редкое у одного пользователя,
+        // случается каждый раз.
+        let resumed = OSAllocatedUnfairLock(initialState: false)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             socket.sendPing { error in
+                let isFirst = resumed.withLock { done in
+                    defer { done = true }
+                    return !done
+                }
+                guard isFirst else {
+                    return
+                }
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

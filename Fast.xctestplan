@@ -1,0 +1,37 @@
+{
+  "configurations": [
+    {
+      "id": "8915D0BF-D5CC-408F-876A-8E1E0E38DCEA",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {},
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA1100000000000000000001",
+        "name": "echosTests"
+      },
+      "skippedTags": {
+        "tags": [
+          "network"
+        ]
+      }
+    },
+    {
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA2200000000000000000001",
+        "name": "echosIntegrationTests"
+      },
+      "skippedTags": {
+        "tags": [
+          "network"
+        ]
+      }
+    }
+  ],
+  "version": 1
+}

@@ -5,67 +5,69 @@
 //  Сохранённые мозаики: свежая первой, повторов нет, удаление работает.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
-final class MosaicTemplateTests: XCTestCase {
+/// Шаблоны — общий список в UserDefaults: тесты набора идут по очереди,
+/// иначе один очищает список посреди другого.
+@Suite(.serialized, .tags(.persistence))
+final class MosaicTemplateTests {
 
-    override func setUp() {
-        super.setUp()
+    init() {
         UserSettings.mosaicTemplates = []
     }
 
-    override func tearDown() {
+    deinit {
         UserSettings.mosaicTemplates = []
-        super.tearDown()
     }
 
     private func mosaic(_ cell: String) -> Mosaic {
         Mosaic(columns: 2, rows: 2).setting(column: 0, row: 0, to: cell)
     }
 
-    func test_saved_isFirst() {
+    @Test func saved_isFirst() {
         UserSettings.saveMosaicTemplate(mosaic("🟨"))
         UserSettings.saveMosaicTemplate(mosaic("🟦"))
 
-        XCTAssertEqual(UserSettings.mosaicTemplates.first, mosaic("🟦"))
-        XCTAssertEqual(UserSettings.mosaicTemplates.count, 2)
+        #expect(UserSettings.mosaicTemplates.first == mosaic("🟦"))
+        #expect(UserSettings.mosaicTemplates.count == 2)
     }
 
-    func test_sameMosaicTwice_movesItUpInsteadOfDuplicating() {
+    @Test func sameMosaicTwice_movesItUpInsteadOfDuplicating() {
         UserSettings.saveMosaicTemplate(mosaic("🟨"))
         UserSettings.saveMosaicTemplate(mosaic("🟦"))
         UserSettings.saveMosaicTemplate(mosaic("🟨"))
 
-        XCTAssertEqual(UserSettings.mosaicTemplates, [mosaic("🟨"), mosaic("🟦")])
+        #expect(UserSettings.mosaicTemplates == [mosaic("🟨"), mosaic("🟦")])
     }
 
-    func test_emptyMosaic_isNotSaved() {
+    @Test func emptyMosaic_isNotSaved() {
         UserSettings.saveMosaicTemplate(Mosaic(columns: 4, rows: 4))
-        XCTAssertTrue(UserSettings.mosaicTemplates.isEmpty, "Пустая сетка — не рисунок")
+        #expect(UserSettings.mosaicTemplates.isEmpty, "Пустая сетка — не рисунок")
     }
 
-    func test_delete_removesOnlyThatOne() {
+    @Test func delete_removesOnlyThatOne() {
         UserSettings.saveMosaicTemplate(mosaic("🟨"))
         UserSettings.saveMosaicTemplate(mosaic("🟦"))
 
         UserSettings.deleteMosaicTemplate(mosaic("🟨"))
 
-        XCTAssertEqual(UserSettings.mosaicTemplates, [mosaic("🟦")])
+        #expect(UserSettings.mosaicTemplates == [mosaic("🟦")])
     }
 
-    func test_templates_surviveEncoding() {
+    @Test func templates_surviveEncoding() {
         let rich = Mosaic(columns: 3, rows: 2, cells: ["🟥", "", "🟦", "🐱", "🍕", ""])!
         UserSettings.saveMosaicTemplate(rich)
 
-        XCTAssertEqual(UserSettings.mosaicTemplates.first, rich)
+        #expect(UserSettings.mosaicTemplates.first == rich)
     }
 
-    func test_tooMany_areTrimmed() {
+    @Test func tooMany_areTrimmed() {
         for index in 0..<40 {
             UserSettings.saveMosaicTemplate(Mosaic(columns: 8, rows: 8)
                 .setting(column: index % 8, row: index / 8, to: "🟨"))
         }
-        XCTAssertLessThanOrEqual(UserSettings.mosaicTemplates.count, 24)
+        #expect(UserSettings.mosaicTemplates.count <= 24)
     }
 }

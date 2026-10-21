@@ -5,11 +5,12 @@
 //  Unit: как ViewModel читает потоки транспорта после перехода на операторы.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class ChatViewModelStreamTests: XCTestCase {
+struct ChatViewModelStreamTests {
 
     /// Интервалы в проде — сотни миллисекунд и секунды; в тестах их укорачиваем,
     /// иначе каждая проверка стоила бы несколько секунд ожидания.
@@ -54,7 +55,7 @@ final class ChatViewModelStreamTests: XCTestCase {
 
     // MARK: - Слияние потоков
 
-    func test_mergedLoop_handlesAllThreeStreams() async {
+    @Test func mergedLoop_handlesAllThreeStreams() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -66,15 +67,15 @@ final class ChatViewModelStreamTests: XCTestCase {
         let gotTyping = await waitUntil { viewModel.typingPeerName == "Alice" }
         let gotPeers = await waitUntil { viewModel.peers.count == 1 }
 
-        XCTAssertTrue(gotMessage)
-        XCTAssertTrue(gotTyping)
-        XCTAssertTrue(gotPeers)
+        #expect(gotMessage)
+        #expect(gotTyping)
+        #expect(gotPeers)
     }
 
     /// Регрессия: `initialize()` вызывается повторно (возврат из фона, смена
     /// экрана). Раньше каждый вызов добавлял ещё три подписки, и одно входящее
     /// сообщение попадало в список несколько раз.
-    func test_repeatedInitialize_doesNotDuplicateIncomingMessages() async {
+    @Test func repeatedInitialize_doesNotDuplicateIncomingMessages() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -82,19 +83,19 @@ final class ChatViewModelStreamTests: XCTestCase {
         viewModel.initialize(transport: transport, store: SpyMessageStore())
 
         let reconnected = await waitUntil { transport.pipelinesConnected == 3 }
-        XCTAssertTrue(reconnected)
+        #expect(reconnected)
 
         transport.emit(message: payload("однажды"))
 
         _ = await waitUntil { viewModel.messages.count == 1 }
         try? await Task.sleep(for: .milliseconds(200))
 
-        XCTAssertEqual(viewModel.messages.count, 1)
+        #expect(viewModel.messages.count == 1)
     }
 
     // MARK: - Дедупликация пиров
 
-    func test_duplicatePeerUpdates_areAppliedOnce() async {
+    @Test func duplicatePeerUpdates_areAppliedOnce() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -105,25 +106,25 @@ final class ChatViewModelStreamTests: XCTestCase {
 
         transport.emit(peers: snapshot(status: .notConnected))
         let applied = await waitUntil { viewModel.appliedPeerUpdates == 1 }
-        XCTAssertTrue(applied)
+        #expect(applied)
 
         // Повтор отличается только временем последнего обнаружения.
         transport.emit(peers: snapshot(status: .notConnected))
         try? await Task.sleep(for: .milliseconds(500))
 
-        XCTAssertEqual(viewModel.appliedPeerUpdates, 1, "Содержательный дубликат не должен доходить до UI")
+        #expect(viewModel.appliedPeerUpdates == 1, "Содержательный дубликат не должен доходить до UI")
 
         // Реальное изменение статуса пройти обязано.
         transport.emit(peers: snapshot(status: .connected))
         let secondApplied = await waitUntil { viewModel.appliedPeerUpdates == 2 }
 
-        XCTAssertTrue(secondApplied)
-        XCTAssertEqual(viewModel.peers.first?.status, .connected)
+        #expect(secondApplied)
+        #expect(viewModel.peers.first?.status == .connected)
     }
 
     // MARK: - Индикатор набора
 
-    func test_burstOfKeystrokes_sendsSingleTypingStart() async {
+    @Test func burstOfKeystrokes_sendsSingleTypingStart() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport)
 
@@ -134,27 +135,26 @@ final class ChatViewModelStreamTests: XCTestCase {
 
         let started = await waitUntil { transport.sentTypingTypes.contains(.start) }
 
-        XCTAssertTrue(started)
-        XCTAssertEqual(transport.sentTypingTypes.filter { $0 == .start }.count, 1,
-                       "Серия нажатий должна давать ровно один start")
+        #expect(started)
+        #expect(transport.sentTypingTypes.filter { $0 == .start }.count == 1, "Серия нажатий должна давать ровно один start")
     }
 
-    func test_pauseAfterTyping_sendsStop() async {
+    @Test func pauseAfterTyping_sendsStop() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport)
 
         viewModel.startTyping()
 
         let started = await waitUntil { transport.sentTypingTypes.contains(.start) }
-        XCTAssertTrue(started)
+        #expect(started)
 
         let stopped = await waitUntil { transport.sentTypingTypes.contains(.stop) }
 
-        XCTAssertTrue(stopped, "После паузы дольше typingIdleTimeout должен уйти stop")
-        XCTAssertEqual(transport.sentTypingTypes, [.start, .stop])
+        #expect(stopped, "После паузы дольше typingIdleTimeout должен уйти stop")
+        #expect(transport.sentTypingTypes == [.start, .stop])
     }
 
-    func test_explicitStopTyping_doesNotSendStopTwice() async {
+    @Test func explicitStopTyping_doesNotSendStopTwice() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport)
 
@@ -167,12 +167,12 @@ final class ChatViewModelStreamTests: XCTestCase {
         // Ждём, пока сработает и отложенный stop по таймауту бездействия.
         try? await Task.sleep(for: .milliseconds(400))
 
-        XCTAssertEqual(transport.sentTypingTypes.filter { $0 == .stop }.count, 1)
+        #expect(transport.sentTypingTypes.filter { $0 == .stop }.count == 1)
     }
 
     // MARK: - Очередь записи
 
-    func test_incomingMessages_arePersistedInOrder() async {
+    @Test func incomingMessages_arePersistedInOrder() async {
         let transport = LoopbackTransport()
         let store = SpyMessageStore()
         let viewModel = await makeViewModel(transport: transport, store: store)
@@ -183,12 +183,12 @@ final class ChatViewModelStreamTests: XCTestCase {
 
         let persisted = await waitUntil { store.saved.count == 3 }
 
-        XCTAssertTrue(persisted)
-        XCTAssertEqual(store.savedTexts, ["раз", "два", "три"])
-        XCTAssertEqual(viewModel.messages.count, 3)
+        #expect(persisted)
+        #expect(store.savedTexts == ["раз", "два", "три"])
+        #expect(viewModel.messages.count == 3)
     }
 
-    func test_sentMessage_isPersistedWithFinalStatus() async {
+    @Test func sentMessage_isPersistedWithFinalStatus() async {
         let transport = LoopbackTransport()
         let store = SpyMessageStore()
         let viewModel = await makeViewModelInConversation(transport: transport, store: store)
@@ -197,30 +197,29 @@ final class ChatViewModelStreamTests: XCTestCase {
 
         let persisted = await waitUntil { store.saved.contains { $0.text == "исходящее" } }
 
-        XCTAssertTrue(persisted)
-        XCTAssertEqual(store.saved.last?.status, .sent)
-        XCTAssertEqual(transport.sentMessages.count, 1)
-        XCTAssertEqual(transport.sentMessages.first?.recipient, "Bob",
-                       "Переписка один на один и есть один на один")
+        #expect(persisted)
+        #expect(store.saved.last?.status == .sent)
+        #expect(transport.sentMessages.count == 1)
+        #expect(transport.sentMessages.first?.recipient == "Bob", "Переписка один на один и есть один на один")
     }
 
     /// Без выбранного собеседника отправлять некому. Раньше сообщение
     /// уходило всем на релее, теперь помечается непосланным.
-    func test_messageWithoutConversation_isMarkedFailed() async {
+    @Test func messageWithoutConversation_isMarkedFailed() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
         viewModel.currentConversationPeer = nil
 
         await viewModel.sendMessage("в никуда")
 
-        XCTAssertTrue(transport.sentMessages.isEmpty)
-        XCTAssertEqual(viewModel.messages.last?.status, .failed)
+        #expect(transport.sentMessages.isEmpty)
+        #expect(viewModel.messages.last?.status == .failed)
     }
 
     // MARK: - Адресация
 
     /// Ради этого вся адресация по ключу и затевалась.
-    func test_messageFromANamesake_doesNotEnterTheOpenConversation() async {
+    @Test func messageFromANamesake_doesNotEnterTheOpenConversation() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport, with: "bob-address")
 
@@ -234,10 +233,10 @@ final class ChatViewModelStreamTests: XCTestCase {
             viewModel.messages.contains { $0.text == "я Bob, честно" }
         }
 
-        XCTAssertFalse(leaked, "В открытую переписку попадает только то, что пришло с её адреса")
+        #expect(!leaked, "В открытую переписку попадает только то, что пришло с её адреса")
     }
 
-    func test_messageFromTheConversationAddress_isShown() async {
+    @Test func messageFromTheConversationAddress_isShown() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport, with: "bob-address")
 
@@ -249,11 +248,11 @@ final class ChatViewModelStreamTests: XCTestCase {
             viewModel.messages.contains { $0.text == "настоящий Bob" }
         }
 
-        XCTAssertTrue(shown)
+        #expect(shown)
     }
 
     /// Индикатор набора гасит тот же, кто его зажёг.
-    func test_typingStopFromAnotherAddress_doesNotClearTheIndicator() async {
+    @Test func typingStopFromAnotherAddress_doesNotClearTheIndicator() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -268,14 +267,14 @@ final class ChatViewModelStreamTests: XCTestCase {
             viewModel.typingPeerName == nil
         }
 
-        XCTAssertFalse(cleared, "Погасить чужой индикатор, назвавшись тем же именем, нельзя")
+        #expect(!cleared, "Погасить чужой индикатор, назвавшись тем же именем, нельзя")
     }
 
     // MARK: - Узнавание
 
     /// Знакомство заводится разговором, а не встречей: иначе знакомыми стали
     /// бы все, кто попал в список, и отличать тёзку было бы не от кого.
-    func test_seeingAPeer_doesNotMakeItKnown() async {
+    @Test func seeingAPeer_doesNotMakeItKnown() async {
         let transport = LoopbackTransport()
         let knownPeers = SpyKnownPeerStore()
         let viewModel = await makeViewModel(transport: transport, knownPeers: knownPeers)
@@ -283,10 +282,10 @@ final class ChatViewModelStreamTests: XCTestCase {
         transport.emit(peers: [Peer(address: "bob-address", displayName: "Bob")])
         _ = await waitUntil { !viewModel.peers.isEmpty }
 
-        XCTAssertTrue(knownPeers.remembered.isEmpty)
+        #expect(knownPeers.remembered.isEmpty)
     }
 
-    func test_sendingAMessage_remembersTheRecipient() async {
+    @Test func sendingAMessage_remembersTheRecipient() async {
         let transport = LoopbackTransport()
         let knownPeers = SpyKnownPeerStore()
         let viewModel = await makeViewModelInConversation(transport: transport,
@@ -296,11 +295,11 @@ final class ChatViewModelStreamTests: XCTestCase {
 
         await viewModel.sendMessage("привет")
 
-        XCTAssertEqual(knownPeers.remembered.map(\.address), ["bob-address"])
-        XCTAssertEqual(knownPeers.remembered.map(\.name), ["Bob"])
+        #expect(knownPeers.remembered.map(\.address) == ["bob-address"])
+        #expect(knownPeers.remembered.map(\.name) == ["Bob"])
     }
 
-    func test_afterTalking_thePeerIsRecognized() async {
+    @Test func afterTalking_thePeerIsRecognized() async {
         let transport = LoopbackTransport()
         let knownPeers = SpyKnownPeerStore()
         let viewModel = await makeViewModelInConversation(transport: transport,
@@ -313,13 +312,13 @@ final class ChatViewModelStreamTests: XCTestCase {
         let bob = Peer(address: "bob-address", displayName: "Bob")
         let namesake = Peer(address: "someone-else", displayName: "Bob")
 
-        XCTAssertEqual(viewModel.recognition(for: bob), .known)
-        XCTAssertEqual(viewModel.recognition(for: namesake), .namesake)
+        #expect(viewModel.recognition(for: bob) == .known)
+        #expect(viewModel.recognition(for: namesake) == .namesake)
     }
 
     /// Список знакомых поднимается до первого присутствия, иначе первые
     /// доли секунды все выглядели бы незнакомцами.
-    func test_startingDiscovery_loadsKnownPeersFirst() async {
+    @Test func startingDiscovery_loadsKnownPeersFirst() async {
         let transport = LoopbackTransport()
         let knownPeers = SpyKnownPeerStore()
         knownPeers.preloaded = [KnownPeer(address: "bob-address",
@@ -331,7 +330,7 @@ final class ChatViewModelStreamTests: XCTestCase {
         await viewModel.startDeviceDiscovery()
 
         let bob = Peer(address: "bob-address", displayName: "Bob")
-        XCTAssertEqual(viewModel.recognition(for: bob), .known)
+        #expect(viewModel.recognition(for: bob) == .known)
     }
 
     // MARK: - Строка под заголовком
@@ -343,7 +342,7 @@ final class ChatViewModelStreamTests: XCTestCase {
     }
 
     /// Имя уже в заголовке; под ним — то, чем собеседника можно сверить.
-    func test_reachablePeer_showsLockAndAddress() async {
+    @Test func reachablePeer_showsLockAndAddress() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport,
                                                           with: "93f440ee4f07d563",
@@ -352,10 +351,10 @@ final class ChatViewModelStreamTests: XCTestCase {
         transport.emit(peers: [peer("93f440ee4f07d563", "Bob")])
         _ = await waitUntil { !viewModel.peers.isEmpty }
 
-        XCTAssertEqual(viewModel.connectionStatus, "зашифровано · 93f4 40ee 4f07 d563")
+        #expect(viewModel.connectionStatus == "зашифровано · 93f4 40ee 4f07 d563")
     }
 
-    func test_peerNotInTheRoom_saysSo() async {
+    @Test func peerNotInTheRoom_saysSo() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport,
                                                           with: "bob-address",
@@ -364,12 +363,12 @@ final class ChatViewModelStreamTests: XCTestCase {
         transport.emit(peers: [peer("someone-else", "Carol")])
         _ = await waitUntil { !viewModel.peers.isEmpty }
 
-        XCTAssertEqual(viewModel.connectionStatus, "не на связи")
+        #expect(viewModel.connectionStatus == "не на связи")
     }
 
     /// Раньше строка перечисляла всех, кто на связи, и с тёзками читалась
     /// буквально как «Bob, Bob».
-    func test_namesakeInTheRoom_doesNotLeakIntoTheSubtitle() async {
+    @Test func namesakeInTheRoom_doesNotLeakIntoTheSubtitle() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport,
                                                           with: "bob-address",
@@ -379,13 +378,12 @@ final class ChatViewModelStreamTests: XCTestCase {
                                peer("impostor-address", "Bob")])
         _ = await waitUntil { viewModel.peers.count == 2 }
 
-        XCTAssertEqual(viewModel.connectionStatus, "зашифровано · bob-address",
-                       "Адрес — того, с кем разговор, и только его")
+        #expect(viewModel.connectionStatus == "зашифровано · bob-address", "Адрес — того, с кем разговор, и только его")
     }
 
     /// Вне чата сказать можно только сколько рядом: перечислять имена
     /// там некому и незачем.
-    func test_withoutAConversation_countsInstead() async {
+    @Test func withoutAConversation_countsInstead() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -393,7 +391,7 @@ final class ChatViewModelStreamTests: XCTestCase {
                                peer("b", "Carol", .notConnected)])
         _ = await waitUntil { viewModel.peers.count == 2 }
 
-        XCTAssertEqual(viewModel.connectionStatus, "Рядом: 2")
+        #expect(viewModel.connectionStatus == "Рядом: 2")
     }
 
     // MARK: - Список собеседников
@@ -402,7 +400,7 @@ final class ChatViewModelStreamTests: XCTestCase {
     /// `_throttle(latest:)`, и последнее значение придерживалось до следующего
     /// события — которого могло не быть. Список оставался отстающим на одно
     /// обновление: на экране «рядом 1», на релее двое.
-    func test_peersArrivingTogether_allReachTheList() async {
+    @Test func peersArrivingTogether_allReachTheList() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -411,12 +409,12 @@ final class ChatViewModelStreamTests: XCTestCase {
 
         let both = await waitUntil { viewModel.peers.count == 2 }
 
-        XCTAssertTrue(both, "На экране осталось \(viewModel.peers.count) из двух")
-        XCTAssertEqual(viewModel.peers.map(\.address).sorted(), ["bob", "carol"])
+        #expect(both, "На экране осталось \(viewModel.peers.count) из двух")
+        #expect(viewModel.peers.map(\.address).sorted() == ["bob", "carol"])
     }
 
     /// Уход последнего собеседника — тоже конец серии, и его тоже теряли.
-    func test_lastPeerLeaving_emptiesTheList() async {
+    @Test func lastPeerLeaving_emptiesTheList() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
@@ -426,7 +424,7 @@ final class ChatViewModelStreamTests: XCTestCase {
         transport.emit(peers: [])
 
         let emptied = await waitUntil { viewModel.peers.isEmpty }
-        XCTAssertTrue(emptied)
+        #expect(emptied)
     }
 
     // MARK: - Автопереход
@@ -434,7 +432,7 @@ final class ChatViewModelStreamTests: XCTestCase {
     /// Раньше очередное присутствие открывало чат с первым подключённым
     /// собеседником поверх уже открытого. Через релей на связи сразу все, и
     /// первым оказывается кто угодно.
-    func test_incomingPresence_leavesTheOpenConversationAlone() async {
+    @Test func incomingPresence_leavesTheOpenConversationAlone() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModelInConversation(transport: transport,
                                                           with: "bob-address",
@@ -443,20 +441,20 @@ final class ChatViewModelStreamTests: XCTestCase {
         transport.emit(peers: [peer("someone-else", "Carol")])
         _ = await waitUntil { !viewModel.peers.isEmpty }
 
-        XCTAssertEqual(viewModel.currentConversationPeer, "bob-address")
-        XCTAssertEqual(viewModel.currentConversationName, "Bob")
+        #expect(viewModel.currentConversationPeer == "bob-address")
+        #expect(viewModel.currentConversationName == "Bob")
     }
 
     /// Но когда чат не открыт, подключившийся собеседник его открывает —
     /// у Multipeer это момент, когда приглашение приняли.
-    func test_withoutAConversation_connectedPeerOpensOne() async {
+    @Test func withoutAConversation_connectedPeerOpensOne() async {
         let transport = LoopbackTransport()
         let viewModel = await makeViewModel(transport: transport)
 
         transport.emit(peers: [peer("bob-address", "Bob")])
         _ = await waitUntil { viewModel.currentConversationPeer != nil }
 
-        XCTAssertEqual(viewModel.currentConversationPeer, "bob-address")
-        XCTAssertEqual(viewModel.currentConversationName, "Bob")
+        #expect(viewModel.currentConversationPeer == "bob-address")
+        #expect(viewModel.currentConversationName == "Bob")
     }
 }

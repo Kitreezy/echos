@@ -8,54 +8,52 @@
 //
 
 import Security
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
-final class KeychainSecretStoreIntegrationTests: XCTestCase {
+@Suite(.tags(.persistence))
+final class KeychainSecretStoreIntegrationTests {
 
-    private var store: KeychainSecretStore!
+    /// Свой сервис на каждый тест: Keychain общий для всех тестов процесса,
+    /// а в Swift Testing они идут параллельно.
+    private let store = KeychainSecretStore(service: "com.echos.tests.\(UUID().uuidString)")
     private let account = "test-key"
 
-    override func setUp() {
-        super.setUp()
-        store = KeychainSecretStore(service: "com.echos.tests.\(UUID().uuidString)")
-    }
-
-    override func tearDown() {
+    deinit {
         try? store.delete(account: account)
-        super.tearDown()
     }
 
-    func test_missing_readsAsNil() throws {
-        XCTAssertNil(try store.read(account: account))
+    @Test func missing_readsAsNil() throws {
+        #expect(try store.read(account: account) == nil)
     }
 
-    func test_roundTrip() throws {
+    @Test func roundTrip() throws {
         try store.write(Data([1, 2, 3]), account: account)
 
-        XCTAssertEqual(try store.read(account: account), Data([1, 2, 3]))
+        #expect(try store.read(account: account) == Data([1, 2, 3]))
     }
 
-    func test_secondWrite_overwritesInsteadOfFailing() throws {
+    @Test func secondWrite_overwritesInsteadOfFailing() throws {
         // Голый SecItemAdd на этом месте вернул бы errSecDuplicateItem.
         try store.write(Data([1]), account: account)
         try store.write(Data([2]), account: account)
 
-        XCTAssertEqual(try store.read(account: account), Data([2]))
+        #expect(try store.read(account: account) == Data([2]))
     }
 
-    func test_deleteMissing_isNotAnError() {
-        XCTAssertNoThrow(try store.delete(account: account))
+    @Test func deleteMissing_isNotAnError() {
+        #expect(throws: Never.self) { try store.delete(account: account) }
     }
 
-    func test_deleted_readsAsNil() throws {
+    @Test func deleted_readsAsNil() throws {
         try store.write(Data([1]), account: account)
         try store.delete(account: account)
 
-        XCTAssertNil(try store.read(account: account))
+        #expect(try store.read(account: account) == nil)
     }
 
-    func test_item_isAfterFirstUnlockThisDeviceOnly() throws {
+    @Test func item_isAfterFirstUnlockThisDeviceOnly() throws {
         // Доступность — единственное, что отличает «ключ уезжает в чужой
         // бэкап» от «не уезжает», и её надо прочитать обратно, а не верить коду.
         try store.write(Data([1]), account: account)
@@ -67,19 +65,18 @@ final class KeychainSecretStoreIntegrationTests: XCTestCase {
             kSecReturnAttributes as String: true
         ]
         var result: CFTypeRef?
-        XCTAssertEqual(SecItemCopyMatching(query as CFDictionary, &result), errSecSuccess)
+        #expect(SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess)
 
-        let attributes = try XCTUnwrap(result as? [String: Any])
-        XCTAssertEqual(attributes[kSecAttrAccessible as String] as? String,
-                       kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        let attributes = try #require(result as? [String: Any])
+        #expect(attributes[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
     }
 
-    func test_accountsAreIndependent() throws {
+    @Test func accountsAreIndependent() throws {
         try store.write(Data([1]), account: account)
         try store.write(Data([2]), account: "other")
         defer { try? store.delete(account: "other") }
 
-        XCTAssertEqual(try store.read(account: account), Data([1]))
-        XCTAssertEqual(try store.read(account: "other"), Data([2]))
+        #expect(try store.read(account: account) == Data([1]))
+        #expect(try store.read(account: "other") == Data([2]))
     }
 }

@@ -10,28 +10,17 @@
 //
 
 import Network
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class NetworkAwarenessTests: XCTestCase {
+@Suite(.relayServer, .tags(.network))
+struct NetworkAwarenessTests {
 
-    private var server: RelayServer!
-    private var monitor: FakeNetworkMonitor!
-
-    override func setUp() async throws {
-        try await super.setUp()
-        server = RelayServer()
-        try await server.start()
-        monitor = FakeNetworkMonitor()
-    }
-
-    override func tearDown() async throws {
-        await server.stop()
-        server = nil
-        monitor = nil
-        try await super.tearDown()
-    }
+    private var server: RelayServer { RelayFixture.server }
+    // Подставной монитор, чтобы тесты не зависели от реальной сети машины.
+    private let monitor = FakeNetworkMonitor()
 
     private func makeClient() -> WebSocketClient {
         let client = WebSocketClient(url: server.url, networkMonitor: monitor)
@@ -44,18 +33,18 @@ final class NetworkAwarenessTests: XCTestCase {
 
     // MARK: - Монитор запускается
 
-    func test_connect_startsNetworkMonitor() async {
+    @Test func connect_startsNetworkMonitor() async {
         let client = makeClient()
         defer { client.disconnect() }
 
         client.connect()
 
-        XCTAssertTrue(monitor.isRunning)
+        #expect(monitor.isRunning)
     }
 
     // MARK: - Сети нет
 
-    func test_connectWithoutNetwork_doesNotEvenTry() async {
+    @Test func connectWithoutNetwork_doesNotEvenTry() async {
         monitor.goOffline()
 
         let client = makeClient()
@@ -63,12 +52,11 @@ final class NetworkAwarenessTests: XCTestCase {
 
         client.connect()
 
-        XCTAssertEqual(client.state, .waitingForNetwork)
-        XCTAssertEqual(client.connectionAttempts, 0,
-                       "Стучаться в отсутствующую сеть незачем")
+        #expect(client.state == .waitingForNetwork)
+        #expect(client.connectionAttempts == 0, "Стучаться в отсутствующую сеть незачем")
     }
 
-    func test_networkLoss_pausesReconnectAttempts() async {
+    @Test func networkLoss_pausesReconnectAttempts() async {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -78,18 +66,17 @@ final class NetworkAwarenessTests: XCTestCase {
         monitor.goOffline()
 
         let paused = await waitUntil { client.state == .waitingForNetwork }
-        XCTAssertTrue(paused)
+        #expect(paused)
 
         let attemptsAfterLoss = client.connectionAttempts
         try? await Task.sleep(for: .milliseconds(600))
 
-        XCTAssertEqual(client.connectionAttempts, attemptsAfterLoss,
-                       "Пока пути нет, попытки идти не должны")
+        #expect(client.connectionAttempts == attemptsAfterLoss, "Пока пути нет, попытки идти не должны")
     }
 
     /// Сервер упал и сеть пропала выглядят для сокета одинаково, но требуют
     /// разного: в первом случае ретраим, во втором ждём.
-    func test_serverLossWithNetwork_keepsRetrying() async {
+    @Test func serverLossWithNetwork_keepsRetrying() async {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -103,13 +90,13 @@ final class NetworkAwarenessTests: XCTestCase {
             client.connectionAttempts > attemptsBefore
         }
 
-        XCTAssertTrue(retried, "Сеть есть — значит дело в сервере, надо пробовать снова")
-        XCTAssertNotEqual(client.state, .waitingForNetwork)
+        #expect(retried, "Сеть есть — значит дело в сервере, надо пробовать снова")
+        #expect(client.state != .waitingForNetwork)
     }
 
     // MARK: - Сеть вернулась
 
-    func test_networkRestored_reconnectsImmediately() async {
+    @Test func networkRestored_reconnectsImmediately() async {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -126,13 +113,13 @@ final class NetworkAwarenessTests: XCTestCase {
             client.state == .connected
         }
 
-        XCTAssertTrue(reconnected)
-        XCTAssertGreaterThan(client.connectionAttempts, attemptsBefore)
+        #expect(reconnected)
+        #expect(client.connectionAttempts > attemptsBefore)
     }
 
     /// После долгого оффлайна backoff вырос бы до потолка. Ждать эти секунды
     /// при включении Wi-Fi незачем — счётчик попыток сбрасывается.
-    func test_networkRestored_resetsBackoff() async {
+    @Test func networkRestored_resetsBackoff() async {
         let client = makeClient()
         client.initialReconnectDelay = .seconds(2)
         client.maxReconnectDelay = .seconds(30)
@@ -151,14 +138,14 @@ final class NetworkAwarenessTests: XCTestCase {
             client.state == .connected
         }
 
-        XCTAssertTrue(reconnected, "Возврат сети должен подключать сразу, а не по накопленной задержке")
+        #expect(reconnected, "Возврат сети должен подключать сразу, а не по накопленной задержке")
     }
 
     // MARK: - Смена интерфейса
 
     /// Переход Wi-Fi ↔ LTE меняет локальный адрес: соединение уже мертво,
     /// хотя сокет об этом молчит. Ловится только по смене интерфейса.
-    func test_interfaceChange_forcesReconnect() async {
+    @Test func interfaceChange_forcesReconnect() async {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -172,10 +159,10 @@ final class NetworkAwarenessTests: XCTestCase {
             client.connectionAttempts > attemptsBefore && client.state == .connected
         }
 
-        XCTAssertTrue(reconnected)
+        #expect(reconnected)
     }
 
-    func test_samePathReportedTwice_doesNotReconnect() async {
+    @Test func samePathReportedTwice_doesNotReconnect() async {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -186,13 +173,12 @@ final class NetworkAwarenessTests: XCTestCase {
         monitor.goOnline(interface: .wifi)
         try? await Task.sleep(for: .milliseconds(300))
 
-        XCTAssertEqual(client.connectionAttempts, attemptsBefore,
-                       "Тот же путь — не повод рвать живое соединение")
+        #expect(client.connectionAttempts == attemptsBefore, "Тот же путь — не повод рвать живое соединение")
     }
 
     // MARK: - Очередь переживает оффлайн
 
-    func test_messageSentWhileOffline_isDeliveredWhenNetworkReturns() async throws {
+    @Test func messageSentWhileOffline_isDeliveredWhenNetworkReturns() async throws {
         let client = makeClient()
         defer { client.disconnect() }
 
@@ -215,8 +201,7 @@ final class NetworkAwarenessTests: XCTestCase {
             self.server.receivedMessageMarkers.contains("без сети")
         }
 
-        XCTAssertTrue(delivered)
-        XCTAssertEqual(server.received.first?.kind, .hello,
-                       "Представиться надо раньше, чем досылать очередь")
+        #expect(delivered)
+        #expect(server.received.first?.kind == .hello, "Представиться надо раньше, чем досылать очередь")
     }
 }

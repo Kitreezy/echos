@@ -29,13 +29,19 @@ final class WallViewModel {
     private var incomingTask: Task<Void, Never>?
     private var wallStateTask: Task<Void, Never>?
     private var remoteChangesTask: Task<Void, Never>?
+    private let notificationCenter: NotificationCenter
 
+    /// - Parameter notificationCenter: откуда узнавать об изменениях из
+    ///   iCloud. Тесты дают свой: иначе сохранение в соседнем тесте
+    ///   перечитывало бы эту стену посреди проверки.
     init(owner: String?,
          transport: any PeerTransport,
-         store: any StrokeStoring = StrokeStore()) {
+         store: any StrokeStoring = StrokeStore(),
+         notificationCenter: NotificationCenter = .default) {
         self.owner = owner
         self.transport = transport
         self.store = store
+        self.notificationCenter = notificationCenter
     }
 
     // MARK: - Lifecycle
@@ -65,8 +71,9 @@ final class WallViewModel {
             return
         }
 
+        let center = notificationCenter
         remoteChangesTask = Task { [weak self] in
-            let changes = NotificationCenter.default.notifications(
+            let changes = center.notifications(
                 named: PersistenceController.remoteChangesNotification
             )
             for await _ in changes {

@@ -9,26 +9,28 @@
 //
 
 import CryptoKit
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
-final class IdentityStoreTests: XCTestCase {
+@Suite(.tags(.crypto))
+struct IdentityStoreTests {
 
     // MARK: - Первый запуск
 
-    func test_emptyKeychain_createsBothKeysAndWritesThem() throws {
+    @Test func emptyKeychain_createsBothKeysAndWritesThem() throws {
         let keychain = FakeSecretStore()
         let store = IdentityStore(store: keychain)
 
         let identity = try store.identity()
 
-        XCTAssertEqual(keychain[IdentityStore.signingAccount]?.count, 32)
-        XCTAssertEqual(keychain[IdentityStore.agreementAccount]?.count, 32)
-        XCTAssertEqual(keychain.writes, 2)
-        XCTAssertEqual(identity.publicKey.count, 32)
+        #expect(keychain[IdentityStore.signingAccount]?.count == 32)
+        #expect(keychain[IdentityStore.agreementAccount]?.count == 32)
+        #expect(keychain.writes == 2)
+        #expect(identity.publicKey.count == 32)
     }
 
-    func test_secondCall_comesFromCache() throws {
+    @Test func secondCall_comesFromCache() throws {
         let keychain = FakeSecretStore()
         let store = IdentityStore(store: keychain)
 
@@ -36,13 +38,13 @@ final class IdentityStoreTests: XCTestCase {
         let readsAfterFirst = keychain.reads
         let second = try store.identity()
 
-        XCTAssertEqual(first.fingerprint, second.fingerprint)
-        XCTAssertEqual(keychain.reads, readsAfterFirst, "Кэш есть, чтобы в Keychain не ходить")
+        #expect(first.fingerprint == second.fingerprint)
+        #expect(keychain.reads == readsAfterFirst, "Кэш есть, чтобы в Keychain не ходить")
     }
 
     // MARK: - Уже есть
 
-    func test_existingKeys_areLoadedNotReplaced() throws {
+    @Test func existingKeys_areLoadedNotReplaced() throws {
         let signing = Curve25519.Signing.PrivateKey()
         let agreement = Curve25519.KeyAgreement.PrivateKey()
         let keychain = FakeSecretStore([
@@ -52,12 +54,12 @@ final class IdentityStoreTests: XCTestCase {
 
         let identity = try IdentityStore(store: keychain).identity()
 
-        XCTAssertEqual(identity.publicKey, signing.publicKey.rawRepresentation)
-        XCTAssertEqual(identity.agreementKey, agreement.publicKey.rawRepresentation)
-        XCTAssertEqual(keychain.writes, 0, "Есть ключ — нечего писать")
+        #expect(identity.publicKey == signing.publicKey.rawRepresentation)
+        #expect(identity.agreementKey == agreement.publicKey.rawRepresentation)
+        #expect(keychain.writes == 0, "Есть ключ — нечего писать")
     }
 
-    func test_onlySigningKey_keepsAddressAndAddsAgreement() throws {
+    @Test func onlySigningKey_keepsAddressAndAddsAgreement() throws {
         // Обновление с версии без шифрования: подписывающий ключ уже есть,
         // и адрес из-за появления второго меняться не должен.
         let signing = Curve25519.Signing.PrivateKey()
@@ -65,26 +67,23 @@ final class IdentityStoreTests: XCTestCase {
 
         let identity = try IdentityStore(store: keychain).identity()
 
-        XCTAssertEqual(identity.fingerprint, DeviceIdentity.fingerprint(of: signing.publicKey.rawRepresentation))
-        XCTAssertEqual(keychain[IdentityStore.agreementAccount]?.count, 32)
-        XCTAssertEqual(keychain.writes, 1)
+        #expect(identity.fingerprint == DeviceIdentity.fingerprint(of: signing.publicKey.rawRepresentation))
+        #expect(keychain[IdentityStore.agreementAccount]?.count == 32)
+        #expect(keychain.writes == 1)
     }
 
     // MARK: - Заперто
 
-    func test_lockedDevice_throwsAndCreatesNothing() {
+    @Test func lockedDevice_throwsAndCreatesNothing() {
         let signing = Curve25519.Signing.PrivateKey()
         let keychain = FakeSecretStore([IdentityStore.signingAccount: signing.rawRepresentation])
         keychain.readFailure = .locked
 
-        XCTAssertThrowsError(try IdentityStore(store: keychain).identity()) { error in
-            XCTAssertEqual(error as? SecretStoreError, .locked)
-        }
-        XCTAssertEqual(keychain.writes, 0,
-                       "Ключ на месте, просто не достать: новый сейчас — это смена адреса")
+        #expect(throws: SecretStoreError.locked) { try IdentityStore(store: keychain).identity() }
+        #expect(keychain.writes == 0, "Ключ на месте, просто не достать: новый сейчас — это смена адреса")
     }
 
-    func test_afterUnlock_sameIdentityComesBack() throws {
+    @Test func afterUnlock_sameIdentityComesBack() throws {
         let signing = Curve25519.Signing.PrivateKey()
         let agreement = Curve25519.KeyAgreement.PrivateKey()
         let keychain = FakeSecretStore([
@@ -94,32 +93,31 @@ final class IdentityStoreTests: XCTestCase {
         let store = IdentityStore(store: keychain)
 
         keychain.readFailure = .locked
-        XCTAssertThrowsError(try store.identity())
+        #expect(throws: (any Error).self) { try store.identity() }
 
         keychain.readFailure = nil
         let identity = try store.identity()
 
-        XCTAssertEqual(identity.publicKey, signing.publicKey.rawRepresentation,
-                       "Неудача не кэшируется, а после разблокировки ключ тот же")
+        #expect(identity.publicKey == signing.publicKey.rawRepresentation, "Неудача не кэшируется, а после разблокировки ключ тот же")
     }
 
-    func test_failedWrite_isNotCachedAsIdentity() throws {
+    @Test func failedWrite_isNotCachedAsIdentity() throws {
         let keychain = FakeSecretStore()
         keychain.writeFailure = .failed(-25293)
         let store = IdentityStore(store: keychain)
 
-        XCTAssertThrowsError(try store.identity())
+        #expect(throws: (any Error).self) { try store.identity() }
 
         keychain.writeFailure = nil
         let identity = try store.identity()
 
-        XCTAssertEqual(identity.publicKey.count, 32)
-        XCTAssertEqual(keychain.writes, 3, "Первая запись упала, вторая и третья прошли")
+        #expect(identity.publicKey.count == 32)
+        #expect(keychain.writes == 3, "Первая запись упала, вторая и третья прошли")
     }
 
     // MARK: - Мусор
 
-    func test_corruptedSigningKey_isReplaced() throws {
+    @Test func corruptedSigningKey_isReplaced() throws {
         let agreement = Curve25519.KeyAgreement.PrivateKey()
         let keychain = FakeSecretStore([
             IdentityStore.signingAccount: Data("не ключ".utf8),
@@ -128,22 +126,21 @@ final class IdentityStoreTests: XCTestCase {
 
         let identity = try IdentityStore(store: keychain).identity()
 
-        XCTAssertEqual(keychain[IdentityStore.signingAccount]?.count, 32, "Мусор перезаписан настоящим ключом")
-        XCTAssertEqual(identity.agreementKey, agreement.publicKey.rawRepresentation,
-                       "Целый ключ соглашения не тронут")
-        XCTAssertEqual(keychain.writes, 1)
+        #expect(keychain[IdentityStore.signingAccount]?.count == 32, "Мусор перезаписан настоящим ключом")
+        #expect(identity.agreementKey == agreement.publicKey.rawRepresentation, "Целый ключ соглашения не тронут")
+        #expect(keychain.writes == 1)
     }
 
-    func test_corruptedKey_wrongLength_isReplaced() throws {
+    @Test func corruptedKey_wrongLength_isReplaced() throws {
         let keychain = FakeSecretStore([IdentityStore.signingAccount: Data(repeating: 0xAB, count: 31)])
 
-        XCTAssertNoThrow(try IdentityStore(store: keychain).identity())
-        XCTAssertEqual(keychain[IdentityStore.signingAccount]?.count, 32)
+        #expect(throws: Never.self) { try IdentityStore(store: keychain).identity() }
+        #expect(keychain[IdentityStore.signingAccount]?.count == 32)
     }
 
     // MARK: - Сброс
 
-    func test_reset_forgetsIdentityAndNextOneIsNew() throws {
+    @Test func reset_forgetsIdentityAndNextOneIsNew() throws {
         let keychain = FakeSecretStore()
         let store = IdentityStore(store: keychain)
 
@@ -151,13 +148,13 @@ final class IdentityStoreTests: XCTestCase {
         try store.reset()
         let after = try store.identity()
 
-        XCTAssertNotEqual(before.fingerprint, after.fingerprint)
-        XCTAssertEqual(keychain[IdentityStore.signingAccount]?.count, 32, "Новый ключ записан на место старого")
+        #expect(before.fingerprint != after.fingerprint)
+        #expect(keychain[IdentityStore.signingAccount]?.count == 32, "Новый ключ записан на место старого")
     }
 
     // MARK: - Параллельно
 
-    func test_concurrentFirstAccess_createsOneIdentity() async throws {
+    @Test func concurrentFirstAccess_createsOneIdentity() async throws {
         let keychain = FakeSecretStore()
         let store = IdentityStore(store: keychain)
 
@@ -168,7 +165,7 @@ final class IdentityStoreTests: XCTestCase {
             return await group.reduce(into: Set<String?>()) { $0.insert($1) }
         }
 
-        XCTAssertEqual(fingerprints.count, 1, "Гонка на первом обращении не должна плодить личности")
-        XCTAssertEqual(keychain.writes, 2)
+        #expect(fingerprints.count == 1, "Гонка на первом обращении не должна плодить личности")
+        #expect(keychain.writes == 2)
     }
 }

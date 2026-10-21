@@ -6,33 +6,34 @@
 //  переписку, а не рисовать.
 //
 
-import XCTest
+import Foundation
+import Testing
+import UIKit
 @testable import echos
 
 @MainActor
-final class MosaicViewGestureTests: XCTestCase {
+struct MosaicViewGestureTests {
 
     private func pan(of view: MosaicView) throws -> UIPanGestureRecognizer {
-        try XCTUnwrap(view.gestureRecognizers?.compactMap { $0 as? UIPanGestureRecognizer }.first)
+        try #require(view.gestureRecognizers?.compactMap { $0 as? UIPanGestureRecognizer }.first)
     }
 
-    func test_withoutDrawing_panDoesNotBegin() throws {
+    @Test func withoutDrawing_panDoesNotBegin() throws {
         let view = MosaicView()
         view.show(Mosaic(columns: 4, rows: 4))
 
-        XCTAssertFalse(view.gestureRecognizerShouldBegin(try pan(of: view)),
-                       "Иначе прокрутка ленты спорит с мозаикой и проигрывает")
+        #expect(!(view.gestureRecognizerShouldBegin(try pan(of: view))), "Иначе прокрутка ленты спорит с мозаикой и проигрывает")
     }
 
-    func test_whenDrawing_panBegins() throws {
+    @Test func whenDrawing_panBegins() throws {
         let view = MosaicView()
         view.onDrag = { _, _ in }
 
-        XCTAssertTrue(view.gestureRecognizerShouldBegin(try pan(of: view)))
+        #expect(view.gestureRecognizerShouldBegin(try pan(of: view)))
     }
 
     /// Протягивание красит каждую клетку под пальцем по одному разу.
-    func test_drag_paintsEachCellOnce() throws {
+    @Test func drag_paintsEachCellOnce() throws {
         let view = MosaicView()
         var painted: [String] = []
         view.onDrag = { column, row in painted.append("\(column):\(row)") }
@@ -41,6 +42,6 @@ final class MosaicViewGestureTests: XCTestCase {
         view.frame = CGRect(x: 0, y: 0, width: 200, height: 200)
         view.layoutIfNeeded()
 
-        XCTAssertTrue(painted.isEmpty, "Пока пальцем не провели — ничего")
+        #expect(painted.isEmpty, "Пока пальцем не провели — ничего")
     }
 }

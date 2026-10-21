@@ -6,28 +6,17 @@
 //  в одном процессе видят друг друга и обмениваются сообщениями.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class WebSocketTransportTests: XCTestCase {
+@Suite(.relayServer, .tags(.network))
+struct WebSocketTransportTests {
 
-    private var server: RelayServer!
-    private var monitor: FakeNetworkMonitor!
-
-    override func setUp() async throws {
-        try await super.setUp()
-        server = RelayServer()
-        try await server.start()
-        monitor = FakeNetworkMonitor()
-    }
-
-    override func tearDown() async throws {
-        await server.stop()
-        server = nil
-        monitor = nil
-        try await super.tearDown()
-    }
+    private var server: RelayServer { RelayFixture.server }
+    // Подставной монитор, чтобы тесты не зависели от реальной сети машины.
+    private let monitor = FakeNetworkMonitor()
 
     /// У каждого транспорта свой ключ: на одном устройстве их два, а для
     /// релея это должны быть двое разных людей.
@@ -38,11 +27,14 @@ final class WebSocketTransportTests: XCTestCase {
                            networkMonitor: monitor)
     }
 
-    /// Поднимает оба транспорта и ждёт, пока оба представятся серверу.
+    /// Поднимает оба транспорта и ждёт, пока каждый увидит другого.
     ///
     /// Ждать установки соединений мало: рукопожатие идёт отдельным кругом, и
     /// сообщение, отправленное между этими моментами, релей выбросит —
-    /// получателя он ещё не знает по отпечатку.
+    /// получателя он ещё не знает по отпечатку. И того, что оба представились
+    /// серверу, тоже мало: ключ собеседника приходит следом, в присутствии, и
+    /// без него шифровать нечем — `noCipher`. Последовательный запуск это
+    /// прятал: присутствие успевало прийти. Под параллельной нагрузкой — нет.
     private func makePair() async -> (alice: WebSocketTransport, bob: WebSocketTransport) {
         let alice = makeTransport(named: "Alice")
         let bob = makeTransport(named: "Bob")
@@ -52,12 +44,18 @@ final class WebSocketTransportTests: XCTestCase {
 
         _ = await waitUntil(timeout: .seconds(5)) { self.server.introducedClientCount == 2 }
 
+        // Собеседник в присутствии — значит, и шифр для него уже есть:
+        // транспорт заводит шифр раньше, чем объявляет собеседника.
+        let (aliceAddress, bobAddress) = (alice.myAddress, bob.myAddress)
+        _ = await firstElement(of: alice.peerStream, timeout: .seconds(5)) { $0.contains { $0.address == bobAddress } }
+        _ = await firstElement(of: bob.peerStream, timeout: .seconds(5)) { $0.contains { $0.address == aliceAddress } }
+
         return (alice, bob)
     }
 
     // MARK: - Присутствие
 
-    func test_twoTransports_seeEachOtherInPeerStream() async {
+    @Test func twoTransports_seeEachOtherInPeerStream() async {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -67,7 +65,7 @@ final class WebSocketTransportTests: XCTestCase {
         // Сервер насчитал двоих раньше, чем клиент перевёл своё состояние:
         // ждём его, а не утверждаем с ходу.
         let connected = await waitUntil { alice.connectionState == .connected }
-        XCTAssertTrue(connected)
+        #expect(connected)
 
         // Ждём именно появления собеседника: до этого поток успевает отдать
         // пустой список — присутствие с одной лишь Alice.
@@ -75,12 +73,11 @@ final class WebSocketTransportTests: XCTestCase {
             !$0.isEmpty
         }
 
-        XCTAssertEqual(peers?.map(\.displayName), ["Bob"],
-                       "Себя в списке собеседников быть не должно")
-        XCTAssertEqual(peers?.first?.status, .connected)
+        #expect(peers?.map(\.displayName) == ["Bob"], "Себя в списке собеседников быть не должно")
+        #expect(peers?.first?.status == .connected)
     }
 
-    func test_peerIdentifiers_areStableAcrossPresenceUpdates() async {
+    @Test func peerIdentifiers_areStableAcrossPresenceUpdates() async {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -99,19 +96,19 @@ final class WebSocketTransportTests: XCTestCase {
         let updated = await waitUntil(timeout: .seconds(5)) {
             self.server.connectedClientCount == 3
         }
-        XCTAssertTrue(updated)
+        #expect(updated)
 
         let second = await firstElement(of: alice.peerStream, timeout: .seconds(5)) {
             $0.count == 2
         }?.first { $0.displayName == "Bob" }?.id
 
-        XCTAssertNotNil(first)
-        XCTAssertEqual(first, second, "Идентификатор пира не должен меняться от обновления к обновлению")
+        #expect(first != nil)
+        #expect(first == second, "Идентификатор пира не должен меняться от обновления к обновлению")
     }
 
     // MARK: - Обмен
 
-    func test_message_isDeliveredToTheOtherTransport() async throws {
+    @Test func message_isDeliveredToTheOtherTransport() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -128,15 +125,14 @@ final class WebSocketTransportTests: XCTestCase {
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
 
-        XCTAssertEqual(received.first?.value.text, "привет из сети")
-        XCTAssertEqual(received.first?.value.senderName, "Alice")
-        XCTAssertEqual(received.first?.sender, alice.myAddress,
-                       "Отправителя проставляет релей, из ключа")
+        #expect(received.first?.value.text == "привет из сети")
+        #expect(received.first?.value.senderName == "Alice")
+        #expect(received.first?.sender == alice.myAddress, "Отправителя проставляет релей, из ключа")
     }
 
     /// Ради этого всё и затевалось: релей сообщение переносит, но прочитать
     /// не может.
-    func test_relay_doesNotSeeTheText() async throws {
+    @Test func relay_doesNotSeeTheText() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -151,20 +147,20 @@ final class WebSocketTransportTests: XCTestCase {
         try await alice.sendMessage(payload, to: bob.myAddress)
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
-        XCTAssertEqual(received.first?.value.text, "только для Боба", "До Боба текст дошёл")
+        #expect(received.first?.value.text == "только для Боба", "До Боба текст дошёл")
 
         let passedThrough = server.received.filter { $0.kind == .message }
-        XCTAssertEqual(passedThrough.count, 1)
+        #expect(passedThrough.count == 1)
         for envelope in passedThrough {
             let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
-            XCTAssertFalse(wire.contains("только для Боба"), "Текст виден серверу")
-            XCTAssertFalse(wire.contains(payload.id), "Идентификатор сообщения тоже под замком")
+            #expect(!(wire.contains("только для Боба")), "Текст виден серверу")
+            #expect(!wire.contains(payload.id), "Идентификатор сообщения тоже под замком")
         }
     }
 
     /// Релей, который ключи не пересылает (старая сборка сервера), даёт
     /// пустой список: писать этим людям нечем.
-    func test_relayWithoutKeys_listsNobody() async {
+    @Test func relayWithoutKeys_listsNobody() async {
         server.forwardsKeys = false
         let (alice, bob) = await makePair()
         defer {
@@ -175,23 +171,23 @@ final class WebSocketTransportTests: XCTestCase {
         let stream = alice.peerStream
         let lists = await collect(stream, count: 1, timeout: .seconds(3))
 
-        XCTAssertTrue(lists.allSatisfy(\.isEmpty))
+        #expect(lists.allSatisfy { $0.isEmpty })
 
         do {
             let payload = MessagePayload(from: Message(text: "в никуда", isFromMe: true),
                                          senderName: "Alice")
             try await alice.sendMessage(payload, to: bob.myAddress)
-            XCTFail("Без ключа собеседника отправлять нечем")
+            Issue.record("Без ключа собеседника отправлять нечем")
         } catch let error as RelayError {
-            XCTAssertEqual(error, .noCipher(bob.myAddress))
+            #expect(error == .noCipher(bob.myAddress))
         } catch {
-            XCTFail("Не та ошибка: \(error)")
+            Issue.record("Не та ошибка: \(error)")
         }
     }
 
     /// Конверт, которого Алиса не отправляла: релей (или кто-то за ним)
     /// подделал сообщение от её имени. Не откроется — и не дойдёт.
-    func test_forgedMessage_isDropped() async throws {
+    @Test func forgedMessage_isDropped() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -209,10 +205,10 @@ final class WebSocketTransportTests: XCTestCase {
         try await alice.sendSealed(forged, to: bob.myAddress)
 
         let received = await collect(incoming, count: 1, timeout: .seconds(2))
-        XCTAssertTrue(received.isEmpty, "Подделка не должна пройти")
+        #expect(received.isEmpty, "Подделка не должна пройти")
     }
 
-    func test_typingEvent_isDeliveredToTheOtherTransport() async throws {
+    @Test func typingEvent_isDeliveredToTheOtherTransport() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -225,13 +221,13 @@ final class WebSocketTransportTests: XCTestCase {
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
 
-        XCTAssertEqual(received.first?.value.type, .start)
-        XCTAssertEqual(received.first?.value.peerName, "Alice")
-        XCTAssertEqual(received.first?.sender, alice.myAddress)
+        #expect(received.first?.value.type == .start)
+        #expect(received.first?.value.peerName == "Alice")
+        #expect(received.first?.sender == alice.myAddress)
     }
 
     /// Отправитель не должен получать собственное сообщение обратно.
-    func test_sender_doesNotReceiveItsOwnMessage() async throws {
+    @Test func sender_doesNotReceiveItsOwnMessage() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -247,14 +243,14 @@ final class WebSocketTransportTests: XCTestCase {
         _ = await collect(bob.messageStream, count: 1, timeout: .seconds(5))
         let ownMessages = await collect(echoed, count: 1, timeout: .milliseconds(300))
 
-        XCTAssertTrue(ownMessages.isEmpty)
+        #expect(ownMessages.isEmpty)
     }
 
     // MARK: - Восстановление сессии
 
     /// После перезапуска сервера транспорт обязан не только переподключиться,
     /// но и заново представиться — иначе он будет «онлайн», но невидим.
-    func test_afterServerRestart_transportReannouncesItself() async throws {
+    @Test func afterServerRestart_transportReannouncesItself() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -269,12 +265,12 @@ final class WebSocketTransportTests: XCTestCase {
             self.server.received.filter { $0.kind == .hello }.count >= 2
         }
 
-        XCTAssertTrue(reannounced, "После реконнекта hello должен уйти повторно")
+        #expect(reannounced, "После реконнекта hello должен уйти повторно")
     }
 
     /// Мозаика — то же сообщение, только с сеткой внутри: доходит сеткой,
     /// а не текстом, и сервер её не видит.
-    func test_mosaic_arrivesAsAGrid() async throws {
+    @Test func mosaic_arrivesAsAGrid() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -289,13 +285,13 @@ final class WebSocketTransportTests: XCTestCase {
         try await alice.sendMessage(payload, to: bob.myAddress)
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
-        XCTAssertEqual(received.first?.value.mosaic, mosaic)
-        XCTAssertEqual(received.first?.value.text, mosaic.text)
+        #expect(received.first?.value.mosaic == mosaic)
+        #expect(received.first?.value.text == mosaic.text)
 
         for envelope in server.received where envelope.kind == .message {
             let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
-            XCTAssertFalse(wire.contains("🟨"))
-            XCTAssertFalse(wire.contains("cells"))
+            #expect(!(wire.contains("🟨")))
+            #expect(!wire.contains("cells"))
         }
     }
 
@@ -303,7 +299,7 @@ final class WebSocketTransportTests: XCTestCase {
 
     /// Росчерк и стена целиком — такое же содержимое, как сообщение:
     /// доходят, а релей внутрь не заглядывает.
-    func test_strokeAndWall_travelSealed() async throws {
+    @Test func strokeAndWall_travelSealed() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -321,21 +317,21 @@ final class WebSocketTransportTests: XCTestCase {
         try await alice.requestWall(from: bob.myAddress)
 
         let gotStroke = await collect(strokes, count: 1, timeout: .seconds(5))
-        XCTAssertEqual(gotStroke.first?.value.id, stroke.id)
-        XCTAssertEqual(gotStroke.first?.value.points.count, 2)
-        XCTAssertEqual(gotStroke.first?.sender, alice.myAddress)
+        #expect(gotStroke.first?.value.id == stroke.id)
+        #expect(gotStroke.first?.value.points.count == 2)
+        #expect(gotStroke.first?.sender == alice.myAddress)
 
         let asked = await collect(requests, count: 1, timeout: .seconds(5))
-        XCTAssertEqual(asked.first, alice.myAddress)
+        #expect(asked.first == alice.myAddress)
 
         try await bob.sendWall([stroke], to: alice.myAddress)
         let gotWall = await collect(walls, count: 1, timeout: .seconds(5))
-        XCTAssertEqual(gotWall.first?.value.map(\.id), [stroke.id])
+        #expect(gotWall.first?.value.map(\.id) == [stroke.id])
 
         for envelope in server.received where envelope.kind == .stroke || envelope.kind == .wallState {
             let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
-            XCTAssertFalse(wire.contains("points"), "Содержимое росчерка видно серверу")
-            XCTAssertFalse(wire.contains(stroke.id.uuidString), "Идентификатор росчерка видно серверу")
+            #expect(!wire.contains("points"), "Содержимое росчерка видно серверу")
+            #expect(!wire.contains(stroke.id.uuidString), "Идентификатор росчерка видно серверу")
         }
     }
 
@@ -354,7 +350,7 @@ final class WebSocketTransportTests: XCTestCase {
 
     /// После переподключения у обоих новые сессионные ключи — и переписка
     /// продолжается: шифры пересобрались из свежего присутствия.
-    func test_afterReconnect_sessionKeysChangeAndMessagesStillFlow() async throws {
+    @Test func afterReconnect_sessionKeysChangeAndMessagesStillFlow() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -370,9 +366,9 @@ final class WebSocketTransportTests: XCTestCase {
         }
         let after = sessionKeys(in: server.received.filter { $0.kind == .hello })
 
-        XCTAssertEqual(before.count, 2)
-        XCTAssertEqual(after.count, 2)
-        XCTAssertTrue(Set(before).isDisjoint(with: Set(after)), "Сессионные ключи после обрыва — новые")
+        #expect(before.count == 2)
+        #expect(after.count == 2)
+        #expect(Set(before).isDisjoint(with: Set(after)), "Сессионные ключи после обрыва — новые")
 
         // Оба должны получить присутствие с новыми ключами, прежде чем слать.
         _ = await waitUntil(timeout: .seconds(5)) {
@@ -386,14 +382,14 @@ final class WebSocketTransportTests: XCTestCase {
         try await alice.sendMessage(payload, to: bob.myAddress)
 
         let received = await collect(incoming, count: 1, timeout: .seconds(5))
-        XCTAssertEqual(received.first?.value.text, "после обрыва")
+        #expect(received.first?.value.text == "после обрыва")
     }
 
     /// Сообщение, написанное без сети: запечатано ключом прошлой сессии,
     /// встало в очередь, ушло после переподключения. Боб всё это время на
     /// связи; наши новые ключи доходят до него присутствием раньше, чем
     /// конверт из очереди, — и он открывает конверт прошлым шифром.
-    func test_messageQueuedOffline_opensAfterKeysRotated() async throws {
+    @Test func messageQueuedOffline_opensAfterKeysRotated() async throws {
         // У Алисы своя сеть: только она и уйдёт в офлайн.
         let aliceNetwork = FakeNetworkMonitor()
         let alice = WebSocketTransport(url: server.url,
@@ -412,7 +408,7 @@ final class WebSocketTransportTests: XCTestCase {
 
         aliceNetwork.goOffline()
         _ = await waitUntil { self.server.connectedClientCount == 1 }
-        XCTAssertFalse(alice.ciphersAreEmpty, "Обрыв шифры не стирает — иначе без сети не написать")
+        #expect(!alice.ciphersAreEmpty, "Обрыв шифры не стирает — иначе без сети не написать")
 
         let payload = MessagePayload(from: Message(text: "из очереди", isFromMe: true),
                                      senderName: "Alice")
@@ -422,18 +418,17 @@ final class WebSocketTransportTests: XCTestCase {
         aliceNetwork.goOnline()
 
         let received = await collect(incoming, count: 1, timeout: .seconds(15))
-        XCTAssertEqual(received.first?.value.text, "из очереди",
-                       "Конверт из прошлой сессии должен открыться прошлым шифром")
+        #expect(received.first?.value.text == "из очереди", "Конверт из прошлой сессии должен открыться прошлым шифром")
 
         // И это действительно была смена ключа, а не тот же самый.
         let hellos = server.received.filter { $0.kind == .hello }
-        XCTAssertEqual(hellos.count, 1, "Переподключилась только Алиса")
-        XCTAssertEqual(server.received.first?.kind, .hello, "hello уходит раньше очереди")
+        #expect(hellos.count == 1, "Переподключилась только Алиса")
+        #expect(server.received.first?.kind == .hello, "hello уходит раньше очереди")
     }
 
     /// Собеседник переподключился, а мы — нет. Его ключ сменился, наш
     /// остался; шифр с ним пересобирается, и переписка идёт в обе стороны.
-    func test_whenOnlyPeerReconnects_cipherIsRebuilt() async throws {
+    @Test func whenOnlyPeerReconnects_cipherIsRebuilt() async throws {
         let (alice, bob) = await makePair()
         defer {
             alice.stopDeviceDiscovery()
@@ -462,13 +457,13 @@ final class WebSocketTransportTests: XCTestCase {
         let bobGot = await collect(toBob, count: 1, timeout: .seconds(5))
         let aliceGot = await collect(toAlice, count: 1, timeout: .seconds(5))
 
-        XCTAssertEqual(bobGot.first?.value.text, "к новому Бобу")
-        XCTAssertEqual(aliceGot.first?.value.text, "к прежней Алисе")
+        #expect(bobGot.first?.value.text == "к новому Бобу")
+        #expect(aliceGot.first?.value.text == "к прежней Алисе")
     }
 
     // MARK: - Ограничения релея
 
-    func test_connectToUnknownPeer_throws() async {
+    @Test func connectToUnknownPeer_throws() async {
         let alice = makeTransport(named: "Alice")
         alice.startDeviceDiscovery()
         defer { alice.stopDeviceDiscovery() }
@@ -477,10 +472,10 @@ final class WebSocketTransportTests: XCTestCase {
 
         do {
             try await alice.connectToPeer(address: "никого-нет")
-            XCTFail("Подключение к отсутствующему собеседнику должно падать")
+            Issue.record("Подключение к отсутствующему собеседнику должно падать")
         }
         catch {
-            XCTAssertTrue(error is RelayError)
+            #expect(error is RelayError)
         }
     }
 }
