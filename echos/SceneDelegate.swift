@@ -36,7 +36,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         appearance.backgroundColor = UIColor.surface
         appearance.titleTextAttributes = [
             .foregroundColor: UIColor.ink,
-            .font: UIFont.systemFont(ofSize: 16, weight: .light),
+            .font: Typography.scaled(.systemFont(ofSize: 16, weight: .light), as: .headline),
             .kern: Typography.narrow
         ]
         // Полоса под шапкой — тоже рамка. Убираем.

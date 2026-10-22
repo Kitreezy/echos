@@ -270,6 +270,7 @@ final class ChatViewModel {
                 return ConversationSummary(peerAddress: address,
                                            peerName: name,
                                            lastMessage: lastMessage?.text ?? "",
+                                           lastMessageIsMosaic: lastMessage?.mosaic != nil,
                                            lastMessageTime: lastMessage?.timestamp ?? Date(),
                                            messageCount: messages.count,
                                            unreadCount: unreadCount,

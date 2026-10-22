@@ -22,6 +22,7 @@ final class NearbyViewController: UIViewController {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setTracked(UserSettings.usesRelay ? "кто на связи" : "кто рядом",
@@ -32,6 +33,7 @@ final class NearbyViewController: UIViewController {
     private let emptyLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
@@ -44,6 +46,8 @@ final class NearbyViewController: UIViewController {
         let table = UITableView()
         table.backgroundColor = .clear
         table.separatorStyle = .none
+        // Пока строк нет, аудит видит пустую таблицу без описания.
+        table.accessibilityLabel = "Кто рядом"
         table.translatesAutoresizingMaskIntoConstraints = false
         return table
     }()

@@ -32,7 +32,7 @@ struct WallView: View {
 
             if viewModel.isEmpty {
                 Text(hint)
-                    .font(Font(Typography.caption))
+                    .font(Typography.captionText)
                     .foregroundStyle(Color.inkMuted)
                     .allowsHitTesting(false)
             }
@@ -44,7 +44,7 @@ struct WallView: View {
                 Button("Стереть") {
                     Task { await viewModel.clear() }
                 }
-                .font(Font(Typography.caption))
+                .font(Typography.captionText)
                 .foregroundStyle(Color.inkMuted)
             }
         }

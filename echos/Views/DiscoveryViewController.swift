@@ -21,6 +21,7 @@ final class DiscoveryViewController: UIViewController {
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setTracked("echos", tracking: Typography.wide)
@@ -35,6 +36,7 @@ final class DiscoveryViewController: UIViewController {
     /// не нашли.
     private lazy var nameButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.contentInsets = .zero
         config.baseForegroundColor = .ink
 
@@ -49,6 +51,7 @@ final class DiscoveryViewController: UIViewController {
     /// повторить, отпечаток ключа — нет. Нажатием копируется.
     private lazy var addressButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.contentInsets = .zero
         config.baseForegroundColor = .inkMuted
 
@@ -62,6 +65,7 @@ final class DiscoveryViewController: UIViewController {
     private let peerCountLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -72,6 +76,9 @@ final class DiscoveryViewController: UIViewController {
         let hosting = UIHostingController(rootView: radarSwiftUI)
         hosting.view.backgroundColor = .clear
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        // Радар — картинка: то же, что он показывает, словами говорит кнопка
+        // «Рядом N — посмотреть» под ним. VoiceOver его пропускает.
+        hosting.view.accessibilityElementsHidden = true
         addChild(hosting)
         hosting.didMove(toParent: self)
         return hosting.view
@@ -82,10 +89,10 @@ final class DiscoveryViewController: UIViewController {
     /// чтобы смотреть её, когда никого нет.
     private lazy var wallButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.attributedTitle = AttributedString(
             "моя стена",
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -101,6 +108,7 @@ final class DiscoveryViewController: UIViewController {
     private let noConversationsLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
@@ -114,6 +122,7 @@ final class DiscoveryViewController: UIViewController {
     /// запуска в схеме Xcode — то есть была доступна одному человеку в мире.
     private lazy var linkButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.baseForegroundColor = .inkMuted
 
         let button = UIButton(configuration: config)
@@ -126,6 +135,7 @@ final class DiscoveryViewController: UIViewController {
     private let statusLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -206,7 +216,6 @@ final class DiscoveryViewController: UIViewController {
         linkButton.configuration?.attributedTitle = AttributedString(
             usesRelay ? "связь · через сервер" : "связь · рядом",
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -262,7 +271,6 @@ final class DiscoveryViewController: UIViewController {
         nameButton.configuration?.attributedTitle = AttributedString(
             UserSettings.displayName,
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -280,7 +288,6 @@ final class DiscoveryViewController: UIViewController {
         addressButton.configuration?.attributedTitle = AttributedString(
             text ?? "адрес · \(Fingerprint.display(address))",
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -438,6 +445,12 @@ final class DiscoveryViewController: UIViewController {
     
     // MARK: - Layout
 
+    /// Наименьшая область нажатия — 44 пункта, как требует Apple.
+    private static let minimumTarget: CGFloat = 44
+
+    /// Сколько зона нажатия добавляет сверху и снизу к строке мелкого текста.
+    private static let targetSlack: CGFloat = 15
+
     private lazy var layoutConstraints: [NSLayoutConstraint] = {
         [
             titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor,
@@ -445,29 +458,38 @@ final class DiscoveryViewController: UIViewController {
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
                                                 constant: Space.margin),
 
+            // Имя, адрес и строка под радаром нажимаются, а текст у них в одну
+            // мелкую строку — область нажатия выходила около 13 пунктов при
+            // норме 44. Высота — не меньше 44, текст по центру, а отступы
+            // меньше на ту же величину: текст стоит, где стоял, растёт только
+            // невидимая зона нажатия.
+            nameButton.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTarget),
+            addressButton.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTarget),
+            statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTarget),
+
             nameButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor,
-                                            constant: Space.tight),
+                                            constant: Space.tight - Self.targetSlack),
             nameButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             nameButton.trailingAnchor.constraint(lessThanOrEqualTo: peerCountLabel.leadingAnchor,
                                                  constant: -Space.step),
 
             addressButton.topAnchor.constraint(equalTo: nameButton.bottomAnchor,
-                                               constant: Space.tight),
+                                               constant: Space.tight - 2 * Self.targetSlack),
             addressButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
 
             peerCountLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             peerCountLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
                                                      constant: -Space.margin),
 
-            radarView.topAnchor.constraint(equalTo: addressButton.bottomAnchor, constant: Space.ma),
+            radarView.topAnchor.constraint(equalTo: addressButton.bottomAnchor, constant: Space.ma - Self.targetSlack),
             radarView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             radarView.widthAnchor.constraint(equalToConstant: 240),
             radarView.heightAnchor.constraint(equalToConstant: 240),
 
-            statusLabel.topAnchor.constraint(equalTo: radarView.bottomAnchor, constant: Space.room),
+            statusLabel.topAnchor.constraint(equalTo: radarView.bottomAnchor, constant: Space.room - Self.targetSlack),
             statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma),
+            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma - Self.targetSlack),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: linkButton.topAnchor),

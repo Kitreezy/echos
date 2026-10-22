@@ -25,6 +25,7 @@ final class MessageCell: UITableViewCell {
     private let senderNameLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         label.isHidden = true
@@ -41,6 +42,7 @@ final class MessageCell: UITableViewCell {
         view.isScrollEnabled = false
         view.backgroundColor = .clear
         view.font = Typography.body
+        view.adjustsFontForContentSizeCategory = true
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.dataDetectorTypes = [.link]
@@ -76,6 +78,7 @@ final class MessageCell: UITableViewCell {
     private let footnoteLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -85,7 +88,8 @@ final class MessageCell: UITableViewCell {
     /// метки нет и места она не занимает.
     private let reactionsLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 15)
+        label.font = Typography.scaled(.systemFont(ofSize: 15), as: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
         label.backgroundColor = .surfaceRaised
         label.layer.cornerRadius = 11
         label.layer.masksToBounds = true

@@ -163,6 +163,12 @@ enum PeerTransportFactory {
 
     @MainActor
     static func make() -> any PeerTransport {
+        #if DEBUG
+        // UI-тесты: собеседники и переписка — декорация, см. UITestMode.
+        if UITestMode.isActive {
+            return DemoTransport()
+        }
+        #endif
         switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
         case .relay(let url):
             print("[PeerTransportFactory] Nearby + relay transport: \(url)")

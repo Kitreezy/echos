@@ -31,6 +31,7 @@ final class ConversationCell: UITableViewCell {
     private let nameLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.title
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .ink
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -39,6 +40,7 @@ final class ConversationCell: UITableViewCell {
     private let timeLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.setContentHuggingPriority(.required, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -49,6 +51,7 @@ final class ConversationCell: UITableViewCell {
     private let lastMessageLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -59,10 +62,10 @@ final class ConversationCell: UITableViewCell {
     private let unreadBadge: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .surface
         label.backgroundColor = .own
         label.textAlignment = .center
-        label.layer.cornerRadius = 9
         label.layer.masksToBounds = true
         label.isHidden = true
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -112,14 +115,11 @@ final class ConversationCell: UITableViewCell {
             nameLabel.leadingAnchor.constraint(equalTo: presenceDot.trailingAnchor,
                                                constant: Space.step),
 
-            timeLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
-            timeLabel.leadingAnchor.constraint(greaterThanOrEqualTo: nameLabel.trailingAnchor,
-                                               constant: Space.step),
-            timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor,
+                                                constant: -Space.margin),
+            timeLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor,
                                                 constant: -Space.margin),
 
-            lastMessageLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor,
-                                                  constant: Space.tight),
             lastMessageLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             lastMessageLabel.trailingAnchor.constraint(lessThanOrEqualTo: unreadBadge.leadingAnchor,
                                                        constant: -Space.tight),
@@ -129,8 +129,10 @@ final class ConversationCell: UITableViewCell {
             unreadBadge.centerYAnchor.constraint(equalTo: lastMessageLabel.centerYAnchor),
             unreadBadge.trailingAnchor.constraint(equalTo: contentView.trailingAnchor,
                                                   constant: -Space.margin),
-            unreadBadge.heightAnchor.constraint(equalToConstant: 18),
-            unreadBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
+            // Кружок растёт вместе с числом в нём: при фиксированных 18
+            // пунктах крупное число обрезалось.
+            unreadBadge.heightAnchor.constraint(greaterThanOrEqualToConstant: 18),
+            unreadBadge.widthAnchor.constraint(greaterThanOrEqualTo: unreadBadge.heightAnchor),
 
             separator.heightAnchor.constraint(equalToConstant: 1),
             separator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
@@ -139,6 +141,45 @@ final class ConversationCell: UITableViewCell {
                                                 constant: -Space.margin),
             separator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+
+        arrange(for: traitCollection.preferredContentSizeCategory)
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (cell: Self, _) in
+            cell.arrange(for: cell.traitCollection.preferredContentSizeCategory)
+        }
+    }
+
+    // MARK: - Крупный текст
+
+    /// Обычно время стоит справа от имени. При крупном тексте из
+    /// специальных возможностей им вдвоём не хватает строки, и время,
+    /// которое держит своё место, сжимало имя до «А…» — человек не видел,
+    /// чей это разговор. Тогда время уходит под имя, а превью получает
+    /// несколько строк.
+    private lazy var sideBySide = [
+        timeLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+        timeLabel.leadingAnchor.constraint(greaterThanOrEqualTo: nameLabel.trailingAnchor, constant: Space.step),
+        timeLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Space.margin),
+        lastMessageLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: Space.tight)
+    ]
+
+    private lazy var stacked = [
+        timeLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: Space.hair),
+        timeLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+        lastMessageLabel.topAnchor.constraint(equalTo: timeLabel.bottomAnchor, constant: Space.tight)
+    ]
+
+    private func arrange(for category: UIContentSizeCategory) {
+        let large = category.isAccessibilityCategory
+        NSLayoutConstraint.deactivate(large ? sideBySide : stacked)
+        NSLayoutConstraint.activate(large ? stacked : sideBySide)
+        // Две строки и при обычных размерах: на крупных из обычного ряда
+        // одна строка превью уже обрезалась.
+        lastMessageLabel.numberOfLines = large ? 3 : 2
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        unreadBadge.layer.cornerRadius = unreadBadge.bounds.height / 2
     }
 
     // MARK: - Configure
@@ -162,6 +203,30 @@ final class ConversationCell: UITableViewCell {
         unreadBadge.isHidden = conversation.unreadCount == 0
         unreadBadge.text = " \(conversation.unreadCount) "
         lastMessageLabel.textColor = conversation.unreadCount == 0 ? .inkMuted : .ink
+
+        describe(conversation)
+    }
+
+    /// Для VoiceOver ячейка — одна фраза, а не четыре куска подряд: «Боб, 3
+    /// непрочитанных, мозаика, 5 минут назад». Без этого кружок с числом
+    /// читался как « 3 » без смысла, а мозаика — эмодзи за эмодзи.
+    private func describe(_ conversation: ConversationSummary) {
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+        var parts = [conversation.peerName]
+        if conversation.unreadCount > 0 {
+            parts.append(Self.unread(conversation.unreadCount))
+        }
+        parts.append(conversation.lastMessageIsMosaic ? "мозаика" : (lastMessageLabel.text ?? ""))
+        parts.append(timeLabel.text ?? "")
+        accessibilityLabel = parts.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    /// «1 непрочитанное», «3 непрочитанных», «5 непрочитанных».
+    static func unread(_ count: Int) -> String {
+        let (tens, ones) = (count % 100, count % 10)
+        let word = ones == 1 && tens != 11 ? "непрочитанное" : "непрочитанных"
+        return "\(count) \(word)"
     }
 
     /// Язык задан явно, а не берётся у системы.

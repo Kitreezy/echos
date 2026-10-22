@@ -35,6 +35,9 @@
          <TestPlanReference
             reference = "container:Fast.xctestplan">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Accessibility.xctestplan">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <LaunchAction

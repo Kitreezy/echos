@@ -23,7 +23,7 @@ struct PeersListView: View {
 
             if viewModel.peers.isEmpty {
                 Text("Пока никого рядом")
-                    .font(Font(Typography.caption))
+                    .font(Typography.captionText)
                     .foregroundStyle(Color.inkMuted)
             } else {
                 peersList
@@ -98,14 +98,14 @@ struct PeerRow: View {
 
                 VStack(alignment: .leading, spacing: Space.tight) {
                     Text(peer.displayName)
-                        .font(Font(Typography.title))
+                        .font(Typography.titleText)
                         .tracking(Typography.narrow)
                         .foregroundStyle(Color.ink)
 
                     Text([peer.statusLabel, recognition.note]
                         .compactMap { $0 }
                         .joined(separator: " · "))
-                        .font(Font(Typography.caption))
+                        .font(Typography.captionText)
                         .foregroundStyle(recognition.deservesAttention
                                          ? Color.lost
                                          : Color.inkMuted)
@@ -117,7 +117,7 @@ struct PeerRow: View {
                 // происходит нажатием на строку.
                 if peer.status == .connected, let onDisconnect {
                     Button("Отключиться", action: onDisconnect)
-                        .font(Font(Typography.caption))
+                        .font(Typography.captionText)
                         .foregroundStyle(Color.inkMuted)
                         .buttonStyle(.plain)
                 }

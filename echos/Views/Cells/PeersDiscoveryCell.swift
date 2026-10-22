@@ -30,6 +30,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     private let nameLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.title
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .ink
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -38,6 +39,7 @@ final class PeerDiscoveryCell: UITableViewCell {
     private let statusLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
