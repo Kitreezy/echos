@@ -30,6 +30,9 @@ echosIntegrationTests/    # Integration — настоящий Core Data сте�
     Support/
         CoreDataTestStack.swift
     MessageStoreIntegrationTests.swift
+
+echosUITests/             # UI — XCUITest, приложение целиком. Десятки секунд.
+    AccessibilityAuditTests.swift
 ```
 
 Разделение — по **скорости и хрупкости**, а не по «типу файла».
@@ -40,6 +43,8 @@ Unit гоняются на каждое сохранение, интеграци
 Тесты — на Swift Testing. Два тест-плана: `echos` (по умолчанию) гоняет всё,
 `Fast` — всё, кроме тега `network`, то есть без настоящего сокета и релея.
 Fast идёт вдвое быстрее и годится на каждое сохранение, полный — перед пушем.
+Третий план, `Accessibility`, — только UI-тесты, их в первые два не включали:
+они запускают приложение и идут минуты.
 
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fast -destination 'platform=iOS Simulator,name=iPhone 17'
@@ -139,12 +144,45 @@ heartbeat, пауза без сети, мгновенный реконнект, 
 Так сравнивался свой клиент со Starscream: `docs/adr/001-websocket-client.md`.
 Ветка спайка — `spike/starscream_comparison`.
 
+## Аудит доступности
+
+`AccessibilityAuditTests` открывает каждый экран — главный, «Рядом», свою
+стену, чат и палитру мозаики — и зовёт `performAccessibilityAudit`. Аудит
+проверяет то же, что Accessibility Inspector: подписи для VoiceOver, контраст,
+поддержку Dynamic Type, обрезанный текст и размер зоны нажатия. Каждый экран
+проходится дважды, с обычным шрифтом и с самым крупным
+(`-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL`):
+часть проблем видна только на нём.
+
+UI-тесты остаются на XCTest — Swift Testing приложением управлять не умеет.
+Приложение запускается с аргументом `-UITests`. Тогда `PeerTransport.make()`
+отдаёт `DemoTransport` с двумя засеянными собеседниками и сообщениями, а
+Core Data живёт в памяти. Оба переключателя есть только в DEBUG.
+
+Найденное аудитом в первый прогон: серый `ash` и системный `tertiaryLabel`
+не дотягивали до 4.5:1, метки без `adjustsFontForContentSizeCategory` не
+росли, у кнопок-иконок не было подписей, ячейка разговора на крупном шрифте
+сжимала имя до одной буквы. Неочевидное — стиль `caption2` растёт на
+accessibility-размерах слабее остальных, и аудит считает это частичной
+поддержкой. Поэтому мелкий шрифт масштабируется по метрикам `footnote`.
+
+Сознательное исключение одно — контраст красок палитры мозаики. ⬛ или ▪️
+на тёмном фоне — это цвет рисунка, а не текст, который надо прочитать.
+Исключения перечислены в `isKnownException`, новые — только с объяснением там же.
+
+Аудит не заменяет прослушивание экрана с VoiceOver на устройстве: он проверяет,
+что подпись есть, но не то, что она понятна.
+
+```bash
+xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Accessibility -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
 ## Что дальше
 
 - **Phase 3** — связка двух `ChatViewModel`. Два «устройства» в одном процессе
   уже есть: `RelayServer` плюс пара `WebSocketTransport` (см.
   `WebSocketTransportTests`). Осталось поднять проверку на уровень ViewModel —
   доставка и переходы статуса `.sending → .sent/.failed` между двумя моделями.
-- **Phase 4** — XCUITest. Запуск приложения с launch-аргументом `-UITests`,
-  который подсовывает in-memory стор и фейковый транспорт с засеянными пирами;
-  плюс `addUIInterruptionMonitor` на системный алерт локальной сети.
+- **Phase 4** — сценарные XCUITest поверх той же инфраструктуры `-UITests`:
+  отправка сообщения и мозаики, реакции. Плюс `addUIInterruptionMonitor` на
+  системный алерт локальной сети для запуска без `DemoTransport`.

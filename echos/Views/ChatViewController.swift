@@ -33,11 +33,17 @@ final class ChatViewController: UIViewController {
         return table
     }()
     
+    /// Цвета — токенами палитры, а не системными `secondaryLabel`: системные
+    /// зависят от оформления элемента, и строка шифрования выходила тёмно-
+    /// серой на почти чёрном — 2.4:1 по аудиту доступности.
     private let statusLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 12, weight: .medium)
-        label.textColor = .secondaryLabel
+        label.font = Typography.scaled(.systemFont(ofSize: 12, weight: .medium), as: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .inkMuted
         label.textAlignment = .center
+        // При крупном тексте адрес не помещается в строку — переносится.
+        label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         
         return label
@@ -45,7 +51,7 @@ final class ChatViewController: UIViewController {
     
     private let typingLabel: UILabel = {
         let label = UILabel()
-        label.textColor = .tertiaryLabel
+        label.textColor = .inkMuted
         label.font = .italicSystemFont(ofSize: 13)
         label.isHidden = true
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -58,14 +64,15 @@ final class ChatViewController: UIViewController {
         container.translatesAutoresizingMaskIntoConstraints = false
         
         let icon = UIImageView(image: UIImage(systemName: "bubble.left.and.bubble.right"))
-        icon.tintColor = .tertiaryLabel
+        icon.tintColor = .inkMuted
         icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
         
         let label = UILabel()
         label.text = "Нет сообщений\nНачни общаться!"
-        label.textColor = .secondaryLabel
-        label.font = .systemFont(ofSize: 16, weight: .medium)
+        label.textColor = .inkMuted
+        label.font = Typography.scaled(.systemFont(ofSize: 16, weight: .medium), as: .callout)
+        label.adjustsFontForContentSizeCategory = true
         label.textAlignment = .center
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -120,6 +127,7 @@ final class ChatViewController: UIViewController {
         textField.backgroundColor = .clear
         textField.textColor = .ink
         textField.font = Typography.body
+        textField.adjustsFontForContentSizeCategory = true
         textField.tintColor = .own
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.returnKeyType = .send
@@ -133,6 +141,8 @@ final class ChatViewController: UIViewController {
         config.image = UIImage(systemName: "square.grid.3x3")
         config.baseForegroundColor = .inkMuted
         let button = UIButton(configuration: config)
+        // Без подписи VoiceOver читает имя картинки: «square.grid.3x3».
+        button.accessibilityLabel = "Мозаика"
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -142,6 +152,7 @@ final class ChatViewController: UIViewController {
         config.image = UIImage(systemName: "arrow.up")
         config.baseForegroundColor = .own
         let button = UIButton(configuration: config)
+        button.accessibilityLabel = "Отправить"
         button.translatesAutoresizingMaskIntoConstraints = false
         
         return button
@@ -324,6 +335,9 @@ final class ChatViewController: UIViewController {
             target: self,
             action: #selector(backToDiscovery)
         )
+        // Свои кнопки-значки VoiceOver называет по-английски («Back», «More»)
+        // или именем картинки. Подписи — по-русски, как всё приложение.
+        navigationItem.leftBarButtonItem?.accessibilityLabel = "Назад"
         
         // В заголовке имя, а не адрес: отпечаток ключа человеку ни о чём
         // не говорит.
@@ -341,18 +355,21 @@ final class ChatViewController: UIViewController {
             image: UIImage(systemName: "ellipsis"),
             menu: createMainMenu()
         )
+        menuButton.accessibilityLabel = "Меню"
 
         // Стена — половина смысла переписки, а не служебный пункт. В меню
         // третьим сверху её никто не находил.
         var items = [menuButton]
 
         if viewModel.currentConversationPeer != nil {
-            items.append(UIBarButtonItem(
+            let wall = UIBarButtonItem(
                 image: UIImage(systemName: "scribble.variable"),
                 style: .plain,
                 target: self,
                 action: #selector(openPeerWall)
-            ))
+            )
+            wall.accessibilityLabel = "Стена собеседника"
+            items.append(wall)
         }
 
         navigationItem.rightBarButtonItems = items
@@ -372,12 +389,15 @@ final class ChatViewController: UIViewController {
     private lazy var layoutConstraints: [NSLayoutConstraint] = {
         [
             // Status label
-            statusLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            // Строка нажимается — объясняет, как сверить адрес, — а высотой
+            // была в одну мелкую строку. Область нажатия — не меньше 44.
+            statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            statusLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             
             // Table
-            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 4),
+            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             
@@ -394,7 +414,10 @@ final class ChatViewController: UIViewController {
             // InputContainer
             inputContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            inputContainer.heightAnchor.constraint(equalToConstant: 64),
+            // Не меньше, а не ровно: при крупном тексте поле растёт, и в
+            // точную высоту оно не помещалось — текст обрезался.
+            inputContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            inputContainer.heightAnchor.constraint(greaterThanOrEqualTo: textField.heightAnchor, constant: 24),
             inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
             
             // Черновик мозаики — над полем ввода, справа, как своё сообщение.
@@ -411,7 +434,7 @@ final class ChatViewController: UIViewController {
             textField.leadingAnchor.constraint(equalTo: mosaicButton.trailingAnchor, constant: 4),
             textField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
             textField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            textField.heightAnchor.constraint(equalToConstant: 40),
+            textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
             
             // Send button
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
@@ -563,10 +586,15 @@ final class ChatViewController: UIViewController {
     private func updateMosaicChrome() {
         let hasDraft = !mosaicDraft.isEmpty
         mosaicButton.configuration?.baseForegroundColor = isComposingMosaic || hasDraft ? .own : .inkMuted
+        // Цвет кнопки VoiceOver не видит — состояние словами.
+        mosaicButton.accessibilityValue = isComposingMosaic ? "палитра открыта" : (hasDraft ? "есть черновик" : nil)
+        // Подсказка про отправку в плейсхолдер не помещается на крупном
+        // шрифте — поле однострочное. VoiceOver прочитает её из hint.
         textField.attributedPlaceholder = NSAttributedString(
-            string: isComposingMosaic ? "мозаика · стрелка отправит" : "Сообщение",
+            string: isComposingMosaic ? "мозаика" : "Сообщение",
             attributes: [.foregroundColor: UIColor.inkMuted]
         )
+        textField.accessibilityHint = isComposingMosaic ? "стрелка отправит мозаику" : nil
     }
 
     /// `toggling` — нажатие: та же кисть по той же клетке стирает.

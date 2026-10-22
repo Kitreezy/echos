@@ -21,7 +21,9 @@ import CoreData
 @MainActor
 final class PersistenceController {
     
-    static let shared = PersistenceController()
+    /// В UI-тестах — в памяти: тест не должен трогать настоящую переписку
+    /// на симуляторе и не должен зависеть от того, что там осталось.
+    static let shared = PersistenceController(inMemory: UITestMode.isActive)
     
     let container: NSPersistentCloudKitContainer
 

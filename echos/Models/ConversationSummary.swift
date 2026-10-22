@@ -14,6 +14,9 @@ struct ConversationSummary: Identifiable {
     /// Имя для показа. Может повторяться и меняться, адресовать по нему нельзя.
     let peerName: String
     let lastMessage: String
+    /// Последнее — мозаика. Текстовая форма у неё — сетка эмодзи: на экране
+    /// это рисунок, а VoiceOver прочитал бы её знак за знаком.
+    var lastMessageIsMosaic = false
     let lastMessageTime: Date
     let messageCount: Int
     let unreadCount: Int

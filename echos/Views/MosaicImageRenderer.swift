@@ -46,7 +46,9 @@ enum MosaicImageRenderer {
 
         let caption = UILabel()
         caption.text = "e c h o s"
-        caption.font = Typography.micro
+        // Картинка уходит наружу: подпись на ней не зависит от настройки текста
+        // у того, кто её сохранил.
+        caption.font = .systemFont(ofSize: 11, weight: .regular)
         caption.textColor = .inkMuted
         caption.sizeToFit()
         caption.frame.origin = CGPoint(x: canvas.bounds.width - padding - caption.bounds.width,

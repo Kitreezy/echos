@@ -1,0 +1,20 @@
+{
+  "configurations": [
+    {
+      "id": "04EB8EE9-5E8F-4CA6-8904-FC9CA734920A",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {},
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA4400000000000000000001",
+        "name": "echosUITests"
+      }
+    }
+  ],
+  "version": 1
+}

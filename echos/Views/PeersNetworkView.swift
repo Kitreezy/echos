@@ -45,7 +45,7 @@ struct PeersNetworkView: View {
                 if viewModel.peers.isEmpty {
                     Spacer()
                     Text("Пока никого рядом")
-                        .font(Font(Typography.caption))
+                        .font(Typography.captionText)
                         .foregroundStyle(Color.inkMuted)
                         .frame(maxWidth: .infinity)
                     Spacer()
@@ -57,7 +57,7 @@ struct PeersNetworkView: View {
                 // он не читается. Синий ждёт места, где станет заливкой,
                 // а не текстом.
                 Button("Искать заново", action: onNewScan)
-                .font(Font(Typography.caption))
+                .font(Typography.captionText)
                 .foregroundStyle(Color.inkMuted)
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
@@ -85,7 +85,7 @@ struct PeersNetworkView: View {
     private func group(_ title: String, peers: [Peer]) -> some View {
         if !peers.isEmpty {
             Text(title)
-                .font(Font(Typography.micro))
+                .font(Typography.microText)
                 .tracking(Typography.narrow)
                 .foregroundStyle(Color.inkMuted)
                 .padding(.horizontal, Space.margin)
