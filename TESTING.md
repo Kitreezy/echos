@@ -8,6 +8,7 @@ echosTests/               # Unit — чистая логика, без I/O. Ми
         LoopbackTransport.swift   # подставной PeerTransport
         SpyMessageStore.swift     # хранилище-шпион
         FakeNetworkMonitor.swift  # подставной NWPathMonitor
+        BadNetwork.swift          # сбои поверх настоящего сокета
         RelayServer.swift         # WebSocket-сервер на NWListener
         RelayFixture.swift        # трейт .relayServer — свой релей на тест
         Tags.swift                # теги network / crypto / persistence
@@ -22,6 +23,8 @@ echosTests/               # Unit — чистая логика, без I/O. Ми
     WebSocketClientTests.swift      # клиент против живого сервера
     WebSocketTransportTests.swift   # два «устройства» через один релей
     NetworkAwarenessTests.swift     # пропажа и возврат сети
+    BadNetworkTests.swift           # сеть есть, но плохая
+    DuplicateDeliveryTests.swift    # повторно пришедшее сообщение
     TransportLifecycleTests.swift   # уход в фон и возврат
     Contract/
         WebSocketContractTests.swift  # общий контракт для любого транспорта
@@ -131,6 +134,26 @@ Swift Testing гоняет тесты параллельно в одном пр�
   `clearReceived()`, иначе в счёт пойдут события до обрыва.
 - В `Info.plist` нужен `NSAllowsLocalNetworking`, иначе ATS режет `ws://127.0.0.1`.
   Исключение узкое, на трафик в интернет не влияет.
+
+## Плохая сеть
+
+`FakeNetworkMonitor` умеет две крайности: путь есть или его нет. Третий
+случай — путь есть, а соединение ведёт себя так, будто его нет, — монитор
+не видит, и с релеем на 127.0.0.1 он не случается. Для него `BadNetwork`:
+клиент создаёт сокеты через неё, и каждый — настоящий сокет к тестовому
+релею, через который по команде пропускаются сбои. Рукопожатие не
+завершается, отправка не возвращается, pong теряется, соединение рвётся
+сразу после открытия. Условия общие для всех сокетов клиента, поэтому их
+можно поменять посреди теста — так сеть «выздоравливает».
+
+Зависания в `BadNetwork` на отмену задачи не реагируют, как и у настоящего
+сокета. С вежливой подделкой первый же тест на потерянный pong прошёл бы, а
+так он нашёл, что heartbeat тихий обрыв не замечал: task group в
+`pingWithTimeout` после таймаута дожидалась зависшего `ping()`.
+
+Повторная отправка после таймаута означает, что сообщение может прийти
+дважды. Отсеивает повторы получатель, по `id` сообщения, —
+`DuplicateDeliveryTests`.
 
 ## Общий контракт транспорта
 

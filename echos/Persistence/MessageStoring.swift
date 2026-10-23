@@ -14,6 +14,11 @@ import Foundation
 protocol MessageStoring: AnyObject {
     
     func saveMessage(_ message: Message) async throws
+
+    /// Есть ли уже сообщение с таким id. Получатель отсеивает по нему
+    /// повторы: после таймаута отправитель шлёт сообщение ещё раз, не зная,
+    /// дошло ли первое.
+    func containsMessage(id: UUID) async throws -> Bool
     
     func loadMessages() async throws -> [Message]
     func loadMessages(with address: String) async throws -> [Message]
