@@ -33,6 +33,8 @@ echosIntegrationTests/    # Integration — настоящий Core Data сте�
 
 echosUITests/             # UI — XCUITest, приложение целиком. Десятки секунд.
     AccessibilityAuditTests.swift
+    ProfilingScenarioTests.swift  # сценарий для Instruments, план Profiling
+    LaunchPerformanceTests.swift  # время запуска, план Profiling
 ```
 
 Разделение — по **скорости и хрупкости**, а не по «типу файла».
@@ -44,7 +46,9 @@ Unit гоняются на каждое сохранение, интеграци
 `Fast` — всё, кроме тега `network`, то есть без настоящего сокета и релея.
 Fast идёт вдвое быстрее и годится на каждое сохранение, полный — перед пушем.
 Третий план, `Accessibility`, — только UI-тесты, их в первые два не включали:
-они запускают приложение и идут минуты.
+они запускают приложение и идут минуты. Четвёртый, `Profiling`, — сценарий
+для Instruments и замер запуска; в остальных планах эти два теста
+пропускаются (подробнее — README, раздел «Профилирование»).
 
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fast -destination 'platform=iOS Simulator,name=iPhone 17'

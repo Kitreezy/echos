@@ -561,17 +561,25 @@ final class ChatViewController: UIViewController {
         isComposingMosaic = composing
         awaitingCustomBrush = false
 
+        // Перезагрузка ввода нужна, только когда поле уже в фокусе: тогда
+        // палитра подменяет открытую клавиатуру. Не в фокусе — палитру
+        // возьмёт `becomeFirstResponder`, а при закрытии `reloadInputViews`
+        // строил системную клавиатуру, которую следующей строкой убирали.
+        // Time Profiler на сценарии с палитрой показал это как треть времени
+        // переключения.
         if composing {
             textField.text = ""
             textField.inputView = palette
-            textField.reloadInputViews()
-            textField.becomeFirstResponder()
+            if textField.isFirstResponder {
+                textField.reloadInputViews()
+            } else {
+                textField.becomeFirstResponder()
+            }
             draftView.show(mosaicDraft)
             draftView.isHidden = false
         } else {
-            textField.inputView = nil
-            textField.reloadInputViews()
             textField.resignFirstResponder()
+            textField.inputView = nil
             // Начатое остаётся на виду и без палитры: так видно, что оно
             // не пропало. Пустой черновик показывать незачем.
             draftView.isHidden = mosaicDraft.isEmpty

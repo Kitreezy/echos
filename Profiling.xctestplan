@@ -1,0 +1,31 @@
+{
+  "configurations": [
+    {
+      "id": "5C1E7A2B-3F4D-4E8A-9B6C-2D7F1A0E9C31",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "ECHOS_PROFILING",
+        "value": "1"
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "selectedTests": [
+        "LaunchPerformanceTests\/test_launch()",
+        "ProfilingScenarioTests\/test_screensRoundTrip()"
+      ],
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA4400000000000000000001",
+        "name": "echosUITests"
+      }
+    }
+  ],
+  "version": 1
+}

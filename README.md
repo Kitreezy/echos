@@ -394,6 +394,35 @@ workflow.
 
 Включается тем же секретом `CLAUDE_CODE_OAUTH_TOKEN`, что и проверка кода.
 
+## Профилирование
+
+```bash
+scripts/profile.sh                  # Leaks
+scripts/profile.sh "Time Profiler"  # главный поток и зависания
+```
+
+Скрипт запускает UI-тест `ProfilingScenarioTests` (план `Profiling`),
+который шесть раз ходит по экранам: чат с палитрой мозаики — из закрытой
+клавиатуры и вместо открытой, — потом своя стена. xctrace подключается к
+запущенному им приложению, а `scripts/trace_report.py` печатает сводку:
+зависания и самые дорогие функции приложения на главном потоке либо утечки
+и то, сколько экземпляров каждого класса осталось живыми после всех кругов.
+Второе ловит то, чего Leaks не видит: экран, который держит живая `Task`,
+достижим и утечкой не считается. Сравнивать «до» и «после» можно только на
+одном сценарии, ради этого он и тест, а не руки.
+
+Сборка — Debug: демо-переписка есть только в ней. Утечкам это не мешает,
+время в Debug завышено, и сравнивать его можно только с Debug же. Шаблон
+App Launch на симуляторе не работает — приложение остаётся остановленным, —
+поэтому запуск меряет `LaunchPerformanceTests` (`XCTApplicationLaunchMetric`,
+пять запусков):
+
+```bash
+xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Profiling -only-testing:echosUITests/LaunchPerformanceTests -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Трасса Leaks весит гигабайты, `build/profile` стоит чистить.
+
 ## Подпись вручную
 
 `fastlane package` оставляет `.ipa` без подписи, и на устройство он не встаёт.
