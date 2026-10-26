@@ -36,7 +36,7 @@ struct Message: Identifiable, Equatable {
     /// больше одной на сообщение: своя и собеседника.
     var myReaction: String?
     var peerReaction: String?
-    
+
     init(id: UUID = UUID(),
          text: String,
          mosaic: Mosaic? = nil,
@@ -102,7 +102,7 @@ struct MessagePayload: Codable {
     /// ни транспорту, ни релею новый род не нужен. Старая сборка увидит
     /// эмодзи текстом; текст для этого и заполняется.
     let reaction: ReactionPayload?
-    
+
     init(from message: Message, senderName: String) {
         self.id = message.id.uuidString
         self.text = message.text
@@ -121,7 +121,7 @@ struct MessagePayload: Codable {
         self.mosaic = nil
         self.reaction = reaction
     }
-    
+
     /// Конвертация обратно в Message (входящее — isFromMe = false).
     ///
     /// Адрес отправителя приходит снаружи, от транспорта: `senderName` внутри

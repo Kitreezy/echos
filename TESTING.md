@@ -46,6 +46,10 @@ Fast идёт вдвое быстрее и годится на каждое со
 Третий план, `Accessibility`, — только UI-тесты, их в первые два не включали:
 они запускают приложение и идут минуты.
 
+План `echos` собирает покрытие таргета приложения, и CI проверяет его порогом
+(`scripts/coverage.py`, подробности — в README). Покрытие видно и локально:
+Xcode → Report navigator → Coverage после прогона этого плана.
+
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fast -destination 'platform=iOS Simulator,name=iPhone 17'
 ```

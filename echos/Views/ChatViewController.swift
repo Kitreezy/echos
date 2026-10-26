@@ -8,18 +8,22 @@
 import UIKit
 import SwiftUI
 
+// Долг: файл и тип выросли за лимиты .swiftlint.yml. Разрезать, а не
+// поднимать лимиты.
+// swiftlint:disable file_length
+// swiftlint:disable:next type_body_length
 final class ChatViewController: UIViewController {
-    
+
     private let sharedViewModel: ChatViewModel
-    
+
     // MARK: - ViewModel
-    
+
     private var viewModel: ChatViewModel {
         return sharedViewModel
     }
-    
+
     // MARK: - UI
-    
+
     private let tableView: UITableView = {
         let table = UITableView()
         table.separatorStyle = .none
@@ -29,10 +33,10 @@ final class ChatViewController: UIViewController {
         table.translatesAutoresizingMaskIntoConstraints = false
         table.estimatedRowHeight = 80
         table.rowHeight = UITableView.automaticDimension
-        
+
         return table
     }()
-    
+
     /// Цвета — токенами палитры, а не системными `secondaryLabel`: системные
     /// зависят от оформления элемента, и строка шифрования выходила тёмно-
     /// серой на почти чёрном — 2.4:1 по аудиту доступности.
@@ -45,29 +49,29 @@ final class ChatViewController: UIViewController {
         // При крупном тексте адрес не помещается в строку — переносится.
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
-        
+
         return label
     }()
-    
+
     private let typingLabel: UILabel = {
         let label = UILabel()
         label.textColor = .inkMuted
         label.font = .italicSystemFont(ofSize: 13)
         label.isHidden = true
         label.translatesAutoresizingMaskIntoConstraints = false
-        
+
         return label
     }()
-    
+
     private let emptyStateView: UIView = {
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        
+
         let icon = UIImageView(image: UIImage(systemName: "bubble.left.and.bubble.right"))
         icon.tintColor = .inkMuted
         icon.contentMode = .scaleAspectFit
         icon.translatesAutoresizingMaskIntoConstraints = false
-        
+
         let label = UILabel()
         label.text = "Нет сообщений\nНачни общаться!"
         label.textColor = .inkMuted
@@ -76,25 +80,25 @@ final class ChatViewController: UIViewController {
         label.textAlignment = .center
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
-        
+
         container.addSubview(icon)
         container.addSubview(label)
-        
+
         NSLayoutConstraint.activate([
             icon.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             icon.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: -30),
             icon.widthAnchor.constraint(equalToConstant: 60),
             icon.heightAnchor.constraint(equalToConstant: 60),
-            
+
             label.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 16),
             label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             label.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 40),
             label.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -40),
         ])
-        
+
         return container
     }()
-    
+
     private let inputContainer: UIView = {
         // Панель отделена от переписки волосяной линией, а не тенью:
         // тень на чёрном всё равно не видна, зато добавляет слой.
@@ -116,7 +120,7 @@ final class ChatViewController: UIViewController {
 
         return view
     }()
-    
+
     private let textField: UITextField = {
         let textField = UITextField()
         textField.attributedPlaceholder = NSAttributedString(
@@ -131,10 +135,10 @@ final class ChatViewController: UIViewController {
         textField.tintColor = .own
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.returnKeyType = .send
-        
+
         return textField
     }()
-    
+
     /// Вход в набор мозаики — слева от поля, где обычно живёт вложение.
     private let mosaicButton: UIButton = {
         var config = UIButton.Configuration.plain()
@@ -154,10 +158,10 @@ final class ChatViewController: UIViewController {
         let button = UIButton(configuration: config)
         button.accessibilityLabel = "Отправить"
         button.translatesAutoresizingMaskIntoConstraints = false
-        
+
         return button
     }()
-    
+
     private var typingAnimationTimer: Timer?
     private var typingDots = 0
     private var currentTypingPeer: String?
@@ -191,25 +195,25 @@ final class ChatViewController: UIViewController {
         }
         return view
     }()
-    
+
     // MARK: Init
-    
+
     init(viewModel: ChatViewModel) {
         self.sharedViewModel = viewModel
         super.init(nibName: nil, bundle: nil)
     }
-     
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     // MARK: - Lifecycle
-    
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
+
         navigationController?.setNavigationBarHidden(false, animated: animated)
-        
+
         navigationController?.interactivePopGestureRecognizer?.isEnabled = true
         navigationController?.interactivePopGestureRecognizer?.delegate = nil
 
@@ -283,13 +287,13 @@ final class ChatViewController: UIViewController {
         }
         UserSettings.setMosaicDraft(mosaicDraft, for: address)
     }
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         title = "echos"
         view.backgroundColor = .surface
-        
+
         setupNavigationBar()
         setupLayout()
         setupTableView()
@@ -297,7 +301,7 @@ final class ChatViewController: UIViewController {
         bindViewModel()
         setupAppLifecycleObservers()
     }
-    
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
     }
@@ -309,25 +313,25 @@ final class ChatViewController: UIViewController {
         print("[lifecycle] ChatViewController viewWillDisappear (isMovingFromParent: \(isMovingFromParent))")
         stopTypingAnimation()
     }
-    
+
     // MARK: - App Lifecycle
-    
+
     private func setupAppLifecycleObservers() {
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(appDidEnterBackground),
                                                name: UIApplication.didEnterBackgroundNotification,
                                                object: nil
         )
-        
+
         NotificationCenter.default.addObserver(self,
                                                selector: #selector(appWillEnterForeground),
                                                name: UIApplication.willEnterForegroundNotification,
                                                object: nil
         )
     }
-    
+
     // MARK: - Navigation Bar
-    
+
     private func setupNavigationBar() {
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "chevron.left"),
@@ -338,7 +342,7 @@ final class ChatViewController: UIViewController {
         // Свои кнопки-значки VoiceOver называет по-английски («Back», «More»)
         // или именем картинки. Подписи — по-русски, как всё приложение.
         navigationItem.leftBarButtonItem?.accessibilityLabel = "Назад"
-        
+
         // В заголовке имя, а не адрес: отпечаток ключа человеку ни о чём
         // не говорит.
         if let peerName = viewModel.currentConversationName {
@@ -350,7 +354,7 @@ final class ChatViewController: UIViewController {
         } else {
             title = "echos"
         }
-        
+
         let menuButton = UIBarButtonItem(
             image: UIImage(systemName: "ellipsis"),
             menu: createMainMenu()
@@ -385,7 +389,7 @@ final class ChatViewController: UIViewController {
     }
 
     // MARK: - Layout
-    
+
     private lazy var layoutConstraints: [NSLayoutConstraint] = {
         [
             // Status label
@@ -395,22 +399,22 @@ final class ChatViewController: UIViewController {
             statusLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            
+
             // Table
             tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            
+
             emptyStateView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             emptyStateView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             emptyStateView.widthAnchor.constraint(equalTo: tableView.widthAnchor),
-            
+
             // Typing
             typingLabel.topAnchor.constraint(equalTo: tableView.bottomAnchor, constant: 4),
             typingLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             typingLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             typingLabel.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -4),
-            
+
             // InputContainer
             inputContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -419,7 +423,7 @@ final class ChatViewController: UIViewController {
             inputContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
             inputContainer.heightAnchor.constraint(greaterThanOrEqualTo: textField.heightAnchor, constant: 24),
             inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
-            
+
             // Черновик мозаики — над полем ввода, справа, как своё сообщение.
             draftView.bottomAnchor.constraint(equalTo: typingLabel.topAnchor, constant: -Space.tight),
             draftView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Space.margin),
@@ -435,7 +439,7 @@ final class ChatViewController: UIViewController {
             textField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
             textField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
             textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
-            
+
             // Send button
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
@@ -443,7 +447,7 @@ final class ChatViewController: UIViewController {
             sendButton.heightAnchor.constraint(equalToConstant: 40)
         ]
     }()
-    
+
     private func setupLayout() {
         view.addSubview(statusLabel)
 
@@ -460,15 +464,15 @@ final class ChatViewController: UIViewController {
         inputContainer.addSubview(textField)
         inputContainer.addSubview(sendButton)
         view.addSubview(draftView)
-        
+
         NSLayoutConstraint.activate(layoutConstraints)
-        
+
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         mosaicButton.addTarget(self, action: #selector(composeMosaic), for: .touchUpInside)
         textField.delegate = self
         textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
     }
-    
+
     /// Открытый ряд реакций — над одним сообщением за раз.
     private var reactionPicker: ReactionPickerView?
 
@@ -483,20 +487,20 @@ final class ChatViewController: UIViewController {
         tableView.addGestureRecognizer(tap)
         tableView.register(MessageCell.self, forCellReuseIdentifier: MessageCell.reuseID)
     }
-    
+
     private func setupGestures() {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
         tapGesture.cancelsTouchesInView = false
         tableView.addGestureRecognizer(tapGesture)
     }
-    
+
     @objc
     private func dismissKeyboard() {
         view.endEditing(true)
     }
-    
+
     // MARK: - Binding
-    
+
     /// Подписка на @Observable ViewModel через withObservationTracking.
     /// При каждом изменении observed-свойства вызывается onChange -  перегружаем UI.
     private func bindViewModel() {
@@ -505,12 +509,12 @@ final class ChatViewController: UIViewController {
         updateUI()
         scheduleObservation()
     }
-    
+
     private func scheduleObservation() {
         withObservationTracking {
-            let _ = viewModel.messages
-            let _ = viewModel.connectionStatus
-            let _ = viewModel.typingPeerName
+            _ = viewModel.messages
+            _ = viewModel.connectionStatus
+            _ = viewModel.typingPeerName
         } onChange: { [weak self] in
             // onChange прилетает вне главного актора и вне изоляции вьюхи,
             // поэтому возвращаемся на него явно через Task { @MainActor }.
@@ -521,11 +525,11 @@ final class ChatViewController: UIViewController {
             }
         }
     }
-    
+
     private func updateUI() {
         statusLabel.text = viewModel.connectionStatus
         emptyStateView.isHidden = !viewModel.messages.isEmpty
-        
+
         tableView.reloadData()
         // До первого показа крутить нечего: лента ещё без размера, за это
         // отвечает раскладка. Дальше — плавно, как и положено новому
@@ -533,9 +537,9 @@ final class ChatViewController: UIViewController {
         if view.window != nil {
             scrollToBottom(animated: true)
         }
-        
+
         updateMenu()
-        
+
         if let peerName = viewModel.typingPeerName {
             if currentTypingPeer != peerName {
                 currentTypingPeer = peerName
@@ -546,9 +550,9 @@ final class ChatViewController: UIViewController {
             stopTypingAnimation()
         }
     }
-    
+
     // MARK: - Actions
-    
+
     /// Мозаика — часть печатания: вместо клавиатуры выезжает палитра, над
     /// полем появляется черновик. Повторное нажатие убирает палитру,
     /// черновик остаётся до отправки.
@@ -706,7 +710,7 @@ final class ChatViewController: UIViewController {
         }
         textField.text = ""
     }
-    
+
     @objc
     private func textFieldDidChange() {
         if awaitingCustomBrush {
@@ -726,27 +730,26 @@ final class ChatViewController: UIViewController {
             viewModel.stopTyping()
             return
         }
-        
+
         viewModel.startTyping()
     }
-    
+
     @objc
     private func appDidEnterBackground() {
         stopTypingAnimation()
     }
-    
+
     @objc
     private func appWillEnterForeground() {
-
     }
-    
+
     @objc
     private func backToDiscovery() {
         navigationController?.popViewController(animated: true)
     }
-    
+
     // MARK: - Main Menu (UIMenu)
-    
+
     private func createMainMenu() -> UIMenu {
         let navigationSection = UIMenu(title: "", options: .displayInline, children: [
             UIAction(
@@ -755,7 +758,7 @@ final class ChatViewController: UIViewController {
             ) { [weak self] _ in
                 self?.showConversationsList()
             },
-            
+
             UIAction(
                 title: "Устройства поблизости",
                 image: UIImage(systemName: "antenna.radiowaves.left.and.right")
@@ -777,7 +780,7 @@ final class ChatViewController: UIViewController {
                 self?.showWall(of: nil)
             }
         ])
-        
+
         var chatSection: UIMenu?
         if let address = viewModel.currentConversationPeer {
             let peerName = viewModel.currentConversationName ?? address
@@ -796,7 +799,7 @@ final class ChatViewController: UIViewController {
                 ) { [weak self] _ in
                     self?.confirmDisconnect()
                 },
-                
+
                 UIAction(
                     title: "Очистить историю",
                     image: UIImage(systemName: "trash"),
@@ -806,7 +809,7 @@ final class ChatViewController: UIViewController {
                 }
             ])
         }
-        
+
         let generalSection = UIMenu(title: "", options: .displayInline, children: [
             UIAction(
                 title: "Очистить всю историю",
@@ -816,64 +819,64 @@ final class ChatViewController: UIViewController {
                 self?.confirmClearAllMessages()
             }
         ])
-        
+
         var children: [UIMenuElement] = [navigationSection]
         if let chatSection = chatSection {
             children.append(chatSection)
         }
         children.append(generalSection)
-        
+
         return UIMenu(title: "", children: children)
     }
-    
+
     // MARK: - Menu Update
-    
+
     private func updateMenu() {
         if let menuButton = navigationItem.rightBarButtonItems?.first {
             menuButton.menu = createMainMenu()
         }
     }
-    
+
     // MARK: - History Menu
-    
+
     // MARK: - Disconnect Confirmation
-    
+
     private func confirmDisconnect() {
         guard let peerName = viewModel.currentConversationName
                 ?? viewModel.currentConversationPeer else {
             return
         }
-        
+
         let alert = UIAlertController(title: "Отключиться?",
                                       message: "Вы будете отключены от '\(peerName)'. История сохранится.",
                                       preferredStyle: .alert)
-        
+
         let disconnectAction = UIAlertAction(title: "Отключиться",
                                              style: .destructive) { [weak self] _ in
             self?.viewModel.disconnectFromCurrentPeer()
             print("[ChatViewController] Disconnected from  '\(peerName)'... [DONE]")
         }
-        
+
         let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
-        
+
         alert.addAction(disconnectAction)
         alert.addAction(cancelAction)
-        
+
         present(alert, animated: true)
     }
-    
+
     // MARK: - Clear Confirmations
-    
+
     private func confirmClearCurrentConversation() {
         guard let peerName = viewModel.currentConversationName
                 ?? viewModel.currentConversationPeer else {
             return
         }
-        
+
         let alert = UIAlertController(title: "Очистить чат?",
                                       message: "Вы действительно хотите очистить весь чат с \(peerName)?",
                                       preferredStyle: .alert)
-        
+
         let deleteAction = UIAlertAction(title: "Очистить",
                                          style: .destructive) { [weak self] _ in
             Task {
@@ -892,23 +895,23 @@ final class ChatViewController: UIViewController {
                 }
             }
         }
-        
+
         let cancelAction = UIAlertAction(title: "Отмена",
                                          style: .cancel)
-        
+
         alert.addAction(deleteAction)
         alert.addAction(cancelAction)
-        
+
         present(alert, animated: true)
     }
-    
+
     private func confirmClearAllMessages() {
         let alert = UIAlertController(
             title: "Очистить всю историю?",
             message: "Все сообщения со всеми устройствами будут удалены.",
             preferredStyle: .alert
         )
-        
+
         let deleteAction = UIAlertAction(title: "Удалить всё", style: .destructive) { [weak self] _ in
             Task {
                 do {
@@ -925,17 +928,17 @@ final class ChatViewController: UIViewController {
                 }
             }
         }
-        
+
         let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
-        
+
         alert.addAction(deleteAction)
         alert.addAction(cancelAction)
-        
+
         present(alert, animated: true)
     }
-    
+
     // MARK: - Helpers
-    
+
     private func scrollToBottom(animated: Bool) {
         guard !viewModel.messages.isEmpty else {
             return
@@ -943,7 +946,7 @@ final class ChatViewController: UIViewController {
         let idx = IndexPath(row: viewModel.messages.count - 1, section: 0)
         tableView.scrollToRow(at: idx, at: .bottom, animated: animated)
     }
-    
+
     private func showError(_ message: String) {
         let alert = UIAlertController(
             title: "Ошибка",
@@ -953,16 +956,16 @@ final class ChatViewController: UIViewController {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
     }
-    
+
     // MARK: - Routing
-    
+
     @objc
     private func showPeersList() {
         let peersView = PeersListView(viewModel: viewModel)
         let hostingVC = UIHostingController(rootView: peersView)
         navigationController?.pushViewController(hostingVC, animated: true)
     }
-    
+
     /// Стена: своя (`owner == nil`) или собеседника.
     /// Что сказать о собеседнике над заголовком. `nil` — говорить нечего.
     private func conversationNote() -> String? {
@@ -1037,15 +1040,15 @@ final class ChatViewController: UIViewController {
         let hostingVC = UIHostingController(rootView: conversationsView)
         navigationController?.pushViewController(hostingVC, animated: true)
     }
-    
+
     // MARK: - Typing Animation
-    
+
     private func startTypingAnimation(peerName: String) {
         stopTypingAnimation()
-        
+
         typingLabel.isHidden = false
         typingDots = 0
-        
+
         typingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.5,
                                                     repeats: true) { [weak self] _ in
             // Timer со scheduledTimer всегда стреляет на главном run loop,
@@ -1061,16 +1064,16 @@ final class ChatViewController: UIViewController {
                 self.typingLabel.text = "\(peerName) печатает\(dots)"
             }
         }
-        
+
         typingLabel.text = "\(peerName) печатает."
     }
-    
+
     private func stopTypingAnimation() {
         typingAnimationTimer?.invalidate()
         typingAnimationTimer = nil
         typingLabel.isHidden = true
     }
-    
+
     deinit {
         print("[lifecycle] ChatViewController deinit")
         NotificationCenter.default.removeObserver(self)
@@ -1080,12 +1083,12 @@ final class ChatViewController: UIViewController {
 // MARK: - UITableViewDataSource
 
 extension ChatViewController: UITableViewDataSource {
-    
+
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
         viewModel.messages.count
     }
-    
+
     func tableView(_ tableView: UITableView,
                    cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         guard let cell = tableView.dequeueReusableCell(
@@ -1253,7 +1256,7 @@ extension ChatViewController: UIGestureRecognizerDelegate {
 // MARK: - UITextFieldDelegate
 
 extension ChatViewController: UITextFieldDelegate {
-    
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         // Пока ждём кисть с клавиатуры, Return — просто вернуться к палитре.
         if awaitingCustomBrush {
@@ -1365,7 +1368,7 @@ extension ChatViewController: MosaicPaletteDelegate {
 // MARK: - PeerConnectionApproving
 
 extension ChatViewController: PeerConnectionApproving {
-   
+
     func shouldAcceptConnection(from peerName: String) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { [weak self] in
@@ -1373,29 +1376,29 @@ extension ChatViewController: PeerConnectionApproving {
                     continuation.resume(returning: false)
                     return
                 }
-                
+
                 guard self.isViewLoaded && self.view.window != nil else {
                     print("[ChatViewController] Not in hierarchy, auto-accepting")
                     continuation.resume(returning: true)
                     return
                 }
-                
+
                 let alert = UIAlertController(title: "Новое подключение",
                                               message: "\(peerName) хочет подключиться к вам. Разрешить?",
                                               preferredStyle: .alert)
-                
+
                 let acceptAction = UIAlertAction(title: "Принять", style: .default) { _ in
                     continuation.resume(returning: true)
                 }
-                
+
                 let declineAction = UIAlertAction(title: "Отклонить", style: .default) { _ in
                     continuation.resume(returning: false)
                 }
-                
+
                 alert.addAction(acceptAction)
                 alert.addAction(declineAction)
                 alert.preferredAction = acceptAction
-                
+
                 self.present(alert, animated: true)
             }
         }

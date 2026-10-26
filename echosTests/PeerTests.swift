@@ -10,13 +10,13 @@ import Testing
 @testable import echos
 
 struct PeerTests {
-    
+
     private func peer(rssi: Int?) -> Peer {
         Peer(displayName: "Alice", rssi: rssi)
     }
-    
+
     // MARK: - signalPercentage
-    
+
     /// RSSI → процент: края шкалы, середина, выход за пределы — обрезается,
     /// а не даёт <0 или >100, — и отсутствие сигнала. Пары — через zip:
     /// иначе Swift Testing перемножил бы два списка.
@@ -25,16 +25,16 @@ struct PeerTests {
     func signalPercentage(rssi: Int?, expected: Int) {
         #expect(peer(rssi: rssi).signalPercentage == expected)
     }
-    
+
     // MARK: - formattedDistance
-    
+
     @Test func formattedDistance_roundsDownAndFallsBack() {
         #expect(Peer(displayName: "A", distance: 12.7).formattedDistance == "12M")
         #expect(Peer(displayName: "A", distance: nil).formattedDistance == "??M")
     }
-    
+
     // MARK: - isActive
-    
+
     @Test func isActive_onlyWhenConnected() {
         #expect(Peer(displayName: "A", status: .connected).isActive)
         #expect(!(Peer(displayName: "A", status: .connecting).isActive))

@@ -12,18 +12,18 @@ import Foundation
 
 @MainActor
 protocol MessageStoring: AnyObject {
-    
+
     func saveMessage(_ message: Message) async throws
-    
+
     func loadMessages() async throws -> [Message]
     func loadMessages(with address: String) async throws -> [Message]
 
     func markAsRead(with address: String) async throws
-    
+
     func deleteOldMessages(olderThan days: Int) async throws
     func deleteConverstaion(with address: String) async throws
     func clearAll() async throws
-    
+
     func getMessageStats() async throws -> [String: Int]
 }
 
