@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Формат заголовка коммита — до того, как коммит появится. Включить:
+#
+#   git config core.hooksPath scripts/hooks
+#
+# Та же проверка идёт в CI на каждый pull request; хук только экономит
+# поход туда и обратно с git rebase -i.
+
+exec python3 "$(git rev-parse --show-toplevel)/scripts/changelog.py" check-message "$1"

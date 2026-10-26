@@ -1,0 +1,44 @@
+# Формат заголовков коммитов в pull request'е.
+#
+# Журнал изменений и заметки к релизу собираются из этих заголовков
+# (scripts/changelog.py), и собираются ровно настолько, насколько история
+# аккуратна. «Update README.md» в журнал не попадёт вовсе, поэтому ловить
+# его надо здесь, пока коммит ещё можно переписать.
+#
+# Отдельный workflow: проверке нужна только история, ни сборка, ни macOS.
+
+name: commits
+
+on:
+  pull_request:
+
+concurrency:
+  group: commits-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Диапазон — от базы до головы PR, без синтетического merge-коммита,
+      # который GitHub собирает для проверки.
+      - name: Формат заголовков
+        run: |
+          python3 scripts/changelog.py check \
+            "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      # Что этот PR добавит в журнал — в сводку прогона, чтобы видеть
+      # формулировки до вливания, а не в день выпуска.
+      - name: Что попадёт в журнал
+        run: |
+          {
+            echo "### Что попадёт в журнал"
+            echo
+            python3 scripts/changelog.py notes \
+              --from "${{ github.event.pull_request.base.sha }}" \
+              --to "${{ github.event.pull_request.head.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"
