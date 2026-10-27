@@ -14,6 +14,7 @@
 
 import CryptoKit
 import Foundation
+import OSLog
 
 /// Отдельный тип нужен из-за кэша: обращаться в Keychain на каждое
 /// переподключение незачем, а кэш переживает потоки, поэтому под замком.
@@ -88,7 +89,7 @@ final class IdentityStore: @unchecked Sendable {
             if let key = try? parse(raw) {
                 return key
             }
-            print("[IdentityStore] Ключ \(account) в Keychain повреждён, создаётся новый")
+            Logger.identity.fault("Ключ \(account, privacy: .public) в Keychain повреждён, создаётся новый")
         }
 
         let key = make()

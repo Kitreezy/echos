@@ -6,6 +6,7 @@
 //
 
 import CoreData
+import OSLog
 
 @MainActor
 final class MessageStore {
@@ -41,7 +42,7 @@ final class MessageStore {
             entity.status = Int16(message.status.rawValue)
             
             try viewContext.save()
-            print("[MessageStore] Saved: \(message.text)")
+            Logger.persistence.debug("Saved message \(message.id, privacy: .public)")
         } else {
             if let entity = existing.first {
                 entity.status = Int16(message.status.rawValue)
@@ -49,7 +50,7 @@ final class MessageStore {
                 entity.myReaction = message.myReaction
                 entity.peerReaction = message.peerReaction
                 try viewContext.save()
-                print("[MessageStore] Update status for: \(message.id)")
+                Logger.persistence.debug("Updated status of \(message.id, privacy: .public)")
             }
         }
     }
@@ -75,7 +76,7 @@ final class MessageStore {
                     myReaction: entity.myReaction,
                     peerReaction: entity.peerReaction)
         }
-        print("[MessageStore] Loaded \(messages.count) messages")
+        Logger.persistence.debug("Loaded \(messages.count) messages")
         return messages
     }
     
@@ -109,7 +110,7 @@ final class MessageStore {
                     peerReaction: entity.peerReaction
             )
         }
-        print("[MessageStore] Loaded \(messages.count) messages with \(address)")
+        Logger.persistence.debug("Loaded \(messages.count) messages with \(address, privacy: .private(mask: .hash))")
         return messages
     }
     
@@ -143,7 +144,7 @@ final class MessageStore {
         try viewContext.execute(batchDelete)
         try viewContext.save()
         
-        print("[MessageStore] Deleted messages older than \(days) days")
+        Logger.persistence.notice("Deleted messages older than \(days) days")
     }
     
     func deleteConverstaion(with address: String) async throws {
@@ -154,7 +155,7 @@ final class MessageStore {
         try viewContext.execute(batchDelete)
         try viewContext.save()
         
-        print("[MessageStore] Deleted conversation with \(address)")
+        Logger.persistence.notice("Deleted conversation with \(address, privacy: .private(mask: .hash))")
     }
     
     // MARK: - Clear All
@@ -166,7 +167,7 @@ final class MessageStore {
         try viewContext.execute(batchDelete)
         try viewContext.save()
         
-        print("[MessageStore] Cleared all messages")
+        Logger.persistence.notice("Cleared all messages")
     }
     
     // MARK: Stats

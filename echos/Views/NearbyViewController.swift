@@ -12,6 +12,7 @@
 //
 
 import UIKit
+import OSLog
 
 final class NearbyViewController: UIViewController {
 
@@ -143,7 +144,7 @@ final class NearbyViewController: UIViewController {
                 try await viewModel.multipeerService?.connectToPeer(address: peer.address)
             }
             catch {
-                print("[NearbyViewController] Failed to connect: \(error)")
+                Logger.ui.error("Nearby: failed to connect: \(error, privacy: .public)")
             }
         }
     }

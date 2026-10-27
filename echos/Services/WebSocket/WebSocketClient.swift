@@ -15,6 +15,7 @@
 
 import Foundation
 import Network
+import OSLog
 
 @MainActor
 final class WebSocketClient {
@@ -36,7 +37,7 @@ final class WebSocketClient {
             guard state != oldValue else {
                 return
             }
-            print("[WebSocketClient] \(oldValue) → \(state)")
+            Logger.relay.notice("\(String(describing: oldValue), privacy: .public) → \(String(describing: self.state), privacy: .public)")
             stateBroadcast.yield(state)
         }
     }
@@ -182,7 +183,7 @@ final class WebSocketClient {
         }
 
         guard path.isReachable else {
-            print("[WebSocketClient] No network path, pausing reconnects")
+            Logger.relay.notice("No network path, pausing reconnects")
 
             reconnectTask?.cancel()
             reconnectTask = nil
@@ -199,7 +200,7 @@ final class WebSocketClient {
             && connectedInterface != path.interface
 
         if interfaceChanged {
-            print("[WebSocketClient] Interface changed, reconnecting")
+            Logger.relay.notice("Interface changed, reconnecting")
             teardownSocket()
         }
 
@@ -228,7 +229,7 @@ final class WebSocketClient {
             try await socket.send(data)
         }
         catch {
-            print("[WebSocketClient] Send failed: \(error.localizedDescription)")
+            Logger.relay.error("Send failed: \(error.localizedDescription, privacy: .public)")
             enqueue(data)
             handleFailure()
         }
@@ -295,11 +296,11 @@ final class WebSocketClient {
             incoming.yield(data)
 
         case .closed(let code, _):
-            print("[WebSocketClient] Closed by peer, code \(code)")
+            Logger.relay.notice("Closed by server, code \(String(describing: code), privacy: .public)")
             handleFailure()
 
         case .failed(let reason):
-            print("[WebSocketClient] Failed: \(reason)")
+            Logger.relay.error("Failed: \(String(describing: reason), privacy: .public)")
             handleFailure()
         }
     }
@@ -370,7 +371,7 @@ final class WebSocketClient {
                 }
 
                 if !alive {
-                    print("[WebSocketClient] No pong in time, assuming connection is dead")
+                    Logger.relay.error("No pong in time, assuming connection is dead")
                     self?.handleFailure()
                     return
                 }
@@ -416,7 +417,7 @@ final class WebSocketClient {
 
         reconnectAttempt += 1
         let delay = reconnectDelay(for: reconnectAttempt)
-        print("[WebSocketClient] Reconnect #\(reconnectAttempt) in \(delay)")
+        Logger.relay.info("Reconnect #\(self.reconnectAttempt) in \(delay, privacy: .public)")
 
         reconnectTask = Task { [weak self] in
             guard (try? await Task.sleep(for: delay)) != nil else {

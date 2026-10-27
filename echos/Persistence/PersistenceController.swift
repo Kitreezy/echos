@@ -6,6 +6,7 @@
 //
 
 import CoreData
+import OSLog
 
 /// Стек Core Data живёт на главном акторе: наружу отдаётся только
 /// `container.viewContext` (main-queue контекст), поэтому изоляция
@@ -186,7 +187,7 @@ final class PersistenceController {
         var loadError: Error?
         legacy.loadPersistentStores { _, error in loadError = error }
         if let loadError {
-            print("[Persistence] Старое хранилище не открылось, знакомые и стена не перенесены: \(loadError)")
+            Logger.persistence.error("Старое хранилище не открылось, знакомые и стена не перенесены: \(loadError)")
             return
         }
 
@@ -207,7 +208,7 @@ final class PersistenceController {
                 try target.save()
             }
         } catch {
-            print("[Persistence] Перенос знакомых и стены не удался: \(error)")
+            Logger.persistence.error("Перенос знакомых и стены не удался: \(error)")
         }
     }
 

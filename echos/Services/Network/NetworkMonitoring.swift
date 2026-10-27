@@ -14,6 +14,7 @@
 
 import Foundation
 import Network
+import OSLog
 
 /// Снимок состояния сети.
 struct NetworkPathSnapshot: Sendable, Equatable {
@@ -102,7 +103,7 @@ final class NetworkMonitor: NetworkMonitoring {
         }
 
         currentPath = snapshot
-        print("[NetworkMonitor] reachable: \(snapshot.isReachable), interface: \(String(describing: snapshot.interface))")
+        Logger.network.notice("Reachable: \(snapshot.isReachable), interface: \(String(describing: snapshot.interface), privacy: .public)")
         broadcast.yield(snapshot)
     }
 }

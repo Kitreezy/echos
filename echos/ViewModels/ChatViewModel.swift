@@ -8,6 +8,7 @@
 import AsyncAlgorithms
 import Foundation
 import Observation
+import OSLog
 
 /// Три потока транспорта сводятся к одному типу события, чтобы их можно было
 /// слить оператором `merge` и читать одним циклом.
@@ -147,11 +148,11 @@ final class ChatViewModel {
     
     init() {
         (keystrokes, keystrokeContinuation) = AsyncStream.makeStream(of: Void.self)
-        print("[lifecycle] ChatViewModel init")
+        Logger.lifecycle.debug("ChatViewModel init")
     }
 
     deinit {
-        print("[lifecycle] ChatViewModel deinit")
+        Logger.lifecycle.debug("ChatViewModel deinit")
     }
     
     // MARK: - Setup
@@ -235,10 +236,10 @@ final class ChatViewModel {
             currentConversationName = name
                 ?? peers.first { $0.address == address }?.displayName
                 ?? filtered.last { !$0.isFromMe }?.senderName
-            print("[ChatViewModel] Showing conversation with \(address): \(filtered.count) messages")
+            Logger.chat.info("Showing conversation with \(address, privacy: .private(mask: .hash)): \(filtered.count) messages")
         }
         catch {
-            print("[ChatViewModel] Failed to switch: \(error)")
+            Logger.chat.error("Failed to switch: \(error)")
         }
     }
     
@@ -280,7 +281,7 @@ final class ChatViewModel {
             return summaries.sorted { $0.lastMessageTime > $1.lastMessageTime }
         }
         catch {
-            print("[ChatViewModel] Failed to get conversations: \(error)")
+            Logger.chat.error("Failed to get conversations: \(error)")
             return []
         }
     }
@@ -294,7 +295,7 @@ final class ChatViewModel {
         messages = []
         currentConversationPeer = nil
         currentConversationName = nil
-        print("[ChatViewModel] Cleared conversation with \(address)")
+        Logger.chat.notice("Cleared conversation with \(address, privacy: .private(mask: .hash))")
     }
     
     func clearAllMessages() async throws {
@@ -304,7 +305,7 @@ final class ChatViewModel {
         
         try await messageStore.clearAll()
         messages = []
-        print("[ChatViewModel] Cleared all messages")
+        Logger.chat.notice("Cleared all messages")
     }
     
     // MARK: - Connection Management
@@ -319,7 +320,7 @@ final class ChatViewModel {
         messages = []
         currentConversationPeer = nil
         currentConversationName = nil
-        print("[ChatViewModel] Disconnected from \(address)")
+        Logger.chat.notice("Disconnected from \(address, privacy: .private(mask: .hash))")
     }
     
     func showAllMessages() async {
@@ -330,10 +331,10 @@ final class ChatViewModel {
             let all = try await messageStore.loadMessages()
             messages = all
             currentConversationPeer = nil
-            print("[ChatViewModel] Showing all messages: \(all.count)")
+            Logger.chat.info("Showing all messages: \(all.count)")
         }
         catch {
-            print("[ChatViewModel] Failed to load all: \(error)")
+            Logger.chat.error("Failed to load all: \(error)")
         }
     }
     
@@ -349,7 +350,7 @@ final class ChatViewModel {
             recognizer = PeerRecognizer(known: try await knownPeerStore.loadKnownPeers())
         }
         catch {
-            print("[ChatViewModel] Failed to load known peers: \(error)")
+            Logger.chat.error("Failed to load known peers: \(error)")
         }
     }
 
@@ -364,7 +365,7 @@ final class ChatViewModel {
             await loadKnownPeers()
         }
         catch {
-            print("[ChatViewModel] Failed to remember \(address): \(error)")
+            Logger.chat.error("Failed to remember \(address, privacy: .private(mask: .hash)): \(error)")
         }
     }
 
@@ -433,10 +434,10 @@ final class ChatViewModel {
 
         do {
             try await strokeStore.saveStroke(stroke, wallOwner: nil)
-            print("[ChatViewModel] Stroke from \(stroke.author) saved to own wall")
+            Logger.chat.info("Stroke from \(stroke.author, privacy: .private(mask: .hash)) saved to own wall")
         }
         catch {
-            print("[ChatViewModel] Failed to save stroke: \(error)")
+            Logger.chat.error("Failed to save stroke: \(error)")
         }
     }
     
@@ -455,7 +456,7 @@ final class ChatViewModel {
             try await transport.sendWall(mine, to: asker)
         }
         catch {
-            print("[ChatViewModel] Failed to answer wall request from \(asker): \(error)")
+            Logger.chat.error("Failed to answer wall request from \(asker, privacy: .private(mask: .hash)): \(error, privacy: .public)")
         }
     }
 
@@ -479,9 +480,9 @@ final class ChatViewModel {
         // как надо.
         if currentConversationPeer == nil || incoming.sender == currentConversationPeer {
             messages.append(message)
-            print("[ChatViewModel] Received from \(incoming.sender): \(message.text.prefix(20))...")
+            Logger.chat.info("Received from \(incoming.sender, privacy: .private(mask: .hash))")
         } else {
-            print("[ChatViewModel] Silently saved message from \(incoming.sender) (different conversation)")
+            Logger.chat.info("Silently saved message from \(incoming.sender, privacy: .private(mask: .hash)) (different conversation)")
         }
 
         if !isInOpenChat {
@@ -520,7 +521,7 @@ final class ChatViewModel {
         do {
             try await multipeerService.sendMessage(payload, to: address)
         } catch {
-            print("[ChatViewModel] Failed to send reaction: \(error)")
+            Logger.chat.error("Failed to send reaction: \(error, privacy: .public)")
         }
     }
 
@@ -568,7 +569,7 @@ final class ChatViewModel {
             unreadCounts = counts
         }
         catch {
-            print("[ChatViewModel] Failed to count unread: \(error)")
+            Logger.chat.error("Failed to count unread: \(error)")
         }
     }
     
@@ -604,13 +605,13 @@ final class ChatViewModel {
         case .start:
             typingPeer = sender
             typingPeerName = name
-            print("[ChatViewModel] \(sender) started typing...")
+            Logger.chat.debug("\(sender, privacy: .private(mask: .hash)) started typing")
             
         case .stop:
             if typingPeer == sender {
                 typingPeer = nil
                 typingPeerName = nil
-                print("[ChatViewModel] \(sender) stopped typing")
+                Logger.chat.debug("\(sender, privacy: .private(mask: .hash)) stopped typing")
             }
         }
     }
@@ -663,7 +664,7 @@ final class ChatViewModel {
                     try await messageStore.saveMessage(message)
                 }
                 catch {
-                    print("[ChatViewModel] Failed to save message: \(error)")
+                    Logger.chat.error("Failed to save message: \(error)")
                 }
             }
             persistedBatches += 1
@@ -808,7 +809,7 @@ final class ChatViewModel {
         // Раньше в этом случае оно уходило всем подряд.
         guard let address = message.peerAddress ?? currentConversationPeer else {
             updateStatus(.failed, for: message.id)
-            print("[ChatViewModel] No conversation selected, message not sent")
+            Logger.chat.fault("No conversation selected, message not sent")
             return
         }
         
@@ -819,10 +820,10 @@ final class ChatViewModel {
             
             updateStatus(.sent, for: message.id)
             await remember(address: address, name: currentConversationName)
-            print("[ChatViewModel] Message sent successfully")
+            Logger.chat.info("Message sent to \(address, privacy: .private(mask: .hash))")
         } catch {
             updateStatus(.failed, for: message.id)
-            print("[ChatViewModel] Failed to send message: \(error)")
+            Logger.chat.error("Failed to send message to \(address, privacy: .private(mask: .hash)): \(error, privacy: .public)")
         }
     }
     
@@ -882,7 +883,7 @@ final class ChatViewModel {
         
         let event = TypingEvent(type: .start, peerName: multipeerService.myDisplayName)
         try? await multipeerService.sendTypingEvent(event, to: address)
-        print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
+        Logger.chat.debug("Sent typing start")
     }
     
     private func sendTypingStop() async {
@@ -896,7 +897,7 @@ final class ChatViewModel {
         
         let event = TypingEvent(type: .stop, peerName: multipeerService.myDisplayName)
         try? await multipeerService.sendTypingEvent(event, to: address)
-        print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
+        Logger.chat.debug("Sent typing stop")
     }
     
     // MARK: - Helpers
