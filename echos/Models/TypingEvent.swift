@@ -13,11 +13,11 @@ enum TypingEventType: String, Codable {
 }
 
 struct TypingEvent: Codable {
-    
+
     let type: TypingEventType
     let peerName: String
     let timestamp: Double
-    
+
     init(type: TypingEventType,
          peerName: String
     ) {
@@ -42,21 +42,21 @@ enum MultipeerDataType: String, Codable {
 }
 
 struct MultipeerPacket: Codable {
-    
+
     let type: MultipeerDataType
     let playload: Data // MessagePayload или TypingEvent
-    
+
     /// Сообщение идёт только запечатанным.
     init(message sealed: SealedPayload) throws {
         self.type = .message
         self.playload = try JSONEncoder().encode(sealed)
     }
-    
+
     init(typingEvent: TypingEvent) throws {
         self.type = .typing
         self.playload = try JSONEncoder().encode(typingEvent)
     }
-    
+
     /// Росчерк — только запечатанным: это содержимое, как и сообщение.
     init(stroke sealed: SealedPayload) throws {
         self.type = .stroke
@@ -85,15 +85,15 @@ struct MultipeerPacket: Codable {
         self.type = .hello
         self.playload = try JSONEncoder().encode(hello)
     }
-    
+
     func decodeMessage() throws -> SealedPayload {
         try JSONDecoder().decode(SealedPayload.self, from: playload)
     }
-    
+
     func decodeTypingEvent() throws -> TypingEvent {
         try JSONDecoder().decode(TypingEvent.self, from: playload)
     }
-    
+
     func decodeStroke() throws -> SealedPayload {
         try JSONDecoder().decode(SealedPayload.self, from: playload)
     }

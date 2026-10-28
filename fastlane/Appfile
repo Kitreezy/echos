@@ -1,0 +1,5 @@
+app_identifier("com.kitreezy.echos")
+team_id("LJZ97X76W9")
+
+# apple_id намеренно не задан: без платного аккаунта в App Store Connect
+# ходить не с чем, а для сборки он не нужен.

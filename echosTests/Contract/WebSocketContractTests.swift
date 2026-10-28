@@ -4,45 +4,43 @@
 //
 //  Набор сценариев, не привязанный к конкретной реализации `RawWebSocket`.
 //
-//  Базовый класс гоняет `URLSessionRawSocket`. Чтобы проверить другой
-//  транспорт, достаточно унаследоваться и подменить фабрику — код тестов
-//  не меняется. Так сравнивали свой клиент со Starscream, см.
-//  docs/adr/001-websocket-client.md.
+//  Реализации — аргументами: каждый сценарий прогоняется на каждой из
+//  `RawSocketImplementation.allCases`. Проверить другой транспорт — добавить
+//  случай в перечисление, код сценариев не меняется. Так сравнивали свой
+//  клиент со Starscream, см. docs/adr/001-websocket-client.md; в XCTest
+//  для этого служило наследование набора, которого в Swift Testing нет.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
+/// Реализации `RawWebSocket`, на которых гоняется контракт.
+enum RawSocketImplementation: CaseIterable, CustomTestStringConvertible {
+    case urlSession
+
+    @MainActor
+    func make(url: URL) -> any RawWebSocket {
+        switch self {
+        case .urlSession:
+            URLSessionRawSocket(url: url)
+        }
+    }
+
+    /// Попадает в отчёт рядом с упавшим тестом: видно, какая реализация.
+    var testDescription: String {
+        switch self {
+        case .urlSession: "URLSession"
+        }
+    }
+}
+
 @MainActor
-class WebSocketContractTests: XCTestCase {
+@Suite(.relayServer, .tags(.network))
+final class WebSocketContractTests {
 
-    private(set) var server: RelayServer!
-    private(set) var monitor: FakeNetworkMonitor!
-
-    /// Точка подмены. Наследники возвращают свой транспорт.
-    func makeRawSocket(url: URL) -> any RawWebSocket {
-        URLSessionRawSocket(url: url)
-    }
-
-    /// Попадает в сообщения об ошибках: иначе при нескольких наследниках
-    /// непонятно, какая реализация упала.
-    var configurationName: String {
-        "URLSession"
-    }
-
-    override func setUp() async throws {
-        try await super.setUp()
-        server = RelayServer()
-        try await server.start()
-        monitor = FakeNetworkMonitor()
-    }
-
-    override func tearDown() async throws {
-        await server.stop()
-        server = nil
-        monitor = nil
-        try await super.tearDown()
-    }
+    private var server: RelayServer { RelayFixture.server }
+    private let monitor = FakeNetworkMonitor()
 
     /// Ключ на имя: тесту нужен не только сам клиент, но и его адрес —
     /// адресовать по имени релей больше не умеет.
@@ -58,11 +56,11 @@ class WebSocketContractTests: XCTestCase {
         return created
     }
 
-    private func makeClient(named name: String? = nil) -> WebSocketClient {
+    private func makeClient(_ implementation: RawSocketImplementation, named name: String? = nil) -> WebSocketClient {
         let url = server.url
 
-        let client = WebSocketClient(networkMonitor: monitor) { [weak self] in
-            self?.makeRawSocket(url: url) ?? URLSessionRawSocket(url: url)
+        let client = WebSocketClient(networkMonitor: monitor) {
+            implementation.make(url: url)
         }
 
         client.pingInterval = .milliseconds(100)
@@ -81,32 +79,35 @@ class WebSocketContractTests: XCTestCase {
 
     // MARK: - Базовое соединение
 
-    func test_connect_reachesConnectedState() async {
-        let client = makeClient()
+    @Test(arguments: RawSocketImplementation.allCases)
+    func connect_reachesConnectedState(_ implementation: RawSocketImplementation) async {
+        let client = makeClient(implementation)
         defer { client.disconnect() }
 
         client.connect()
 
         let connected = await waitUntil(timeout: .seconds(5)) { client.state == .connected }
 
-        XCTAssertTrue(connected, "\(configurationName): соединение не установилось")
+        #expect(connected, "соединение не установилось")
     }
 
-    func test_disconnect_returnsToDisconnected() async {
-        let client = makeClient()
+    @Test(arguments: RawSocketImplementation.allCases)
+    func disconnect_returnsToDisconnected(_ implementation: RawSocketImplementation) async {
+        let client = makeClient(implementation)
         client.connect()
         _ = await waitUntil(timeout: .seconds(5)) { client.state == .connected }
 
         client.disconnect()
 
-        XCTAssertEqual(client.state, .disconnected, configurationName)
+        #expect(client.state == .disconnected)
     }
 
     // MARK: - Обмен
 
-    func test_messageReachesAnotherClient() async throws {
-        let alice = makeClient(named: "Alice")
-        let bob = makeClient(named: "Bob")
+    @Test(arguments: RawSocketImplementation.allCases)
+    func messageReachesAnotherClient(_ implementation: RawSocketImplementation) async throws {
+        let alice = makeClient(implementation, named: "Alice")
+        let bob = makeClient(implementation, named: "Bob")
         defer {
             alice.disconnect()
             bob.disconnect()
@@ -135,13 +136,14 @@ class WebSocketContractTests: XCTestCase {
             return envelope.kind == .message
         }
 
-        XCTAssertNotNil(delivered, "\(configurationName): сообщение не дошло")
+        #expect(delivered != nil, "сообщение не дошло")
     }
 
     // MARK: - Живучесть
 
-    func test_serverRestart_clientReconnectsOnItsOwn() async throws {
-        let client = makeClient()
+    @Test(arguments: RawSocketImplementation.allCases)
+    func serverRestart_clientReconnectsOnItsOwn(_ implementation: RawSocketImplementation) async throws {
+        let client = makeClient(implementation)
         defer { client.disconnect() }
 
         client.connect()
@@ -154,13 +156,14 @@ class WebSocketContractTests: XCTestCase {
             client.state == .connected && client.connectionAttempts > attemptsBefore
         }
 
-        XCTAssertTrue(reconnected, "\(configurationName): клиент не вернулся после перезапуска сервера")
+        #expect(reconnected, "клиент не вернулся после перезапуска сервера")
     }
 
     /// Heartbeat: если ping/pong не работает, соединение будет объявлено
     /// мёртвым по таймауту и клиент начнёт переподключаться на ровном месте.
-    func test_heartbeat_keepsConnectionAlive() async {
-        let client = makeClient()
+    @Test(arguments: RawSocketImplementation.allCases)
+    func heartbeat_keepsConnectionAlive(_ implementation: RawSocketImplementation) async {
+        let client = makeClient(implementation)
         defer { client.disconnect() }
 
         client.connect()
@@ -171,16 +174,15 @@ class WebSocketContractTests: XCTestCase {
         // Несколько циклов ping/pong подряд.
         try? await Task.sleep(for: .seconds(1))
 
-        XCTAssertEqual(client.state, .connected,
-                       "\(configurationName): соединение объявлено мёртвым при живом сервере")
-        XCTAssertEqual(client.connectionAttempts, attemptsBefore,
-                       "\(configurationName): лишние переподключения при работающем ping/pong")
+        #expect(client.state == .connected, "соединение объявлено мёртвым при живом сервере")
+        #expect(client.connectionAttempts == attemptsBefore, "лишние переподключения при работающем ping/pong")
     }
 
     // MARK: - Реакция на сеть
 
-    func test_networkLoss_pausesReconnects() async {
-        let client = makeClient()
+    @Test(arguments: RawSocketImplementation.allCases)
+    func networkLoss_pausesReconnects(_ implementation: RawSocketImplementation) async {
+        let client = makeClient(implementation)
         defer { client.disconnect() }
 
         client.connect()
@@ -190,11 +192,12 @@ class WebSocketContractTests: XCTestCase {
 
         let paused = await waitUntil(timeout: .seconds(5)) { client.state == .waitingForNetwork }
 
-        XCTAssertTrue(paused, configurationName)
+        #expect(paused)
     }
 
-    func test_networkRestored_reconnectsImmediately() async {
-        let client = makeClient()
+    @Test(arguments: RawSocketImplementation.allCases)
+    func networkRestored_reconnectsImmediately(_ implementation: RawSocketImplementation) async {
+        let client = makeClient(implementation)
         defer { client.disconnect() }
 
         client.connect()
@@ -207,11 +210,12 @@ class WebSocketContractTests: XCTestCase {
 
         let reconnected = await waitUntil(timeout: .seconds(5)) { client.state == .connected }
 
-        XCTAssertTrue(reconnected, configurationName)
+        #expect(reconnected)
     }
 
-    func test_messageSentWhileOffline_isDeliveredAfterReconnect() async throws {
-        let client = makeClient(named: "Alice")
+    @Test(arguments: RawSocketImplementation.allCases)
+    func messageSentWhileOffline_isDeliveredAfterReconnect(_ implementation: RawSocketImplementation) async throws {
+        let client = makeClient(implementation, named: "Alice")
         defer { client.disconnect() }
 
         client.connect()
@@ -230,8 +234,7 @@ class WebSocketContractTests: XCTestCase {
             self.server.receivedMessageMarkers.contains("из оффлайна")
         }
 
-        XCTAssertTrue(delivered, "\(configurationName): отложенное сообщение потеряно")
-        XCTAssertEqual(server.received.first?.kind, .hello,
-                       "\(configurationName): очередь ушла раньше рукопожатия")
+        #expect(delivered, "отложенное сообщение потеряно")
+        #expect(server.received.first?.kind == .hello, "очередь ушла раньше рукопожатия")
     }
 }

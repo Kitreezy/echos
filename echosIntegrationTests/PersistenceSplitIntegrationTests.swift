@@ -9,58 +9,58 @@
 //
 
 import CoreData
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class PersistenceSplitIntegrationTests: XCTestCase {
+@Suite(.tags(.persistence))
+final class PersistenceSplitIntegrationTests {
 
-    private var directory: URL!
+    /// Своя папка на каждый тест — хранилища разных тестов не встречаются.
+    private let directory: URL
 
-    override func setUp() async throws {
+    init() throws {
         directory = FileManager.default.temporaryDirectory
             .appending(path: "echos-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    override func tearDown() async throws {
+    deinit {
         try? FileManager.default.removeItem(at: directory)
     }
 
     // MARK: - Модель
 
-    func test_model_splitsEntitiesBetweenConfigurations() {
+    @Test func model_splitsEntitiesBetweenConfigurations() {
         let model = PersistenceController.managedObjectModel
 
         let cloud = model.entities(forConfigurationName: "Cloud")?.map(\.name) ?? []
         let local = model.entities(forConfigurationName: "Local")?.map(\.name) ?? []
 
-        XCTAssertEqual(Set(cloud), ["KnownPeerEntity", "StrokeEntity"],
-                       "В облако едут знакомые и стена — то, что не зависит от ключа устройства")
-        XCTAssertEqual(local, ["MessageEntity"],
-                       "Переписка адресована ключу этого устройства и остаётся на нём")
+        #expect(Set(cloud) == ["KnownPeerEntity", "StrokeEntity"], "В облако едут знакомые и стена — то, что не зависит от ключа устройства")
+        #expect(local == ["MessageEntity"], "Переписка адресована ключу этого устройства и остаётся на нём")
     }
 
-    func test_model_meetsCloudKitConstraints() {
+    @Test func model_meetsCloudKitConstraints() {
         // CloudKit не терпит обязательных атрибутов без default и unique
         // constraints; связей у модели нет, а будь они — понадобились бы
         // обратные. Нарушение здесь ловится на симуляторе, а не при
         // первом запуске с iCloud.
         for entity in PersistenceController.managedObjectModel.entities(forConfigurationName: "Cloud") ?? [] {
-            XCTAssertTrue(entity.uniquenessConstraints.isEmpty, "\(entity.name ?? "?") с unique constraint в облако не поедет")
+            #expect(entity.uniquenessConstraints.isEmpty, "\(entity.name ?? "?") с unique constraint в облако не поедет")
             for (name, attribute) in entity.attributesByName {
-                XCTAssertTrue(attribute.isOptional || attribute.defaultValue != nil,
-                              "\(entity.name ?? "?").\(name) обязателен и без default")
+                #expect(attribute.isOptional || attribute.defaultValue != nil, "\(entity.name ?? "?").\(name) обязателен и без default")
             }
             for (name, relationship) in entity.relationshipsByName {
-                XCTAssertNotNil(relationship.inverseRelationship, "\(entity.name ?? "?").\(name) без обратной связи")
+                #expect(relationship.inverseRelationship != nil, "\(entity.name ?? "?").\(name) без обратной связи")
             }
         }
     }
 
     // MARK: - Хранилища
 
-    func test_entitiesLandInTheirOwnStore() throws {
+    @Test func entitiesLandInTheirOwnStore() throws {
         let controller = PersistenceController(storeDirectory: directory, cloudSync: false)
         let context = controller.container.viewContext
 
@@ -77,24 +77,23 @@ final class PersistenceSplitIntegrationTests: XCTestCase {
 
         try context.save()
 
-        XCTAssertEqual(message.objectID.persistentStore?.configurationName, "Local")
-        XCTAssertEqual(peer.objectID.persistentStore?.configurationName, "Cloud")
-        XCTAssertEqual(stroke.objectID.persistentStore?.configurationName, "Cloud")
+        #expect(message.objectID.persistentStore?.configurationName == "Local")
+        #expect(peer.objectID.persistentStore?.configurationName == "Cloud")
+        #expect(stroke.objectID.persistentStore?.configurationName == "Cloud")
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appending(path: "echos.sqlite").path()))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appending(path: "echos-cloud.sqlite").path()))
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "echos.sqlite").path()))
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "echos-cloud.sqlite").path()))
     }
 
-    func test_withoutFlag_noStoreTalksToCloudKit() {
+    @Test func withoutFlag_noStoreTalksToCloudKit() {
         let controller = PersistenceController(storeDirectory: directory, cloudSync: false)
 
         for description in controller.container.persistentStoreDescriptions {
-            XCTAssertNil(description.cloudKitContainerOptions,
-                         "\(description.configuration ?? "?") без entitlement подключаться к iCloud не должно")
+            #expect(description.cloudKitContainerOptions == nil, "\(description.configuration ?? "?") без entitlement подключаться к iCloud не должно")
         }
     }
 
-    func test_withFlag_onlyCloudStoreTalksToCloudKit() {
+    @Test func withFlag_onlyCloudStoreTalksToCloudKit() {
         // Загрузка с опциями CloudKit без entitlement на симуляторе проходит:
         // контейнер ругается в лог и работает как локальный. Проверяем,
         // что опции навешаны ровно на одно хранилище и с нужным контейнером.
@@ -102,12 +101,11 @@ final class PersistenceSplitIntegrationTests: XCTestCase {
         let descriptions = controller.container.persistentStoreDescriptions
 
         let withCloud = descriptions.filter { $0.cloudKitContainerOptions != nil }
-        XCTAssertEqual(withCloud.map(\.configuration), ["Cloud"])
-        XCTAssertEqual(withCloud.first?.cloudKitContainerOptions?.containerIdentifier,
-                       PersistenceController.cloudContainerIdentifier)
+        #expect(withCloud.map(\.configuration) == ["Cloud"])
+        #expect(withCloud.first?.cloudKitContainerOptions?.containerIdentifier == PersistenceController.cloudContainerIdentifier)
     }
 
-    func test_inMemory_stillLoadsBothStores() throws {
+    @Test func inMemory_stillLoadsBothStores() throws {
         let controller = PersistenceController(inMemory: true)
         let context = controller.container.viewContext
 
@@ -119,14 +117,14 @@ final class PersistenceSplitIntegrationTests: XCTestCase {
 
         try context.save()
 
-        XCTAssertEqual(controller.container.persistentStoreCoordinator.persistentStores.count, 2)
-        XCTAssertEqual(peer.objectID.persistentStore?.configurationName, "Cloud")
-        XCTAssertEqual(message.objectID.persistentStore?.configurationName, "Local")
+        #expect(controller.container.persistentStoreCoordinator.persistentStores.count == 2)
+        #expect(peer.objectID.persistentStore?.configurationName == "Cloud")
+        #expect(message.objectID.persistentStore?.configurationName == "Local")
     }
 
     // MARK: - Старый файл
 
-    func test_legacySingleStore_isSplitOnFirstLaunch() throws {
+    @Test func legacySingleStore_isSplitOnFirstLaunch() throws {
         // До разделения всё лежало в одном echos.sqlite. Собираем такой файл
         // полной моделью, потом открываем новым контроллером.
         try makeLegacyStore(messages: ["первое", "второе"],
@@ -140,22 +138,21 @@ final class PersistenceSplitIntegrationTests: XCTestCase {
         let peers = try context.fetch(NSFetchRequest<KnownPeerEntity>(entityName: "KnownPeerEntity"))
         let strokes = try context.fetch(NSFetchRequest<StrokeEntity>(entityName: "StrokeEntity"))
 
-        XCTAssertEqual(Set(messages.compactMap(\.text)), ["первое", "второе"],
-                       "Сообщения остаются на месте — файл теперь и есть локальное хранилище")
-        XCTAssertEqual(peers.map(\.name), ["Борис"], "Знакомые переехали в облачное хранилище")
-        XCTAssertEqual(peers.first?.objectID.persistentStore?.configurationName, "Cloud")
-        XCTAssertEqual(strokes.count, 3, "Стена переехала целиком")
-        XCTAssertEqual(strokes.first?.objectID.persistentStore?.configurationName, "Cloud")
+        #expect(Set(messages.compactMap(\.text)) == ["первое", "второе"], "Сообщения остаются на месте — файл теперь и есть локальное хранилище")
+        #expect(peers.map(\.name) == ["Борис"], "Знакомые переехали в облачное хранилище")
+        #expect(peers.first?.objectID.persistentStore?.configurationName == "Cloud")
+        #expect(strokes.count == 3, "Стена переехала целиком")
+        #expect(strokes.first?.objectID.persistentStore?.configurationName == "Cloud")
     }
 
-    func test_legacySplit_happensOnce() throws {
+    @Test func legacySplit_happensOnce() throws {
         try makeLegacyStore(messages: [], peers: ["a": "Анна"], strokes: 0)
 
         _ = PersistenceController(storeDirectory: directory, cloudSync: false)
         let second = PersistenceController(storeDirectory: directory, cloudSync: false)
 
         let peers = try second.container.viewContext.fetch(NSFetchRequest<KnownPeerEntity>(entityName: "KnownPeerEntity"))
-        XCTAssertEqual(peers.count, 1, "Повторный запуск не должен переносить знакомых второй раз")
+        #expect(peers.count == 1, "Повторный запуск не должен переносить знакомых второй раз")
     }
 
     // MARK: - Support

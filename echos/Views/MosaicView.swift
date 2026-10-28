@@ -69,6 +69,13 @@ final class MosaicView: UIView, UIGestureRecognizerDelegate {
         let sameShape = mosaic.columns == self.mosaic.columns && mosaic.rows == self.mosaic.rows
         self.mosaic = mosaic
 
+        // Для VoiceOver мозаика — одна вещь: «мозаика 3 на 3, закрашено 5
+        // клеток». Клетки по отдельности — это эмодзи за эмодзи, и рисунок из
+        // них на слух не сложить.
+        isAccessibilityElement = true
+        accessibilityLabel = "мозаика \(mosaic.columns) на \(mosaic.rows)"
+        accessibilityValue = "закрашено клеток: \(mosaic.cells.filter { !$0.isEmpty }.count)"
+
         // Та же форма — только перекрасить клетки: в наборе это каждое
         // нажатие, и пересобирать сетку ради одного знака незачем.
         if sameShape, cellLabels.count == mosaic.cells.count {

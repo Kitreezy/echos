@@ -1,0 +1,48 @@
+# SwiftLint отвечает за содержание кода, SwiftFormat (.swiftformat) — за вид.
+# В CI идёт с --strict: предупреждение — тоже провал.
+
+included:
+  - echos
+  - echosTests
+  - echosIntegrationTests
+  - echosUITests
+
+# Пробелы, пустые строки и переносы — забота SwiftFormat. Остальное из этого
+# списка — стиль, который в проекте принят сознательно: catch и else с новой
+# строки, параметры с выравниванием по смыслу, а не по первому.
+disabled_rules:
+  - trailing_whitespace
+  - vertical_whitespace
+  - trailing_newline
+  - statement_position
+  - vertical_parameter_alignment
+  - trailing_comma
+
+line_length:
+  warning: 160
+  ignores_comments: true
+  ignores_urls: true
+
+# Однобуквенные имена — там, где они и есть общепринятое имя: координаты,
+# каналы цвета, счётчик цикла. `ma` — токен отступа из дизайн-системы.
+identifier_name:
+  excluded: [i, x, y, r, g, b, id, ma]
+
+large_tuple:
+  warning: 3
+
+# Лимиты — чуть выше типичного для проекта, а не по самому большому файлу:
+# иначе до размера худшего мог бы дорасти любой. Те, кто больше уже сейчас,
+# отмечены в коде `swiftlint:disable … — долг`, и их видно поиском.
+file_length:
+  warning: 600
+  ignore_comment_only_lines: true
+
+type_body_length:
+  warning: 350
+
+function_body_length:
+  warning: 70
+
+cyclomatic_complexity:
+  warning: 12

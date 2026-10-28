@@ -1,0 +1,39 @@
+name: Кэш сборки Xcode
+description: >
+  Восстанавливает пакеты SPM и DerivedData между прогонами. Пакеты
+  привязаны к Package.resolved, DerivedData — к исходникам, с откатом
+  на ближайший старый слепок: xcodebuild сам пересоберёт только то,
+  что изменилось.
+
+inputs:
+  xcode:
+    description: Версия Xcode — часть ключа, продукты разных версий несовместимы
+    required: true
+
+outputs:
+  spm-hit:
+    description: Пакеты SPM взяты из кэша
+    value: ${{ steps.spm.outputs.cache-hit }}
+  derived-data-key:
+    description: Какой слепок DerivedData восстановлен; пусто, если никакой
+    value: ${{ steps.derived.outputs.cache-matched-key }}
+
+runs:
+  using: composite
+  steps:
+    - id: spm
+      uses: actions/cache@v4
+      with:
+        path: build/SourcePackages
+        key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+
+    # Точный ключ по исходникам почти никогда не совпадёт — любой коммит
+    # его меняет. Смысл в restore-keys: берётся последний слепок для этой
+    # версии Xcode, и инкрементальная сборка доделывает разницу.
+    - id: derived
+      uses: actions/cache@v4
+      with:
+        path: build/DerivedData
+        key: derived-${{ runner.os }}-xcode${{ inputs.xcode }}-${{ hashFiles('echos/**', 'echosTests/**', 'echosIntegrationTests/**', 'echos.xcodeproj/project.pbxproj') }}
+        restore-keys: |
+          derived-${{ runner.os }}-xcode${{ inputs.xcode }}-

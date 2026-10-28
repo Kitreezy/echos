@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 /// Список тех, кто рядом.
 ///
@@ -23,7 +24,7 @@ struct PeersListView: View {
 
             if viewModel.peers.isEmpty {
                 Text("Пока никого рядом")
-                    .font(Font(Typography.caption))
+                    .font(Typography.captionText)
                     .foregroundStyle(Color.inkMuted)
             } else {
                 peersList
@@ -61,9 +62,9 @@ struct PeersListView: View {
         Task {
             do {
                 try await viewModel.multipeerService?.connectToPeer(address: peer.address)
-                print("[PeersListView] Sent invite to '\(peer.displayName)'")
+                Logger.screens.info("Peers: sent invite to '\(peer.displayName)'")
             } catch {
-                print("[PeersListView] Failed to connect: \(error)")
+                Logger.screens.error("Peers: failed to connect: \(error, privacy: .public)")
             }
         }
     }
@@ -74,7 +75,7 @@ struct PeersListView: View {
         } else {
             viewModel.multipeerService?.disconnect(from: peer.address)
         }
-        print("[PeersListView] Disconnected from '\(peer.displayName)'")
+        Logger.screens.info("Peers: disconnected from '\(peer.displayName)'")
     }
 }
 
@@ -98,14 +99,14 @@ struct PeerRow: View {
 
                 VStack(alignment: .leading, spacing: Space.tight) {
                     Text(peer.displayName)
-                        .font(Font(Typography.title))
+                        .font(Typography.titleText)
                         .tracking(Typography.narrow)
                         .foregroundStyle(Color.ink)
 
                     Text([peer.statusLabel, recognition.note]
                         .compactMap { $0 }
                         .joined(separator: " · "))
-                        .font(Font(Typography.caption))
+                        .font(Typography.captionText)
                         .foregroundStyle(recognition.deservesAttention
                                          ? Color.lost
                                          : Color.inkMuted)
@@ -117,7 +118,7 @@ struct PeerRow: View {
                 // происходит нажатием на строку.
                 if peer.status == .connected, let onDisconnect {
                     Button("Отключиться", action: onDisconnect)
-                        .font(Font(Typography.caption))
+                        .font(Typography.captionText)
                         .foregroundStyle(Color.inkMuted)
                         .buttonStyle(.plain)
                 }

@@ -11,6 +11,7 @@
 
 import Foundation
 import UIKit
+import OSLog
 
 @MainActor
 final class WebSocketTransport: NSObject {
@@ -72,6 +73,7 @@ final class WebSocketTransport: NSObject {
 
     /// Ключ, которым подписывается рукопожатие.
     private let identity: DeviceIdentity?
+    private let notificationCenter: NotificationCenter
 
     /// Свой сессионный ключ. Один на соединение: создаётся перед hello и
     /// меняется при каждом переподключении, так что записанное в прошлом
@@ -129,11 +131,16 @@ final class WebSocketTransport: NSObject {
     /// - Parameter backgroundGrace: сколько держать соединение после
     ///   сворачивания. По умолчанию — сколько даёт система; тесты ставят
     ///   меньше.
+    /// - Parameter notificationCenter: откуда узнавать об уходе в фон.
+    ///   Тесты дают свой: тесты идут параллельно, и «приложение свернули»
+    ///   из одного теста иначе сворачивало бы транспорты всех остальных.
     init(url: URL,
          displayName: String = UserSettings.displayName,
          identity: DeviceIdentity? = nil,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared,
-         backgroundGrace: Duration = BackgroundLease.duration) {
+         backgroundGrace: Duration = BackgroundLease.duration,
+         notificationCenter: NotificationCenter = .default) {
+        self.notificationCenter = notificationCenter
         self.myDisplayName = displayName
         self.identity = identity ?? (try? DeviceIdentity.current())
         self.myAddress = self.identity?.fingerprint ?? ""
@@ -144,7 +151,7 @@ final class WebSocketTransport: NSObject {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        notificationCenter.removeObserver(self)
     }
 
     // MARK: - App Lifecycle
@@ -155,14 +162,14 @@ final class WebSocketTransport: NSObject {
     /// из чата, минуя радар, оставлял сокет умирать по таймауту. Транспорт же
     /// жив всё время, пока идёт сессия.
     private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(
+        notificationCenter.addObserver(
             self,
             selector: #selector(appDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
 
-        NotificationCenter.default.addObserver(
+        notificationCenter.addObserver(
             self,
             selector: #selector(appWillEnterForeground),
             name: UIApplication.willEnterForegroundNotification,
@@ -268,7 +275,7 @@ final class WebSocketTransport: NSObject {
     /// Разорвать связь с одним собеседником релей не позволяет — рвётся
     /// только соединение с сервером целиком.
     func disconnect(from address: String) {
-        print("[WebSocketTransport] Per-peer disconnect is not supported by the relay")
+        Logger.relay.info("Per-peer disconnect is not supported by the relay")
     }
 
     func disconnectAll() {
@@ -324,13 +331,19 @@ final class WebSocketTransport: NSObject {
     /// прислал свою случайную строку. Зато и подслушанная подпись ничего не
     /// даёт — она годится ровно для одного подключения.
     private func performHandshake() async {
+        // От подключения до отправленного hello. Виден в Instruments и
+        // попадает в суточную сводку MetricKit.
+        let signposter = MetricsCollector.signposter
+        let interval = signposter.beginInterval("Relay handshake")
+        defer { signposter.endInterval("Relay handshake", interval) }
+
         guard let challenge = await awaitChallenge() else {
-            print("[WebSocketTransport] No challenge from the relay, giving up on this connection")
+            Logger.relay.error("No challenge from the relay, giving up on this connection")
             return
         }
 
         guard let identity else {
-            print("[WebSocketTransport] No device key, cannot introduce myself")
+            Logger.relay.fault("No device key, cannot introduce myself")
             return
         }
 
@@ -347,7 +360,7 @@ final class WebSocketTransport: NSObject {
                                   session: session))
         }
         catch {
-            print("[WebSocketTransport] Handshake failed: \(error.localizedDescription)")
+            Logger.relay.error("Handshake failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -420,7 +433,7 @@ final class WebSocketTransport: NSObject {
             }
         }
         catch {
-            print("[WebSocketTransport] Failed to decode envelope: \(error.localizedDescription)")
+            Logger.relay.error("Failed to decode envelope: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -469,7 +482,7 @@ final class WebSocketTransport: NSObject {
             .compactMap { participant -> RelayParticipant? in
                 guard let identity, let session,
                       let peer = participant.verifiedIdentity else {
-                    print("[WebSocketTransport] '\(participant.name)' (\(participant.id)) has no usable keys")
+                    Logger.relay.info("'\(participant.name)' (\(participant.id, privacy: .private(mask: .hash))) has no usable keys")
                     return nil
                 }
 

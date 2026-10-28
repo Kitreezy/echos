@@ -7,23 +7,24 @@
 
 import Foundation
 import UIKit
+import OSLog
 @preconcurrency import MultipeerConnectivity
 
 /// Делегатные методы MultipeerConnectivity приходят с фоновых очередей,
 /// поэтому они помечены `nonisolated` и явно прыгают на главный актор.
 @MainActor
 final class MultipeerService: NSObject {
-    
+
     // MARK: - Configuration
-    
+
     /// Service type - идентификатор для поиска
     /// Формат: <app>-<feature>
     private let serviceType = "echos-chat"
     /// Уникальное имя устройства в сети (дефолт из Settings берем)
     private let myPeerID: MCPeerID
-    
+
     // MARK: — Public API для получения имени
-    
+
     var myDisplayName: String {
         myPeerID.displayName
     }
@@ -32,20 +33,20 @@ final class MultipeerService: NSObject {
     var myAddress: String {
         identity?.fingerprint ?? ""
     }
-    
+
     // MARK: - Delegation
-    
+
     weak var approvalDelegate: PeerConnectionApproving?
-    
+
     // MARK: - Multipeer Components
-    
+
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
-    
+
     private var session: MCSession?
-    
+
     // MARK: - State
-    
+
     /// Обнаружение устройства (peerID -> displayName)
     private var discoveredPeers: [MCPeerID: String] = [:]
 
@@ -82,36 +83,36 @@ final class MultipeerService: NSObject {
     /// Свой ключ. Тот же, которым подписываемся на релее: личность у
     /// устройства одна, независимо от того, как идёт связь.
     private let identity: DeviceIdentity?
-    
+
     private var connectingPeers: Set<MCPeerID> = []
-    
+
     private var connectedPeers: Set<MCPeerID> = []
-    
+
     private var peerUUIDs: [MCPeerID: UUID] = [:]
-    
+
     private var peerRSSI: [MCPeerID: Int] = [:]
-    
+
     private var peerDistances: [MCPeerID: Double] = [:]
-    
+
     // MARK: - Streams
-    
+
     /// Потоки мультикастовые: каждое обращение к свойству отдаёт новый
     /// независимый `AsyncStream`, и все подписчики получают одни и те же
-    /// события. 
-    
+    /// события.
+
     /// Для обнаружения устройств. Реплеит последний список: экран, открытый
     /// после начала поиска, сразу видит уже найденные устройства.
     private let peerBroadcast = AsyncBroadcast<[Peer]>(replaysLatest: true)
     var peerStream: AsyncStream<[Peer]> { peerBroadcast.stream }
-    
+
     /// Для входящих сообщений
     private let messageBroadcast = AsyncBroadcast<Addressed<MessagePayload>>()
     var messageStream: AsyncStream<Addressed<MessagePayload>> { messageBroadcast.stream }
-    
+
     /// Для typing-событий
     private let typingBroadcast = AsyncBroadcast<Addressed<TypingEvent>>()
     var typingStream: AsyncStream<Addressed<TypingEvent>> { typingBroadcast.stream }
-    
+
     /// Для росчерков на стене
     private let strokeBroadcast = AsyncBroadcast<Addressed<Stroke>>()
     var strokeStream: AsyncStream<Addressed<Stroke>> { strokeBroadcast.stream }
@@ -121,9 +122,9 @@ final class MultipeerService: NSObject {
 
     private let wallStateBroadcast = AsyncBroadcast<Addressed<[Stroke]>>()
     var wallStateStream: AsyncStream<Addressed<[Stroke]>> { wallStateBroadcast.stream }
-    
+
     // MARK: - Init
-    
+
     /// - Parameter identity: чем подписываться. По умолчанию — ключ
     ///   устройства; снаружи задаётся ради тестов.
     init(identity: DeviceIdentity? = nil) {
@@ -133,11 +134,11 @@ final class MultipeerService: NSObject {
 
         super.init()
         observeAppLifecycle()
-        print("[lifecycle] MultipeerService init — advertising as '\(displayName)'")
+        Logger.lifecycle.debug("MultipeerService init")
     }
-    
+
     // MARK: - Discovery
-    
+
     /// Запускаем advertiser (объявляем себя) и browser (ищем других).
     /// Поиск включён человеком и не выключен. Отличается от «сейчас ищем»:
     /// в фоне MultipeerConnectivity не живёт, и мы его останавливаем сами,
@@ -151,13 +152,14 @@ final class MultipeerService: NSObject {
 
     private func resumeDiscovery() {
         suspendDiscovery()
-        
+
         session = MCSession(peer: myPeerID,
-                            securityIdentity: nil,  // TODO step 8: CryptoKit для end-to-end
+                            // Шифрует не сессия, а ConversationCipher поверх неё — см. seal.
+                            securityIdentity: nil,
                             encryptionPreference: .required)
-        
+
         session?.delegate = self
-        
+
         // Ключ объявляется вместе с именем, поэтому адрес собеседника известен
         // ещё до подключения. Если бы он выяснялся только после рукопожатия,
         // адрес менялся бы на полпути, а к нему привязаны переписки.
@@ -169,25 +171,25 @@ final class MultipeerService: NSObject {
         advertiser = MCNearbyServiceAdvertiser(peer: myPeerID,
                                                discoveryInfo: info,
                                                serviceType: serviceType)
-        
+
         advertiser?.delegate = self
         advertiser?.startAdvertisingPeer()
-        
+
         browser = MCNearbyServiceBrowser(peer: myPeerID,
                                          serviceType: serviceType)
-        
+
         browser?.delegate = self
         browser?.startBrowsingForPeers()
-        
+
         // Временно решение: симуляция RSSI для найденных peers
         Task {
             try? await Task.sleep(for: .seconds(2))
             simulateRSSIUpdates()
         }
-        
-        print("[MultipeerService] Discovery started: advertising as '\(myPeerID.displayName)")
+
+        Logger.nearby.notice("Discovery started: advertising as '\(self.myPeerID.displayName)'")
     }
-    
+
     func stopDeviceDiscovery() {
         wantsDiscovery = false
         suspendDiscovery()
@@ -197,16 +199,16 @@ final class MultipeerService: NSObject {
         advertiser?.stopAdvertisingPeer()
         advertiser?.delegate = nil
         advertiser = nil
-        
+
         browser?.stopBrowsingForPeers()
         browser?.delegate = nil
         browser = nil
-        
+
         session?.disconnect()
         session?.delegate = nil
         session = nil
-    
-        print("[MultipeerService] Discovery stopped")
+
+        Logger.nearby.notice("Discovery stopped")
     }
 
     // MARK: - Жизненный цикл приложения
@@ -232,7 +234,7 @@ final class MultipeerService: NSObject {
             }
         }
     }
-    
+
     // Симуляция RSSI (пока нет Core Bluetooth)
     private func simulateRSSIUpdates() {
         for peerID in discoveredPeers.keys {
@@ -241,55 +243,55 @@ final class MultipeerService: NSObject {
             peerDistances[peerID] = calculateDistance(from: rssi)
         }
         emitPeers()
-        
+
         Task {
             try? await Task.sleep(for: .seconds(3))
             simulateRSSIUpdates()
         }
     }
-    
+
     // MARK: - Manual Connection
-    
+
     func connectToPeer(address: String) async throws {
         guard let peerID = discoveredPeerIDs[address] else {
             throw MultipeerError.peerNotFound
         }
-        
+
         guard let browser = browser, let session = session else {
             throw MultipeerError.noSession
         }
-        
+
         connectingPeers.insert(peerID)
         emitPeers()
-        
-        print("[Browser] Manually connecting to '\(address)'")
+
+        Logger.nearby.debug("Browser: Manually connecting to '\(address, privacy: .private(mask: .hash))'")
         browser.invitePeer(peerID,
                            to: session,
                            withContext: nil,
                            timeout: 10)
     }
-    
+
     // MARK: - RSSI Calculation
     /// Приблизительное вычисление дистанции (пока без интеграции CoreBluetooth)
     private func calculateDistance(from rssi: Int) -> Double {
         let txPower: Double = -40
         let pathLossExponent = 2.5
-        
+
         let ratio = (txPower - Double(rssi)) / (10 * pathLossExponent)
         let distance = pow(10, ratio)
-        
+
         return max(1, min(distance, 100))
     }
-    
+
     // MARK: - Connection Managment
-    
+
     func disconnect(from address: String) {
         guard let session = session,
               let peerID = discoveredPeerIDs[address] else {
             return
         }
-        
-        print("[MultipeerService] Disconnecting from '\(peerID.displayName)'")
+
+        Logger.nearby.info("Disconnecting from '\(peerID.displayName)'")
 
         // MCSession не имеет метода disconnect для одного peer
         // Нужно пересоздать session без этого peer
@@ -303,30 +305,30 @@ final class MultipeerService: NSObject {
 
     func disconnectAll() {
         session?.disconnect()
-        
+
         connectedPeers.removeAll()
         connectingPeers.removeAll()
         emitPeers()
-        print("[MultipeerService] Disconnected from all peers")
+        Logger.nearby.notice("Disconnected from all peers")
     }
-    
+
     // MARK: - Messaging
-    
+
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
-        
+
         let peerID = try connectedPeerID(named: address)
 
         let packet = try MultipeerPacket(message: try seal(payload, kind: .message, for: peerID))
         let data = try JSONEncoder().encode(packet)
-        
+
         try session.send(data, toPeers: [peerID], with: .reliable)
-        
-        print("[Session] Sent message to '\(address)'")
+
+        Logger.nearby.debug("Session: Sent message to '\(address, privacy: .private(mask: .hash))'")
     }
-    
+
     /// Общая проверка для адресной отправки: собеседник найден и на связи.
     ///
     /// Адрес здесь — имя устройства: другого идентификатора у Multipeer нет,
@@ -339,21 +341,21 @@ final class MultipeerService: NSObject {
         }
         return peerID
     }
-    
+
     // MARK: - Typing
-    
+
     func sendTypingEvent(_ event: TypingEvent, to address: String) async throws {
         guard let session = session else {
             throw MultipeerError.noSession
         }
-        
+
         let peerID = try connectedPeerID(named: address)
-        
+
         let packet = try MultipeerPacket(typingEvent: event)
         let data = try JSONEncoder().encode(packet)
-        
+
         try session.send(data, toPeers: [peerID], with: .unreliable)
-        print("[Session] Sent typing event to '\(address)': \(event.type)")
+        Logger.nearby.debug("Session: Sent typing event to '\(address, privacy: .private(mask: .hash))': \(String(describing: event.type), privacy: .public)")
     }
 
     /// Росчерк уходит одному — владельцу стены — и `.reliable`: индикатор
@@ -363,14 +365,14 @@ final class MultipeerService: NSObject {
         guard let session = session else {
             throw MultipeerError.noSession
         }
-        
+
         let peerID = try connectedPeerID(named: address)
-        
+
         let packet = try MultipeerPacket(stroke: try seal(stroke, kind: .stroke, for: peerID))
         let data = try JSONEncoder().encode(packet)
-        
+
         try session.send(data, toPeers: [peerID], with: .reliable)
-        print("[Session] Sent stroke to '\(address)' with \(stroke.points.count) points")
+        Logger.nearby.debug("Session: Sent stroke to '\(address, privacy: .private(mask: .hash))' with \(stroke.points.count) points")
     }
 
     // MARK: - Рукопожатие
@@ -393,7 +395,7 @@ final class MultipeerService: NSObject {
                              toPeers: [peerID], with: .reliable)
         }
         catch {
-            print("[Session] Failed to challenge '\(peerID.displayName)': \(error)")
+            Logger.nearby.error("Session: Failed to challenge '\(peerID.displayName)': \(error, privacy: .public)")
         }
     }
 
@@ -427,7 +429,7 @@ final class MultipeerService: NSObject {
                              toPeers: [peerID], with: .reliable)
         }
         catch {
-            print("[Session] Failed to answer '\(peerID.displayName)': \(error)")
+            Logger.nearby.error("Session: Failed to answer '\(peerID.displayName)': \(error, privacy: .public)")
         }
     }
 
@@ -440,7 +442,7 @@ final class MultipeerService: NSObject {
         guard let peer = NearbyHandshake.verify(hello: hello,
                                                 nonce: nonce,
                                                 advertised: advertisedKeys[peerID]) else {
-            print("[Session] '\(peerID.displayName)' failed the challenge")
+            Logger.nearby.error("Session: '\(peerID.displayName)' failed the challenge")
             return
         }
 
@@ -448,7 +450,7 @@ final class MultipeerService: NSObject {
         guard let identity,
               let session = try? sessionKey(for: peerID),
               let cipher = try? ConversationCipher(identity: identity, session: session, peer: peer) else {
-            print("[Session] No cipher for '\(peerID.displayName)'")
+            Logger.nearby.error("Session: No cipher for '\(peerID.displayName)'")
             return
         }
 
@@ -459,7 +461,7 @@ final class MultipeerService: NSObject {
         verifiedPeers.insert(peerID)
         ciphers[peerID] = cipher
 
-        print("[Session] '\(peerID.displayName)' confirmed (\(address))")
+        Logger.nearby.notice("Session: '\(peerID.displayName)' confirmed (\(address, privacy: .private(mask: .hash)))")
         emitPeers()
     }
 
@@ -467,14 +469,14 @@ final class MultipeerService: NSObject {
 
     func requestWall(from address: String) async throws {
         try await sendPacket(MultipeerPacket(wallRequest: ()), to: address)
-        print("[Session] Asked '\(address)' for their wall")
+        Logger.nearby.info("Session: Asked '\(address, privacy: .private(mask: .hash))' for their wall")
     }
 
     func sendWall(_ strokes: [Stroke], to address: String) async throws {
         let peerID = try connectedPeerID(named: address)
         try await sendPacket(try MultipeerPacket(wallState: try seal(strokes, kind: .wall, for: peerID)),
                              to: address)
-        print("[Session] Sent own wall (\(strokes.count) strokes) to '\(address)'")
+        Logger.nearby.debug("Session: Sent own wall (\(strokes.count) strokes) to '\(address, privacy: .private(mask: .hash))'")
     }
 
     // MARK: - Шифр
@@ -512,9 +514,9 @@ final class MultipeerService: NSObject {
 
         try session.send(data, toPeers: [peerID], with: .reliable)
     }
-    
+
     // MARK: - Helpers
-    
+
     private func getStableUUID(for peerID: MCPeerID) -> UUID {
         if let existing = peerUUIDs[peerID] {
             return existing
@@ -523,12 +525,12 @@ final class MultipeerService: NSObject {
         peerUUIDs[peerID] = newUUId
         return newUUId
     }
-    
+
     /// Конвертирм internal state в модели Peer для ViewModel.
     private func emitPeers() {
         let peers = discoveredPeers.map { peerID, displayName in
             let status: PeerStatus
-            
+
             // Подключённый, но не подтвердивший ключ — ещё не собеседник:
             // писать ему нельзя, и показывать его готовым нечестно.
             if connectedPeers.contains(peerID) && verifiedPeers.contains(peerID) {
@@ -554,21 +556,21 @@ final class MultipeerService: NSObject {
 
         peerBroadcast.yield(peers)
     }
-    
+
     /// `deinit` вызывается вне главного актора, поэтому изолированный стейт
     /// здесь трогать нельзя. Закрывать потоки руками и не нужно: вместе с
     /// сервисом освобождаются броадкастеры, а `AsyncStream` завершается сам,
     /// когда его continuation деаллоцируется.
     /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
     deinit {
-        print("[lifecycle] MultipeerService deinit")
+        Logger.lifecycle.debug("MultipeerService deinit")
     }
 }
 
 // MARK: - MCNearbyServiceAdvertiserDelegate
 
 extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
-    
+
     /// Кто-то нашёл нас и хочет подключиться (invite).
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didReceiveInvitationFromPeer peerID: MCPeerID,
@@ -580,42 +582,42 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
         let respond = UncheckedSendableBox(invitationHandler)
         Task { @MainActor in
             let invitationHandler = respond.value
-            print("[Advertiser] Received invite from '\(peerID.displayName)'")
+            Logger.nearby.debug("Advertiser: Received invite from '\(peerID.displayName)'")
             guard let session = session else {
                 invitationHandler(false, nil)
                 return
             }
-            
+
             if discoveredPeers[peerID] == nil {
                 discoveredPeers[peerID] = peerID.displayName
                 discoveredPeerIDs[peerID.displayName] = peerID
             }
-            
+
             if let delegate = approvalDelegate {
                 let shouldAccept = await delegate.shouldAcceptConnection(from: peerID.displayName)
-                
+
                 if shouldAccept {
                     connectingPeers.insert(peerID)
                     emitPeers()
                     invitationHandler(true, session)
-                    print("[Advertiser] Accepted invite from '\(peerID.displayName)'")
+                    Logger.nearby.info("Advertiser: Accepted invite from '\(peerID.displayName)'")
                 } else {
                     invitationHandler(false, session)
-                    print("[Advertiser] Declined invite from '\(peerID.displayName)'")
+                    Logger.nearby.info("Advertiser: Declined invite from '\(peerID.displayName)'")
                 }
             } else {
                 connectingPeers.insert(peerID)
                 emitPeers()
                 invitationHandler(true, session)
-                print("[Advertiser] Auto-accepted invite from '\(peerID.displayName)'")
+                Logger.nearby.info("Advertiser: Auto-accepted invite from '\(peerID.displayName)'")
             }
         }
     }
-    
+
     nonisolated func advertiser(_ advertiser: MCNearbyServiceAdvertiser,
                                 didNotStartAdvertisingPeer error: any Error) {
         Task { @MainActor in
-            print("[Advertiser] Failed to start: \(error.localizedDescription)")
+            Logger.nearby.error("Advertiser: Failed to start: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
@@ -623,7 +625,7 @@ extension MultipeerService: MCNearbyServiceAdvertiserDelegate {
 // MARK: - MCNearbyServiceBrowserDelegate
 
 extension MultipeerService: MCNearbyServiceBrowserDelegate {
-    
+
     /// Устройство найдено.
     nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              foundPeer peerID: MCPeerID,
@@ -633,34 +635,34 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             // его от тёзки нечем. Такие пропускаются — это старая сборка.
             guard let encoded = info?[NearbyHandshake.discoveryKey],
                   let key = Data(base64Encoded: encoded) else {
-                print("[Browser] '\(peerID.displayName)' has no key, ignoring")
+                Logger.nearby.info("Browser: '\(peerID.displayName)' has no key, ignoring")
                 return
             }
 
             let address = DeviceIdentity.fingerprint(of: key)
-            print("[Browser] Found peer '\(peerID.displayName)' (\(address))")
+            Logger.nearby.notice("Browser: Found peer '\(peerID.displayName)' (\(address, privacy: .private(mask: .hash)))")
 
             discoveredPeers[peerID] = peerID.displayName
             discoveredPeerIDs[address] = peerID
             addresses[peerID] = address
             advertisedKeys[peerID] = key
-            
+
             if let rssiString = info?["RSSI"],
                let rssi = Int(rssiString) {
                 peerRSSI[peerID] = rssi
                 peerDistances[peerID] = calculateDistance(from: rssi)
-                print("[MultipeerService] RSSI for \(peerID.displayName): \(rssi) dBm (~\(Int(peerDistances[peerID] ?? 0))m)")
+                Logger.nearby.debug("RSSI for \(peerID.displayName): \(rssi) dBm (~\(Int(self.peerDistances[peerID] ?? 0))m)")
             }
-            
+
             emitPeers()
         }
     }
-    
+
     /// Устройство пропало из радиуса.
     nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              lostPeer peerID: MCPeerID) {
         Task { @MainActor in
-            print("[Browser] Lost peer: '\(peerID.displayName)'")
+            Logger.nearby.notice("Browser: Lost peer: '\(peerID.displayName)'")
             discoveredPeers.removeValue(forKey: peerID)
             if let address = addresses.removeValue(forKey: peerID) {
                 discoveredPeerIDs.removeValue(forKey: address)
@@ -671,18 +673,18 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
             ciphers.removeValue(forKey: peerID)
             sessionKeys.removeValue(forKey: peerID)
             connectedPeers.remove(peerID)
-            
+
             peerRSSI.removeValue(forKey: peerID)
             peerDistances.removeValue(forKey: peerID)
-            
+
             emitPeers()
         }
     }
-    
+
     nonisolated func browser(_ browser: MCNearbyServiceBrowser,
                              didNotStartBrowsingForPeers error: any Error) {
         Task { @MainActor in
-            print("[Browser] Failed to start: \(error.localizedDescription)")
+            Logger.nearby.error("Browser: Failed to start: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
@@ -690,7 +692,7 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
 // MARK: - MCSessionDelegate
 
 extension MultipeerService: MCSessionDelegate {
-        
+
     // Состояние подключения изменилось
     nonisolated func session(_ session: MCSession,
                  peer peerID: MCPeerID,
@@ -698,7 +700,7 @@ extension MultipeerService: MCSessionDelegate {
         Task { @MainActor in
             switch state {
             case .notConnected:
-                print("[Session] '\(peerID.displayName)' disconnected")
+                Logger.nearby.notice("Session: '\(peerID.displayName)' disconnected")
                 connectedPeers.remove(peerID)
                 connectingPeers.remove(peerID)
                 verifiedPeers.remove(peerID)
@@ -708,13 +710,13 @@ extension MultipeerService: MCSessionDelegate {
                 ciphers.removeValue(forKey: peerID)
                 sessionKeys.removeValue(forKey: peerID)
                 issuedNonces.removeValue(forKey: peerID)
-                
+
             case .connecting:
-                print("[Session] '\(peerID.displayName)' connecting...")
+                Logger.nearby.debug("Session: '\(peerID.displayName)' connecting...")
                 connectingPeers.insert(peerID)
-                
+
             case .connected:
-                print("[Session] '\(peerID.displayName)' connected")
+                Logger.nearby.notice("Session: '\(peerID.displayName)' connected")
                 connectingPeers.remove(peerID)
                 connectedPeers.insert(peerID)
 
@@ -725,25 +727,25 @@ extension MultipeerService: MCSessionDelegate {
                 }
 
                 sendChallenge(to: peerID)
-                
+
             @unknown default:
                 break
             }
-            
+
             emitPeers()
         }
     }
-    
+
     // Получили данные
     nonisolated func session(_ session: MCSession,
                  didReceive data: Data,
                  fromPeer peerID: MCPeerID) {
         Task { @MainActor in
             let decoder = JSONDecoder()
-            
+
             do {
                 let packet = try decoder.decode(MultipeerPacket.self, from: data)
-                
+
                 // Рукопожатие идёт до всего остального: пока собеседник не
                 // подтвердил ключ, неизвестно, кто он.
                 switch packet.type {
@@ -762,7 +764,7 @@ extension MultipeerService: MCSessionDelegate {
                 // Отправитель — тот, чей ключ подтверждён подписью, а не тот,
                 // кем он назвался внутри пакета.
                 guard verifiedPeers.contains(peerID), let sender = addresses[peerID] else {
-                    print("[Session] Ignoring \(packet.type) from unverified '\(peerID.displayName)'")
+                    Logger.nearby.notice("Session: Ignoring \(String(describing: packet.type), privacy: .public) from unverified '\(peerID.displayName)'")
                     return
                 }
 
@@ -770,56 +772,56 @@ extension MultipeerService: MCSessionDelegate {
                 case .message:
                     let payload = try open(try packet.decodeMessage(),
                                            as: MessagePayload.self, kind: .message, from: peerID)
-                    print("[Session] Recived message from '\(sender)")
+                    Logger.nearby.debug("Session: Received message from \(sender, privacy: .private(mask: .hash))")
                     messageBroadcast.yield(Addressed(sender: sender, value: payload))
-                    
+
                 case .typing:
-                    print("[Session] Recived typing event from '\(sender)")
+                    Logger.nearby.debug("Session: Received typing event from \(sender, privacy: .private(mask: .hash))")
                     let event = try packet.decodeTypingEvent()
                     typingBroadcast.yield(Addressed(sender: sender, value: event))
-                    
+
                 case .stroke:
                     let stroke = try open(try packet.decodeStroke(),
                                           as: Stroke.self, kind: .stroke, from: peerID)
-                    print("[Session] Recived stroke from '\(sender)")
+                    Logger.nearby.debug("Session: Received stroke from \(sender, privacy: .private(mask: .hash))")
                     strokeBroadcast.yield(Addressed(sender: sender, value: stroke))
 
                 case .wallRequest:
-                    print("[Session] '\(sender)' asked for the wall")
+                    Logger.nearby.debug("Session: '\(sender, privacy: .private(mask: .hash))' asked for the wall")
                     wallRequestBroadcast.yield(sender)
 
                 case .wallState:
                     let strokes = try open(try packet.decodeWallState(),
                                            as: [Stroke].self, kind: .wall, from: peerID)
-                    print("[Session] Recived wall from '\(sender)")
+                    Logger.nearby.debug("Session: Received wall from \(sender, privacy: .private(mask: .hash))")
                     wallStateBroadcast.yield(Addressed(sender: sender, value: strokes))
 
                 case .challenge, .hello:
                     break  // разобрано выше
                 }
-                
+
             } catch {
-                print("[Session] Failed to decode message: \(error)")
+                Logger.nearby.error("Session: Failed to decode message: \(error, privacy: .public)")
             }
         }
     }
-    
+
     // MARK: — Unused MCSessionDelegate methods
-    
+
     nonisolated func session(_ session: MCSession,
                  didReceive stream: InputStream,
                  withName streamName: String,
                  fromPeer peerID: MCPeerID) {
         // Не используется streams
     }
-    
+
     nonisolated func session(_ session: MCSession,
                  didStartReceivingResourceWithName resourceName: String,
                  fromPeer peerID: MCPeerID,
                  with progress: Progress) {
         // Не используется file transfers
     }
-    
+
     nonisolated func session(_ session: MCSession,
                  didFinishReceivingResourceWithName resourceName: String,
                  fromPeer peerID: MCPeerID,
@@ -827,7 +829,6 @@ extension MultipeerService: MCSessionDelegate {
                  withError error: (any Error)?) {
         // Не используется file transfers
     }
-
 }
 
 // MARK: - Errors
@@ -840,18 +841,18 @@ enum MultipeerError: LocalizedError {
     /// Собеседник подтверждён, а шифра нет. Не должно случаться: шифр
     /// заводится в момент подтверждения.
     case noCipher
-    
+
     var errorDescription: String? {
         switch self {
         case .noSession:
             return "MCSession не создана"
-            
+
         case .noPeers:
             return "Нет подключённых устройств"
-            
+
         case .sendFailed:
             return "Не удалось отправить сообщение"
-            
+
         case .peerNotFound:
             return "Устройство не найдено"
 

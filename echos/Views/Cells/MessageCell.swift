@@ -25,6 +25,7 @@ final class MessageCell: UITableViewCell {
     private let senderNameLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         label.isHidden = true
@@ -41,6 +42,7 @@ final class MessageCell: UITableViewCell {
         view.isScrollEnabled = false
         view.backgroundColor = .clear
         view.font = Typography.body
+        view.adjustsFontForContentSizeCategory = true
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.dataDetectorTypes = [.link]
@@ -55,6 +57,17 @@ final class MessageCell: UITableViewCell {
 
     /// Что делать по нажатию на «не отправлено». `nil` — нажимать нечего.
     var onRetry: (() -> Void)?
+
+    /// Нажатие на цитату — показать оригинал.
+    var onQuoteTap: (() -> Void)?
+
+    /// Цитата оригинала, если сообщение — ответ.
+    private let quoteView: QuoteView = {
+        let view = QuoteView()
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
 
     /// Мозаика — вместо текста, когда сообщение ею и является.
     private let mosaicView: MosaicView = {
@@ -76,6 +89,7 @@ final class MessageCell: UITableViewCell {
     private let footnoteLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -85,7 +99,8 @@ final class MessageCell: UITableViewCell {
     /// метки нет и места она не занимает.
     private let reactionsLabel: UILabel = {
         let label = UILabel()
-        label.font = .systemFont(ofSize: 15)
+        label.font = Typography.scaled(.systemFont(ofSize: 15), as: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
         label.backgroundColor = .surfaceRaised
         label.layer.cornerRadius = 11
         label.layer.masksToBounds = true
@@ -131,8 +146,11 @@ final class MessageCell: UITableViewCell {
         column.addSubview(reactionsLabel)
         column.addSubview(footnoteLabel)
         footnoteLabel.addGestureRecognizer(retryTap)
+        body.addArrangedSubview(quoteView)
+        body.setCustomSpacing(Space.tight, after: quoteView)
         body.addArrangedSubview(messageLabel)
         body.addArrangedSubview(mosaicView)
+        quoteView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(quoteTapped)))
 
         columnLeading = column.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
                                                         constant: Space.margin)
@@ -165,8 +183,15 @@ final class MessageCell: UITableViewCell {
 
     // MARK: - Configure
 
-    func configure(with message: Message) {
+    func configure(with message: Message, quote: ChatViewModel.Quote? = nil) {
         showReactions(of: message)
+
+        if let quote, let reply = message.replyTo {
+            quoteView.show(author: quote.author, preview: quote.preview, isFromMe: reply.isFromMe)
+            quoteView.isHidden = false
+        } else {
+            quoteView.isHidden = true
+        }
 
         if let mosaic = message.mosaic {
             mosaicView.show(mosaic)
@@ -239,6 +264,19 @@ final class MessageCell: UITableViewCell {
         onRetry?()
     }
 
+    @objc
+    private func quoteTapped() {
+        onQuoteTap?()
+    }
+
+    /// Мигнуть: «вот оно» — после перехода к оригиналу по цитате.
+    func flash() {
+        contentView.backgroundColor = .surfaceRaised
+        UIView.animate(withDuration: 0.9, delay: 0.3, options: [.allowUserInteraction]) {
+            self.contentView.backgroundColor = .clear
+        }
+    }
+
     private func alignLeft() {
         columnTrailing?.isActive = false
         columnLeading?.isActive = true
@@ -261,6 +299,10 @@ final class MessageCell: UITableViewCell {
         super.prepareForReuse()
 
         senderNameLabel.isHidden = true
+        quoteView.isHidden = true
+        onQuoteTap = nil
+        contentView.layer.removeAllAnimations()
+        contentView.backgroundColor = .clear
         columnLeading?.isActive = false
         columnTrailing?.isActive = false
     }

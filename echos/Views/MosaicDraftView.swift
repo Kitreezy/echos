@@ -33,6 +33,7 @@ final class MosaicDraftView: UIView {
     private let footnote: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .right
         label.translatesAutoresizingMaskIntoConstraints = false

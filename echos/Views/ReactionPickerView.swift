@@ -35,7 +35,8 @@ final class ReactionPickerView: UIView {
             config.background.cornerRadius = 16
             config.background.backgroundColor = emoji == current ? .surface : .clear
             let button = UIButton(configuration: config)
-            button.titleLabel?.font = .systemFont(ofSize: 26)
+            button.titleLabel?.font = Typography.scaled(.systemFont(ofSize: 26), as: .title1)
+            button.titleLabel?.adjustsFontForContentSizeCategory = true
             button.addAction(UIAction { [weak self] _ in
                 UISelectionFeedbackGenerator().selectionChanged()
                 self?.onPick?(emoji)

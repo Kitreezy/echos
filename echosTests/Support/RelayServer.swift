@@ -60,6 +60,13 @@ final class RelayServer {
         clients.count
     }
 
+    /// Сколько клиентов уже представились. Отличается от числа соединений:
+    /// пока клиент не прошёл рукопожатие, отпечатка у него нет, и адресный
+    /// конверт до него не доходит — релей такого не обслуживает.
+    var introducedClientCount: Int {
+        clients.values.filter { $0.fingerprint != nil }.count
+    }
+
     /// Пересылать ли ключи в присутствии. Выключается, чтобы изобразить
     /// старый релей, который о ключах соглашения не знает.
     var forwardsKeys = true
@@ -113,7 +120,7 @@ final class RelayServer {
         }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            let resumed = ResumeGuard()
+            let resumed = OnceFlag()
 
             listener.stateUpdateHandler = { state in
                 switch state {
@@ -156,7 +163,7 @@ final class RelayServer {
         self.listener = nil
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let resumed = ResumeGuard()
+            let resumed = OnceFlag()
 
             listener.newConnectionHandler = nil
             listener.stateUpdateHandler = { state in
@@ -367,25 +374,5 @@ final class RelayServer {
                 print("[RelayServer] Send failed: \(error.localizedDescription)")
             }
         })
-    }
-}
-
-/// `stateUpdateHandler` вызывается многократно, а continuation можно
-/// возобновить ровно один раз.
-private final class ResumeGuard: @unchecked Sendable {
-
-    private var isClaimed = false
-    private let lock = NSLock()
-
-    func claim() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-
-        guard !isClaimed else {
-            return false
-        }
-
-        isClaimed = true
-        return true
     }
 }

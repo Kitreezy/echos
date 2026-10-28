@@ -14,17 +14,22 @@
 
 import CryptoKit
 import Foundation
+import OSLog
+import Synchronization
 
 /// Отдельный тип нужен из-за кэша: обращаться в Keychain на каждое
 /// переподключение незачем, а кэш переживает потоки, поэтому под замком.
-final class IdentityStore: @unchecked Sendable {
+///
+/// Замок держится и на время похода в Keychain: два одновременных первых
+/// обращения иначе создали бы две разные пары ключей, и одна затёрла бы
+/// другую.
+final class IdentityStore: Sendable {
 
     static let signingAccount = "device-signing-key"
     static let agreementAccount = "device-agreement-key"
 
     private let store: any SecretStore
-    private let lock = NSLock()
-    private var cached: DeviceIdentity?
+    private let cached = Mutex<DeviceIdentity?>(nil)
 
     init(store: any SecretStore) {
         self.store = store
@@ -33,26 +38,24 @@ final class IdentityStore: @unchecked Sendable {
     /// Личность устройства. Бросает только тогда, когда её сейчас не достать
     /// и создавать новую нельзя; после успеха — из кэша.
     func identity() throws -> DeviceIdentity {
-        lock.lock()
-        defer { lock.unlock() }
+        try cached.withLock { cached in
+            if let cached {
+                return cached
+            }
 
-        if let cached {
-            return cached
+            let identity = try loadOrCreate()
+            cached = identity
+            return identity
         }
-
-        let identity = try loadOrCreate()
-        cached = identity
-        return identity
     }
 
     /// Забыть личность. Следующее обращение создаст новую — с другим адресом.
     func reset() throws {
-        lock.lock()
-        defer { lock.unlock() }
-
-        try store.delete(account: Self.signingAccount)
-        try store.delete(account: Self.agreementAccount)
-        cached = nil
+        try cached.withLock { cached in
+            try store.delete(account: Self.signingAccount)
+            try store.delete(account: Self.agreementAccount)
+            cached = nil
+        }
     }
 
     // MARK: - Private
@@ -88,7 +91,7 @@ final class IdentityStore: @unchecked Sendable {
             if let key = try? parse(raw) {
                 return key
             }
-            print("[IdentityStore] Ключ \(account) в Keychain повреждён, создаётся новый")
+            Logger.identity.fault("Ключ \(account, privacy: .public) в Keychain повреждён, создаётся новый")
         }
 
         let key = make()

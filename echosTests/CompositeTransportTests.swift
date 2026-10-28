@@ -6,23 +6,23 @@
 //  которому принадлежит адрес. Каналы изображают два `LoopbackTransport`.
 //
 
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class CompositeTransportTests: XCTestCase {
+final class CompositeTransportTests {
 
-    private var nearby: LoopbackTransport!
-    private var relay: LoopbackTransport!
-    private var transport: CompositeTransport!
+    private let nearby = LoopbackTransport()
+    private let relay = LoopbackTransport()
+    private let transport: CompositeTransport
 
-    /// Последний слитый список.
+    /// Последний слитый список. Пишет его фоновая задача — поэтому набор
+    /// класс, а не структура: задаче нужна ссылка на него.
     private var peers: [Peer] = []
     private var peersTask: Task<Void, Never>?
 
-    override func setUp() async throws {
-        nearby = LoopbackTransport()
-        relay = LoopbackTransport()
+    init() {
         transport = CompositeTransport(nearby: nearby, relay: relay)
 
         let stream = transport.peerStream
@@ -33,9 +33,11 @@ final class CompositeTransportTests: XCTestCase {
         }
     }
 
-    override func tearDown() {
+    /// Уборка — в `deinit`: Swift Testing создаёт набор на каждый тест и
+    /// отпускает после. `isolated` — потому что задача принадлежит главному
+    /// актору, а обычный `deinit` к нему доступа не имеет.
+    isolated deinit {
         peersTask?.cancel()
-        transport = nil
     }
 
     private func payload(_ text: String) -> MessagePayload {
@@ -44,82 +46,82 @@ final class CompositeTransportTests: XCTestCase {
 
     // MARK: - Слияние списков
 
-    func test_peersFromBothChannels_showUpInOneList() async {
+    @Test func peersFromBothChannels_showUpInOneList() async {
         nearby.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
         relay.emit(peers: [Peer(address: "bbbb", displayName: "Борис", status: .connected)])
 
         let merged = await waitUntil { self.peers.count == 2 }
-        XCTAssertTrue(merged)
-        XCTAssertEqual(peers.map(\.address), ["aaaa", "bbbb"])
+        #expect(merged)
+        #expect(peers.map(\.address) == ["aaaa", "bbbb"])
     }
 
-    func test_samePersonOnBothChannels_isListedOnce() async {
+    @Test func samePersonOnBothChannels_isListedOnce() async {
         nearby.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
         relay.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
 
         let merged = await waitUntil {
             self.peers.count == 1 && self.transport.channel(for: "aaaa") == .nearby
         }
-        XCTAssertTrue(merged)
+        #expect(merged)
     }
 
-    func test_whenChannelGoesQuiet_itsPeersLeaveTheList() async {
+    @Test func whenChannelGoesQuiet_itsPeersLeaveTheList() async {
         relay.emit(peers: [Peer(address: "bbbb", displayName: "Борис", status: .connected)])
         _ = await waitUntil { self.peers.count == 1 }
 
         relay.emit(peers: [])
 
         let gone = await waitUntil { self.peers.isEmpty }
-        XCTAssertTrue(gone)
+        #expect(gone)
     }
 
     // MARK: - Кому принадлежит адрес
 
-    func test_connectedNearby_winsOverRelay() async {
+    @Test func connectedNearby_winsOverRelay() async {
         nearby.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
         relay.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
         _ = await waitUntil { self.transport.channel(for: "aaaa") == .nearby }
 
         try? await transport.sendMessage(payload("привет"), to: "aaaa")
 
-        XCTAssertEqual(nearby.sentMessages.count, 1)
-        XCTAssertTrue(relay.sentMessages.isEmpty)
+        #expect(nearby.sentMessages.count == 1)
+        #expect(relay.sentMessages.isEmpty)
     }
 
-    func test_nearbyWithoutSession_losesToRelay() async {
+    @Test func nearbyWithoutSession_losesToRelay() async {
         nearby.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .notConnected)])
         relay.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
         _ = await waitUntil { self.transport.channel(for: "aaaa") == .relay }
 
         try? await transport.sendMessage(payload("привет"), to: "aaaa")
 
-        XCTAssertTrue(nearby.sentMessages.isEmpty)
-        XCTAssertEqual(relay.sentMessages.count, 1)
+        #expect(nearby.sentMessages.isEmpty)
+        #expect(relay.sentMessages.count == 1)
     }
 
-    func test_onlyNearbyWithoutSession_stillGoesNearby() async {
+    @Test func onlyNearbyWithoutSession_stillGoesNearby() async {
         nearby.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .notConnected)])
         _ = await waitUntil { self.transport.channel(for: "aaaa") == .nearby }
 
         try? await transport.sendMessage(payload("привет"), to: "aaaa")
 
-        XCTAssertEqual(nearby.sentMessages.count, 1)
+        #expect(nearby.sentMessages.count == 1)
     }
 
-    func test_unknownAddress_isUnreachable() async {
+    @Test func unknownAddress_isUnreachable() async {
         do {
             try await transport.sendMessage(payload("привет"), to: "zzzz")
-            XCTFail("отправка в никуда должна падать")
+            Issue.record("отправка в никуда должна падать")
         } catch let error as CompositeTransportError {
-            XCTAssertEqual(error, .unreachable("zzzz"))
+            #expect(error == .unreachable("zzzz"))
         } catch {
-            XCTFail("не та ошибка: \(error)")
+            Issue.record("не та ошибка: \(error)")
         }
     }
 
     // MARK: - Входящее
 
-    func test_incomingFromEitherChannel_reachesTheSameStream() async {
+    @Test func incomingFromEitherChannel_reachesTheSameStream() async {
         var received: [String] = []
         let stream = transport.messageStream
         let task = Task {
@@ -133,13 +135,13 @@ final class CompositeTransportTests: XCTestCase {
         relay.emit(message: payload("издалека"))
 
         let both = await waitUntil { received.count == 2 }
-        XCTAssertTrue(both)
-        XCTAssertEqual(Set(received), ["рядом", "издалека"])
+        #expect(both)
+        #expect(Set(received) == ["рядом", "издалека"])
     }
 
     // MARK: - Состояние связи
 
-    func test_relayState_isPassedThrough() async {
+    @Test func relayState_isPassedThrough() async {
         var states: [TransportConnectionState] = []
         let stream = transport.connectionStateUpdates
         let task = Task {
@@ -152,10 +154,10 @@ final class CompositeTransportTests: XCTestCase {
         relay.emit(connectionState: .waitingForNetwork)
 
         let got = await waitUntil { states.last == .waitingForNetwork }
-        XCTAssertTrue(got)
+        #expect(got)
     }
 
-    func test_someoneConnectedNearby_meansOnline_evenWithoutNetwork() async {
+    @Test func someoneConnectedNearby_meansOnline_evenWithoutNetwork() async {
         var states: [TransportConnectionState] = []
         let stream = transport.connectionStateUpdates
         let task = Task {
@@ -171,15 +173,15 @@ final class CompositeTransportTests: XCTestCase {
         nearby.emit(peers: [Peer(address: "aaaa", displayName: "Алиса", status: .connected)])
 
         let online = await waitUntil { states.last == .online }
-        XCTAssertTrue(online)
+        #expect(online)
     }
 
     // MARK: - Обнаружение
 
-    func test_discovery_startsBothChannels() {
+    @Test func discovery_startsBothChannels() {
         transport.startDeviceDiscovery()
 
-        XCTAssertTrue(nearby.isDiscovering)
-        XCTAssertTrue(relay.isDiscovering)
+        #expect(nearby.isDiscovering)
+        #expect(relay.isDiscovering)
     }
 }

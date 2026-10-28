@@ -8,6 +8,7 @@
 import AsyncAlgorithms
 import Foundation
 import Observation
+import OSLog
 
 /// Три потока транспорта сводятся к одному типу события, чтобы их можно было
 /// слить оператором `merge` и читать одним циклом.
@@ -29,17 +30,21 @@ struct IncomingNotice: Equatable, Sendable {
     let mosaic: Mosaic?
 }
 
+// Долг: файл и тип выросли за лимиты .swiftlint.yml. Разрезать, а не
+// поднимать лимиты.
+// swiftlint:disable file_length
 @Observable
 @MainActor
+// swiftlint:disable:next type_body_length
 final class ChatViewModel {
-    
+
     // MARK: - State (автоматически наблюдаемое)
-    
+
     var messages: [Message] = []
     var peers: [Peer] = []
     var connectionStatus: String = "Не подключён"
     var isDiscovering: Bool = false
-    var typingPeerName: String? = nil  // nil - никто не печатает
+    var typingPeerName: String?  // nil - никто не печатает
 
     /// Непрочитанное по переписке: адрес → сколько. Считается при запуске
     /// из хранилища, растёт на входящем не в открытый чат, обнуляется при
@@ -64,28 +69,46 @@ final class ChatViewModel {
     /// Последнее входящее не в открытый чат — то, о чём стоит сказать
     /// баннером. Меняется на каждое такое сообщение; наблюдатель сравнивает
     /// по `id`, чтобы одно и то же не показать дважды.
-    var latestNotice: IncomingNotice? = nil
+    var latestNotice: IncomingNotice?
 
     /// Адрес того, кто печатает. Отдельно от имени: гасить индикатор надо по
     /// тому же адресу, с которого он зажёгся, а имена могут совпадать.
-    private var typingPeer: String? = nil
-    
+    private var typingPeer: String?
+
     /// Адрес собеседника, чей чат открыт.
     ///
     /// Именно адрес, а не имя: тёзка — это другой человек, и его сообщения
     /// не должны попадать в чужую переписку.
-    var currentConversationPeer: String? = nil
+    var currentConversationPeer: String?
 
     /// Имя собеседника для заголовка. Держится отдельно, потому что адрес
     /// показывать человеку незачем, а имени в адресе нет.
-    var currentConversationName: String? = nil
-    
+    var currentConversationName: String?
+
+    /// Что пришло в открытый сейчас чат, пока его не было на экране.
+    /// Запоминается до того, как чат помечен прочитанным: иначе к моменту,
+    /// когда человек попросит пересказ, пересказывать будет нечего.
+    var missedMessages: [Message] = []
+
+    /// С какого числа пропущенных предлагать пересказ. Два-три сообщения
+    /// быстрее прочитать, чем ждать модель.
+    static let digestThreshold = 5
+
+    /// Кто пересказывает пропущенное. Тесты подставляют заглушку.
+    var digester: any Digesting = Digesters.system()
+
+    /// Предлагать ли пересказ: пропущенного много, а модель есть или
+    /// может появиться.
+    var canDigest: Bool {
+        missedMessages.count >= Self.digestThreshold && digester.availability != .never
+    }
+
     // MARK: - Services
-    
+
     /// Тип — протокол, а не конкретный класс: в тестах сюда подставляется фейк.
     var multipeerService: (any PeerTransport)?
     var messageStore: (any MessageStoring)?
-    
+
     /// Своя стена. Живёт здесь, а не на экране: росчерки приходят и тогда,
     /// когда стена закрыта.
     var strokeStore: any StrokeStoring = StrokeStore()
@@ -96,38 +119,43 @@ final class ChatViewModel {
     /// Сопоставление того, кого видим, с теми, с кем разговаривали.
     /// Пересобирается при каждом изменении списка знакомых.
     private(set) var recognizer = PeerRecognizer(known: [])
-    
+
     // MARK: - Typing State
-    
+
     /// Пауза, после которой считаем, что пользователь действительно печатает.
     var typingStartDelay: Duration = .milliseconds(300)
-    
+
     /// Пауза, после которой считаем, что печатать перестали.
     var typingIdleTimeout: Duration = .seconds(3)
-    
+
     private var isCurrentlyTyping = false
-    
+
     /// Поток нажатий. `startTyping()` только кладёт сюда событие — всё
     /// остальное делают операторы в `observeTyping()`.
     private let keystrokes: AsyncStream<Void>
     private let keystrokeContinuation: AsyncStream<Void>.Continuation
-    
+
     // MARK: - Pipeline
-    
+
     /// Как часто сбрасывать накопленные сообщения в хранилище.
     /// Меняется до `initialize()` — конвейер собирается один раз.
     var persistenceFlushInterval: Duration = .seconds(1)
-    
+
     /// Очередь на запись. `AsyncChannel` (в отличие от `AsyncStream`) даёт
     /// backpressure: отправитель ждёт, пока получатель заберёт элемент, —
     /// поэтому очередь не может распухнуть неограниченно.
     private let messagesToPersist = AsyncChannel<Message>()
-    
+
     /// Буфер перед каналом. Нужен, чтобы зафиксировать порядок синхронно —
     /// см. `persist(_:)`.
     private var pendingPersistence: [Message] = []
+
+    /// Id входящих за эту сессию. Хранилище знает только записанное, а
+    /// запись идёт пачками с задержкой — повтор, пришедший следом за
+    /// оригиналом, в хранилище его ещё не найдёт.
+    private var receivedMessageIDs: Set<UUID> = []
     private var persistencePump: Task<Void, Never>?
-    
+
     /// Состояние связи транспорта. Для Multipeer остаётся `.offline` —
     /// у него нет единого соединения, и статус там формируют сами пиры.
     private(set) var transportState: TransportConnectionState = .offline
@@ -137,25 +165,25 @@ final class ChatViewModel {
     private var typingTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
     private var remoteChangesTask: Task<Void, Never>?
-    
+
     /// Как часто ViewModel применяла обновление списка пиров. Диагностика для
     /// тестов: показывает, что `removeDuplicates` действительно схлопывает
     /// повторы, а не просто «работает».
     private(set) var appliedPeerUpdates = 0
-    
+
     // MARK: - Init
-    
+
     init() {
         (keystrokes, keystrokeContinuation) = AsyncStream.makeStream(of: Void.self)
-        print("[lifecycle] ChatViewModel init")
+        Logger.lifecycle.debug("ChatViewModel init")
     }
 
     deinit {
-        print("[lifecycle] ChatViewModel deinit")
+        Logger.lifecycle.debug("ChatViewModel deinit")
     }
-    
+
     // MARK: - Setup
-    
+
     /// Точка внедрения зависимостей.
     /// Прод вызывает без аргументов и получает реальные Multipeer + Core Data,
     /// тест передаёт свои реализации.
@@ -171,26 +199,26 @@ final class ChatViewModel {
         transportTask?.cancel()
         typingTask?.cancel()
         connectionStateTask?.cancel()
-        
+
         multipeerService = transport ?? PeerTransportFactory.make()
         messageStore = store ?? MessageStore()
 
         Task { [weak self] in
             await self?.loadUnreadCounts()
         }
-        
+
         transportTask = Task { [weak self] in
             await self?.consumeTransportEvents()
         }
-        
+
         typingTask = Task { [weak self] in
             await self?.observeTyping()
         }
-        
+
         connectionStateTask = Task { [weak self] in
             await self?.observeConnectionState()
         }
-        
+
         // Конвейер записи переживает переподключения: он не привязан к
         // конкретному транспорту и не должен терять накопленную пачку.
         if persistenceTask == nil {
@@ -212,9 +240,9 @@ final class ChatViewModel {
             }
         }
     }
-    
+
     // MARK: - Persistence
-    
+
     func switchToConversation(with address: String, named name: String? = nil) async {
         guard let messageStore = messageStore else {
             return
@@ -223,6 +251,8 @@ final class ChatViewModel {
             let filtered = try await messageStore.loadMessages(with: address)
             messages = filtered
             currentConversationPeer = address
+            missedMessages = filtered.filter(\.isUnread)
+            await prepareDigest()
 
             // Открыли — значит, прочитали. И в памяти, и в хранилище.
             if unreadCounts[address] != nil {
@@ -235,13 +265,28 @@ final class ChatViewModel {
             currentConversationName = name
                 ?? peers.first { $0.address == address }?.displayName
                 ?? filtered.last { !$0.isFromMe }?.senderName
-            print("[ChatViewModel] Showing conversation with \(address): \(filtered.count) messages")
+            Logger.chat.info("Showing conversation with \(address, privacy: .private(mask: .hash)): \(filtered.count) messages")
         }
         catch {
-            print("[ChatViewModel] Failed to switch: \(error)")
+            Logger.chat.error("Failed to switch: \(error)")
         }
     }
-    
+
+    /// Прогреть модель, если пересказ скорее всего попросят. Ради
+    /// переписки, которую она не прочтёт, — незачем; если языки для
+    /// перевода ещё не скачаны — тоже: сначала будет вопрос о скачивании.
+    private func prepareDigest() async {
+        guard canDigest else {
+            return
+        }
+        switch await digester.plan(for: missedMessages) {
+        case .direct, .translate:
+            digester.prepare()
+        case .download, .impossible:
+            break
+        }
+    }
+
     func getAllConversations() async -> [ConversationSummary] {
         guard let messageStore = messageStore else {
             return []
@@ -249,7 +294,7 @@ final class ChatViewModel {
         do {
             let allMessages = try await messageStore.loadMessages()
             var conversations: [String: [Message]] = [:]
-            
+
             // Группируем по адресу, а не по имени: у двух тёзок переписки
             // разные, и сливать их в одну нельзя.
             for message in allMessages {
@@ -270,20 +315,20 @@ final class ChatViewModel {
                 return ConversationSummary(peerAddress: address,
                                            peerName: name,
                                            lastMessage: lastMessage?.text ?? "",
+                                           lastMessageIsMosaic: lastMessage?.mosaic != nil,
                                            lastMessageTime: lastMessage?.timestamp ?? Date(),
                                            messageCount: messages.count,
                                            unreadCount: unreadCount,
                                            isActive: peers.contains { $0.address == address && $0.status == .connected })
-                
             }
             return summaries.sorted { $0.lastMessageTime > $1.lastMessageTime }
         }
         catch {
-            print("[ChatViewModel] Failed to get conversations: \(error)")
+            Logger.chat.error("Failed to get conversations: \(error)")
             return []
         }
     }
-    
+
     func clearCurrentConversation() async throws {
         guard let messageStore = messageStore,
               let address = currentConversationPeer else {
@@ -291,36 +336,39 @@ final class ChatViewModel {
         }
         try await messageStore.deleteConverstaion(with: address)
         messages = []
+        missedMessages = []
         currentConversationPeer = nil
         currentConversationName = nil
-        print("[ChatViewModel] Cleared conversation with \(address)")
+        Logger.chat.notice("Cleared conversation with \(address, privacy: .private(mask: .hash))")
     }
-    
+
     func clearAllMessages() async throws {
         guard let messageStore = messageStore else {
             return
         }
-        
+
         try await messageStore.clearAll()
         messages = []
-        print("[ChatViewModel] Cleared all messages")
+        missedMessages = []
+        Logger.chat.notice("Cleared all messages")
     }
-    
+
     // MARK: - Connection Management
-    
+
     func disconnectFromCurrentPeer() {
         guard let multipeerService = multipeerService,
               let address = currentConversationPeer else {
             return
         }
-        
+
         multipeerService.disconnect(from: address)
         messages = []
+        missedMessages = []
         currentConversationPeer = nil
         currentConversationName = nil
-        print("[ChatViewModel] Disconnected from \(address)")
+        Logger.chat.notice("Disconnected from \(address, privacy: .private(mask: .hash))")
     }
-    
+
     func showAllMessages() async {
         guard let messageStore = messageStore else {
             return
@@ -329,13 +377,13 @@ final class ChatViewModel {
             let all = try await messageStore.loadMessages()
             messages = all
             currentConversationPeer = nil
-            print("[ChatViewModel] Showing all messages: \(all.count)")
+            Logger.chat.info("Showing all messages: \(all.count)")
         }
         catch {
-            print("[ChatViewModel] Failed to load all: \(error)")
+            Logger.chat.error("Failed to load all: \(error)")
         }
     }
-    
+
     // MARK: - Recognition
 
     /// Узнаём ли мы этого собеседника.
@@ -348,7 +396,7 @@ final class ChatViewModel {
             recognizer = PeerRecognizer(known: try await knownPeerStore.loadKnownPeers())
         }
         catch {
-            print("[ChatViewModel] Failed to load known peers: \(error)")
+            Logger.chat.error("Failed to load known peers: \(error)")
         }
     }
 
@@ -363,12 +411,12 @@ final class ChatViewModel {
             await loadKnownPeers()
         }
         catch {
-            print("[ChatViewModel] Failed to remember \(address): \(error)")
+            Logger.chat.error("Failed to remember \(address, privacy: .private(mask: .hash)): \(error)")
         }
     }
 
     // MARK: - Listening
-    
+
     /// Один цикл на три потока.
     ///
     /// Было: три независимые `Task`, каждая со своим `for await`. Стало: потоки
@@ -378,7 +426,7 @@ final class ChatViewModel {
         guard let multipeerService = multipeerService else {
             return
         }
-        
+
         let peers = multipeerService.peerStream
             // Список пересобирается на каждый чих, включая симуляцию RSSI раз
             // в три секунды. Содержательные повторы отсекаем — перерисовывать
@@ -392,25 +440,25 @@ final class ChatViewModel {
             // кто-то приходит или уходит.
             .removeDuplicates { $0.hasSameState(as: $1) }
             .map(TransportEvent.peers)
-        
+
         let messages = multipeerService.messageStream.map(TransportEvent.message)
         let typing = multipeerService.typingStream.map(TransportEvent.typing)
         let strokes = multipeerService.strokeStream.map(TransportEvent.stroke)
         let wallRequests = multipeerService.wallRequestStream.map(TransportEvent.wallRequest)
-        
+
         for await event in merge(merge(peers, messages),
                                  merge(typing, strokes),
                                  wallRequests) {
             switch event {
             case .peers(let discoveredPeers):
                 await handlePeers(discoveredPeers)
-                
+
             case .message(let incoming):
-                handleIncomingMessage(incoming)
-                
+                await handleIncomingMessage(incoming)
+
             case .typing(let incoming):
                 handleTypingEvent(incoming)
-                
+
             case .stroke(let incoming):
                 await handleIncomingStroke(incoming)
 
@@ -419,7 +467,7 @@ final class ChatViewModel {
             }
         }
     }
-    
+
     /// Росчерки принимает приложение, а не экран стены.
     ///
     /// Иначе рисунок, сделанный пока вы смотрите в другое место, пропадал бы
@@ -432,13 +480,13 @@ final class ChatViewModel {
 
         do {
             try await strokeStore.saveStroke(stroke, wallOwner: nil)
-            print("[ChatViewModel] Stroke from \(stroke.author) saved to own wall")
+            Logger.chat.info("Stroke from \(stroke.author, privacy: .private(mask: .hash)) saved to own wall")
         }
         catch {
-            print("[ChatViewModel] Failed to save stroke: \(error)")
+            Logger.chat.error("Failed to save stroke: \(error)")
         }
     }
-    
+
     /// Ответить на просьбу показать свою стену.
     ///
     /// Отвечает приложение, а не экран: спросить могут когда угодно, а стена
@@ -454,11 +502,11 @@ final class ChatViewModel {
             try await transport.sendWall(mine, to: asker)
         }
         catch {
-            print("[ChatViewModel] Failed to answer wall request from \(asker): \(error)")
+            Logger.chat.error("Failed to answer wall request from \(asker, privacy: .private(mask: .hash)): \(error, privacy: .public)")
         }
     }
 
-    private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
+    private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) async {
         // Реакция — не сообщение: она меняет то, на что поставлена, и в
         // ленту не попадает.
         if let reaction = incoming.value.reaction {
@@ -468,19 +516,27 @@ final class ChatViewModel {
 
         var message = incoming.value.toMessage(from: incoming.sender)
 
+        // Доставка «хотя бы раз»: отправитель после таймаута шлёт повторно,
+        // и одно сообщение может прийти дважды. Второй раз — ни пузыря, ни
+        // счётчика непрочитанных.
+        guard await isFirstDelivery(of: message.id) else {
+            Logger.chat.info("Duplicate \(message.id, privacy: .public) from \(incoming.sender, privacy: .private(mask: .hash)), dropped")
+            return
+        }
+
         // Прочитано — только если пришло в открытый чат. Остальное ждёт
         // человека: в списке точкой, сверху баннером.
         let isInOpenChat = isConversationOnScreen && incoming.sender == currentConversationPeer
         message.isRead = isInOpenChat
-        
+
         // Сравниваем адреса. По имени было нельзя: тёзка попадал бы в чужую
         // переписку, а при адресации по ключу — и вовсе кто угодно, назвавшись
         // как надо.
         if currentConversationPeer == nil || incoming.sender == currentConversationPeer {
             messages.append(message)
-            print("[ChatViewModel] Received from \(incoming.sender): \(message.text.prefix(20))...")
+            Logger.chat.info("Received from \(incoming.sender, privacy: .private(mask: .hash))")
         } else {
-            print("[ChatViewModel] Silently saved message from \(incoming.sender) (different conversation)")
+            Logger.chat.info("Silently saved message from \(incoming.sender, privacy: .private(mask: .hash)) (different conversation)")
         }
 
         if !isInOpenChat {
@@ -493,8 +549,16 @@ final class ChatViewModel {
                 mosaic: message.mosaic
             )
         }
-        
+
         persist(message)
+    }
+
+    private func isFirstDelivery(of id: UUID) async -> Bool {
+        guard receivedMessageIDs.insert(id).inserted else {
+            return false
+        }
+        let stored = (try? await messageStore?.containsMessage(id: id)) ?? false
+        return !stored
     }
 
     // MARK: - Реакции
@@ -519,7 +583,7 @@ final class ChatViewModel {
         do {
             try await multipeerService.sendMessage(payload, to: address)
         } catch {
-            print("[ChatViewModel] Failed to send reaction: \(error)")
+            Logger.chat.error("Failed to send reaction: \(error, privacy: .public)")
         }
     }
 
@@ -567,14 +631,14 @@ final class ChatViewModel {
             unreadCounts = counts
         }
         catch {
-            print("[ChatViewModel] Failed to count unread: \(error)")
+            Logger.chat.error("Failed to count unread: \(error)")
         }
     }
-    
+
     private func handlePeers(_ discoveredPeers: [Peer]) async {
         peers = discoveredPeers
         appliedPeerUpdates += 1
-        
+
         // Сам открыть чат имеет смысл, только когда не открыт никакой: у
         // Multipeer это тот момент, когда собеседник принял приглашение.
         //
@@ -587,12 +651,12 @@ final class ChatViewModel {
             await switchToConversation(with: connected.address,
                                        named: connected.displayName)
         }
-        
+
         // Строго после switchToConversation: статус смотрит на то, чей чат
         // открыт, а до переключения это значение ещё старое.
         updateConnectionStatus()
     }
-    
+
     func handleTypingEvent(_ incoming: Addressed<TypingEvent>) {
         // Печатает тот, от кого пришло событие. Имя внутри — только для показа.
         let sender = incoming.sender
@@ -603,19 +667,19 @@ final class ChatViewModel {
         case .start:
             typingPeer = sender
             typingPeerName = name
-            print("[ChatViewModel] \(sender) started typing...")
-            
+            Logger.chat.debug("\(sender, privacy: .private(mask: .hash)) started typing")
+
         case .stop:
             if typingPeer == sender {
                 typingPeer = nil
                 typingPeerName = nil
-                print("[ChatViewModel] \(sender) stopped typing")
+                Logger.chat.debug("\(sender, privacy: .private(mask: .hash)) stopped typing")
             }
         }
     }
-    
+
     // MARK: - Persistence pipeline
-    
+
     /// Кладёт сообщение в очередь на запись.
     ///
     /// Порядок фиксируется здесь, синхронно, а в канал сообщения перекладывает
@@ -624,11 +688,11 @@ final class ChatViewModel {
     /// приезжают в хранилище вперемешку — что и ловил тест на порядок записи.
     private func persist(_ message: Message) {
         pendingPersistence.append(message)
-        
+
         guard persistencePump == nil else {
             return
         }
-        
+
         persistencePump = Task { [weak self] in
             while let next = self?.takeNextPending() {
                 await self?.messagesToPersist.send(next)
@@ -636,11 +700,11 @@ final class ChatViewModel {
             self?.persistencePump = nil
         }
     }
-    
+
     private func takeNextPending() -> Message? {
         pendingPersistence.isEmpty ? nil : pendingPersistence.removeFirst()
     }
-    
+
     /// Пишет накопленное пачками.
     ///
     /// Было: `Task { try? await store.saveMessage(message) }` на каждое
@@ -651,26 +715,26 @@ final class ChatViewModel {
         let batches = messagesToPersist.chunked(
             by: AsyncTimerSequence.repeating(every: persistenceFlushInterval)
         )
-        
+
         for await batch in batches {
             guard let messageStore = messageStore else {
                 continue
             }
-            
+
             for message in batch {
                 do {
                     try await messageStore.saveMessage(message)
                 }
                 catch {
-                    print("[ChatViewModel] Failed to save message: \(error)")
+                    Logger.chat.error("Failed to save message: \(error)")
                 }
             }
             persistedBatches += 1
         }
     }
-    
+
     // MARK: - Discovery
-    
+
     /// Запуск обнаружения устройств
     func startDeviceDiscovery() async {
         guard let multipeerService = multipeerService else {
@@ -682,10 +746,10 @@ final class ChatViewModel {
         // Список знакомых нужен до того, как придёт первое присутствие:
         // иначе первые пол-секунды все выглядят незнакомцами.
         await loadKnownPeers()
-        
+
         multipeerService.startDeviceDiscovery()
     }
-    
+
     func stopDeviceDiscovery() {
         guard let multipeerService = multipeerService else {
             return
@@ -693,37 +757,37 @@ final class ChatViewModel {
         isDiscovering = false
         multipeerService.stopDeviceDiscovery()
         connectionStatus = "Поиск остановлен"
-        
+
         stopTyping()
     }
-    
+
     /// Состояние связи важнее числа найденных устройств: если сети нет,
     /// «Нет устройств рядом» вводит в заблуждение.
     private func observeConnectionState() async {
         guard let multipeerService = multipeerService else {
             return
         }
-        
+
         for await state in multipeerService.connectionStateUpdates {
             transportState = state
             updateConnectionStatus()
         }
     }
-    
+
     private func updateConnectionStatus() {
         switch transportState {
         case .waitingForNetwork:
             connectionStatus = "Нет сети"
             return
-            
+
         case .connecting:
             connectionStatus = "Переподключаемся..."
             return
-            
+
         case .offline, .online:
             break
         }
-        
+
         // Строка под заголовком чата относится к собеседнику, а не ко всей
         // комнате. Раньше она перечисляла всех, кто на связи, — через релей,
         // где «на связи» сразу все, это превращалось в список имён, а с
@@ -742,14 +806,14 @@ final class ChatViewModel {
                 : "не на связи"
             return
         }
-        
+
         connectionStatus = peers.isEmpty ? "" : "Рядом: \(peers.count)"
     }
-    
+
     // MARK: - Messaging
-    
+
     /// Отправка сообщения
-    func sendMessage(_ text: String) async {
+    func sendMessage(_ text: String, replyingTo original: Message? = nil) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
@@ -758,12 +822,13 @@ final class ChatViewModel {
                            senderName: nil,
                            peerAddress: currentConversationPeer,
                            isFromMe: true,
-                           status: .sending))
+                           status: .sending,
+                           replyTo: original.map(MessageReply.init(quoting:))))
     }
 
     /// Отправка мозаики. Текст — её текстовая форма: превью и старые сборки
     /// получают его, сетка едет рядом.
-    func sendMosaic(_ mosaic: Mosaic) async {
+    func sendMosaic(_ mosaic: Mosaic, replyingTo original: Message? = nil) async {
         guard !mosaic.isEmpty else {
             return
         }
@@ -772,7 +837,39 @@ final class ChatViewModel {
                            senderName: nil,
                            peerAddress: currentConversationPeer,
                            isFromMe: true,
-                           status: .sending))
+                           status: .sending,
+                           replyTo: original.map(MessageReply.init(quoting:))))
+    }
+
+    // MARK: - Ответы
+
+    /// Цитата над ответом: чей оригинал и что в нём.
+    struct Quote: Equatable {
+        let author: String
+        let preview: String
+        /// Где оригинал в ленте. `nil` — его нет: историю очистили или
+        /// он был до неё.
+        let index: Int?
+    }
+
+    /// Что показать над ответом. Текст — из своего экземпляра оригинала,
+    /// а присланный — только если своего нет: собеседник мог бы
+    /// «процитировать» то, чего я не писал.
+    func quote(for message: Message) -> Quote? {
+        guard let reply = message.replyTo else {
+            return nil
+        }
+        let index = messages.firstIndex { $0.id == reply.id }
+        let original = index.map { messages[$0] }
+        let isFromMe = original?.isFromMe ?? reply.isFromMe
+        return Quote(author: isFromMe ? "Вы" : (currentConversationName ?? original?.senderName ?? "Собеседник"),
+                     preview: original.map { MessageReply(quoting: $0).preview } ?? reply.preview,
+                     index: index)
+    }
+
+    /// На какие сообщения я уже ответил — чтобы пересказ отметил вопросы.
+    var answeredMessageIDs: Set<UUID> {
+        Set(messages.compactMap { $0.isFromMe ? $0.replyTo?.id : nil })
     }
 
     /// Общий путь для всего, что уходит собеседнику как сообщение.
@@ -807,32 +904,32 @@ final class ChatViewModel {
         // Раньше в этом случае оно уходило всем подряд.
         guard let address = message.peerAddress ?? currentConversationPeer else {
             updateStatus(.failed, for: message.id)
-            print("[ChatViewModel] No conversation selected, message not sent")
+            Logger.chat.fault("No conversation selected, message not sent")
             return
         }
-        
+
         let playLoad = MessagePayload(from: message, senderName: multipeerService.myDisplayName)
-        
+
         do {
             try await multipeerService.sendMessage(playLoad, to: address)
-            
+
             updateStatus(.sent, for: message.id)
             await remember(address: address, name: currentConversationName)
-            print("[ChatViewModel] Message sent successfully")
+            Logger.chat.info("Message sent to \(address, privacy: .private(mask: .hash))")
         } catch {
             updateStatus(.failed, for: message.id)
-            print("[ChatViewModel] Failed to send message: \(error)")
+            Logger.chat.error("Failed to send message to \(address, privacy: .private(mask: .hash)): \(error, privacy: .public)")
         }
     }
-    
+
     // MARK: - Typing indication
-    
+
     /// Вызывается на каждое нажатие клавиши. Никакой логики — только событие
     /// в поток; решение «печатает / перестал» принимают операторы.
     func startTyping() {
         keystrokeContinuation.yield()
     }
-    
+
     /// Два потребителя одного потока нажатий с разными интервалами.
     ///
     /// Было: `typingDebounceTimer` и `typingTimer` — две задачи с `Task.sleep`,
@@ -844,7 +941,7 @@ final class ChatViewModel {
         let shared = keystrokes.share()
         let startDelay = typingStartDelay
         let idleTimeout = typingIdleTimeout
-        
+
         await withTaskGroup(of: Void.self) { group in
             // Короткая пауза после нажатия — пользователь печатает.
             group.addTask { [weak self] in
@@ -852,7 +949,7 @@ final class ChatViewModel {
                     await self?.sendTypingStart()
                 }
             }
-            
+
             // Длинная пауза — печатать перестали.
             group.addTask { [weak self] in
                 for await _ in shared.debounce(for: idleTimeout) {
@@ -861,7 +958,7 @@ final class ChatViewModel {
             }
         }
     }
-    
+
     /// Явная остановка: отправка сообщения, уход с экрана, остановка поиска.
     /// Пауза в 3 секунды тут не нужна — событие шлём сразу.
     func stopTyping() {
@@ -869,42 +966,42 @@ final class ChatViewModel {
             await self?.sendTypingStop()
         }
     }
-    
+
     private func sendTypingStart() async {
         guard let multipeerService = multipeerService,
               let address = currentConversationPeer,
               !isCurrentlyTyping else {
             return
         }
-        
+
         isCurrentlyTyping = true
-        
+
         let event = TypingEvent(type: .start, peerName: multipeerService.myDisplayName)
         try? await multipeerService.sendTypingEvent(event, to: address)
-        print("[ChatViewModel] Sent typing start from '\(multipeerService.myDisplayName)'")
+        Logger.chat.debug("Sent typing start")
     }
-    
+
     private func sendTypingStop() async {
         guard let multipeerService = multipeerService,
               let address = currentConversationPeer,
               isCurrentlyTyping else {
             return
         }
-        
+
         isCurrentlyTyping = false
-        
+
         let event = TypingEvent(type: .stop, peerName: multipeerService.myDisplayName)
         try? await multipeerService.sendTypingEvent(event, to: address)
-        print("[ChatViewModel] Sent typing stop from '\(multipeerService.myDisplayName)'")
+        Logger.chat.debug("Sent typing stop")
     }
-    
+
     // MARK: - Helpers
-    
+
     private func updateStatus(_ status: MessageStatus, for id: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else {
             return
         }
-        
+
         messages[idx].status = status
         persist(messages[idx])
     }

@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Подтверждение входящего подключения пользователем.
 @MainActor
@@ -46,26 +47,26 @@ enum TransportConnectionState: Sendable, Equatable {
 
 @MainActor
 protocol PeerTransport: AnyObject {
-    
+
     // MARK: - Identity
-    
+
     var myDisplayName: String { get }
 
     /// Собственный адрес — то, что собеседники увидят как отправителя.
     var myAddress: String { get }
-    
+
     // MARK: - Delegation
-    
+
     var approvalDelegate: PeerConnectionApproving? { get set }
-    
+
     // MARK: - Streams
-    
+
     /// Потоки мультикастовые: каждое обращение отдаёт НОВЫЙ независимый
     /// `AsyncStream`, и все подписчики получают одни и те же события.
     /// Реализация обязана держать по одному continuation на подписчика,
     /// иначе два `for await` начнут делить события
     /// между собой вместо того чтобы каждый получил все.
-    
+
     var peerStream: AsyncStream<[Peer]> { get }
     var messageStream: AsyncStream<Addressed<MessagePayload>> { get }
     var typingStream: AsyncStream<Addressed<TypingEvent>> { get }
@@ -76,29 +77,29 @@ protocol PeerTransport: AnyObject {
 
     /// Чужая стена целиком, как она есть у владельца.
     var wallStateStream: AsyncStream<Addressed<[Stroke]>> { get }
-    
+
     /// Состояние связи. Транспорту, у которого нет единого соединения
     /// (Multipeer), сообщать нечего — для него работает пустая реализация
     /// по умолчанию.
     var connectionStateUpdates: AsyncStream<TransportConnectionState> { get }
-    
+
     // MARK: - Discovery
-    
+
     func startDeviceDiscovery()
     func stopDeviceDiscovery()
     func connectToPeer(address: String) async throws
-    
+
     // MARK: - Connection Management
-    
+
     /// Пир адресуется адресом, а не транспортным идентификатором.
     /// Было `getPeerID(for:) -> MCPeerID?` плюс `disconnect(from: MCPeerID)` —
     /// связка, из-за которой тип из MultipeerConnectivity протекал и в
     /// протокол, и во все вызывающие места.
     func disconnect(from address: String)
     func disconnectAll()
-    
+
     // MARK: - Messaging
-    
+
     /// Всё адресное: переписка один на один и есть один на один, а не
     /// рассылка всем, кто оказался рядом.
     func sendMessage(_ payload: MessagePayload, to address: String) async throws
@@ -163,14 +164,20 @@ enum PeerTransportFactory {
 
     @MainActor
     static func make() -> any PeerTransport {
+        #if DEBUG
+        // UI-тесты: собеседники и переписка — декорация, см. UITestMode.
+        if UITestMode.isActive {
+            return DemoTransport()
+        }
+        #endif
         switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
         case .relay(let url):
-            print("[PeerTransportFactory] Nearby + relay transport: \(url)")
+            Logger.network.notice("Transport: nearby + relay \(url, privacy: .public)")
             return CompositeTransport(nearby: MultipeerService(),
                                       relay: WebSocketTransport(url: url))
 
         case .nearby:
-            print("[PeerTransportFactory] Multipeer transport")
+            Logger.network.notice("Transport: nearby only")
             return MultipeerService()
         }
     }

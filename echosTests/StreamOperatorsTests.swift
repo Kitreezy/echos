@@ -9,17 +9,18 @@
 //
 
 import AsyncAlgorithms
-import XCTest
+import Foundation
+import Testing
 @testable import echos
 
 @MainActor
-final class StreamOperatorsTests: XCTestCase {
+struct StreamOperatorsTests {
 
     // MARK: - removeDuplicates
 
     /// `lastSeen` меняется на каждый emit, поэтому обычное `==` бесполезно —
     /// схлопывание работает только по содержательному сравнению.
-    func test_removeDuplicates_collapsesPeerListsThatDifferOnlyByLastSeen() async {
+    @Test func removeDuplicates_collapsesPeerListsThatDifferOnlyByLastSeen() async {
         let (stream, continuation) = AsyncStream.makeStream(of: [Peer].self)
         let id = UUID()
 
@@ -39,12 +40,12 @@ final class StreamOperatorsTests: XCTestCase {
 
         let received = await collected
 
-        XCTAssertEqual(received.count, 2)
-        XCTAssertEqual(received.first?.first?.status, .notConnected)
-        XCTAssertEqual(received.last?.first?.status, .connected)
+        #expect(received.count == 2)
+        #expect(received.first?.first?.status == .notConnected)
+        #expect(received.last?.first?.status == .connected)
     }
 
-    func test_removeDuplicates_byEquatable_doesNotCollapsePeersWithFreshLastSeen() async {
+    @Test func removeDuplicates_byEquatable_doesNotCollapsePeersWithFreshLastSeen() async {
         let (stream, continuation) = AsyncStream.makeStream(of: [Peer].self)
         let id = UUID()
 
@@ -57,12 +58,12 @@ final class StreamOperatorsTests: XCTestCase {
 
         let received = await collected
 
-        XCTAssertEqual(received.count, 2, "Именно поэтому в проде используется removeDuplicates(by:)")
+        #expect(received.count == 2, "Именно поэтому в проде используется removeDuplicates(by:)")
     }
 
     // MARK: - merge
 
-    func test_merge_deliversElementsFromAllSources() async {
+    @Test func merge_deliversElementsFromAllSources() async {
         let (peers, peersContinuation) = AsyncStream.makeStream(of: [Peer].self)
         let (messages, messagesContinuation) = AsyncStream.makeStream(of: Addressed<MessagePayload>.self)
         let (typing, typingContinuation) = AsyncStream.makeStream(of: Addressed<TypingEvent>.self)
@@ -85,15 +86,15 @@ final class StreamOperatorsTests: XCTestCase {
 
         let received = await collected
 
-        XCTAssertEqual(received.count, 3)
-        XCTAssertTrue(received.contains { if case .peers = $0 { return true } else { return false } })
-        XCTAssertTrue(received.contains { if case .message = $0 { return true } else { return false } })
-        XCTAssertTrue(received.contains { if case .typing = $0 { return true } else { return false } })
+        #expect(received.count == 3)
+        #expect(received.contains { if case .peers = $0 { return true } else { return false } })
+        #expect(received.contains { if case .message = $0 { return true } else { return false } })
+        #expect(received.contains { if case .typing = $0 { return true } else { return false } })
     }
 
     // MARK: - debounce
 
-    func test_debounce_emitsOnlyAfterPause() async {
+    @Test func debounce_emitsOnlyAfterPause() async {
         let (stream, continuation) = AsyncStream.makeStream(of: Int.self)
 
         async let collected = collect(stream.debounce(for: .milliseconds(100)), count: 2)
@@ -112,14 +113,14 @@ final class StreamOperatorsTests: XCTestCase {
 
         let received = await collected
 
-        XCTAssertEqual(received, [5, 99])
+        #expect(received == [5, 99])
     }
 
     // MARK: - share
 
     /// `AsyncStream` — однопотребительский: два `for await` делят события.
     /// `share()` превращает его в широковещательный.
-    func test_share_bothConsumersSeeEveryElement() async {
+    @Test func share_bothConsumersSeeEveryElement() async {
         let (stream, continuation) = AsyncStream.makeStream(of: Int.self)
         let shared = stream.share()
 
@@ -134,13 +135,13 @@ final class StreamOperatorsTests: XCTestCase {
 
         let (received1, received2) = await (first, second)
 
-        XCTAssertEqual(received1, [1, 2, 3])
-        XCTAssertEqual(received2, [1, 2, 3])
+        #expect(received1 == [1, 2, 3])
+        #expect(received2 == [1, 2, 3])
     }
 
     // MARK: - chunked
 
-    func test_chunked_groupsElementsArrivingWithinInterval() async {
+    @Test func chunked_groupsElementsArrivingWithinInterval() async {
         let channel = AsyncChannel<Int>()
 
         let batches = channel.chunked(
@@ -159,7 +160,7 @@ final class StreamOperatorsTests: XCTestCase {
 
         let received = await collected
 
-        XCTAssertEqual(received.first, [1, 2, 3], "Всё, что пришло за окно, должно уехать одной пачкой")
-        XCTAssertEqual(received.last, [99])
+        #expect(received.first == [1, 2, 3], "Всё, что пришло за окно, должно уехать одной пачкой")
+        #expect(received.last == [99])
     }
 }

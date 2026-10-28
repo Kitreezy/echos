@@ -45,6 +45,7 @@ final class NoticeBanner: UIView {
 
         let name = UILabel()
         name.font = Typography.micro
+        name.adjustsFontForContentSizeCategory = true
         name.textColor = .inkMuted
         name.setTracked(notice.name, tracking: Typography.narrow)
 
@@ -84,6 +85,7 @@ final class NoticeBanner: UIView {
 
         let label = UILabel()
         label.font = Typography.body
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .ink
         label.numberOfLines = 2
         label.text = notice.preview

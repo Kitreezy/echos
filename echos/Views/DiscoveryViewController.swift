@@ -8,19 +8,22 @@
 import UIKit
 import SwiftUI
 
+// Долг: тип вырос за лимит .swiftlint.yml. Разрезать, а не поднимать лимит.
+// swiftlint:disable:next type_body_length
 final class DiscoveryViewController: UIViewController {
-    
+
     // MARK: - ViewModel
-    
+
     private let viewModel = ChatViewModel()
-    
+
     private let radarState = RadarState()
-    
+
     // MARK: - UI Components
-    
+
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setTracked("echos", tracking: Typography.wide)
@@ -35,6 +38,7 @@ final class DiscoveryViewController: UIViewController {
     /// не нашли.
     private lazy var nameButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.contentInsets = .zero
         config.baseForegroundColor = .ink
 
@@ -49,6 +53,7 @@ final class DiscoveryViewController: UIViewController {
     /// повторить, отпечаток ключа — нет. Нажатием копируется.
     private lazy var addressButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.contentInsets = .zero
         config.baseForegroundColor = .inkMuted
 
@@ -62,30 +67,34 @@ final class DiscoveryViewController: UIViewController {
     private let peerCountLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    
+
     private lazy var radarView: UIView = {
         let radarSwiftUI = RadarView(state: radarState)
         let hosting = UIHostingController(rootView: radarSwiftUI)
         hosting.view.backgroundColor = .clear
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        // Радар — картинка: то же, что он показывает, словами говорит кнопка
+        // «Рядом N — посмотреть» под ним. VoiceOver его пропускает.
+        hosting.view.accessibilityElementsHidden = true
         addChild(hosting)
         hosting.didMove(toParent: self)
         return hosting.view
     }()
-    
+
     /// Своя стена. Раньше открывалась только из меню чата, то есть была
     /// недоступна, пока рядом никого нет, — хотя смысл стены как раз в том,
     /// чтобы смотреть её, когда никого нет.
     private lazy var wallButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.attributedTitle = AttributedString(
             "моя стена",
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -101,6 +110,7 @@ final class DiscoveryViewController: UIViewController {
     private let noConversationsLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
@@ -114,6 +124,7 @@ final class DiscoveryViewController: UIViewController {
     /// запуска в схеме Xcode — то есть была доступна одному человеку в мире.
     private lazy var linkButton: UIButton = {
         var config = UIButton.Configuration.plain()
+        config.scalesTitle { Typography.micro }
         config.baseForegroundColor = .inkMuted
 
         let button = UIButton(configuration: config)
@@ -126,12 +137,13 @@ final class DiscoveryViewController: UIViewController {
     private let statusLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.caption
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    
+
     private let tableView: UITableView = {
         let table = UITableView()
         table.backgroundColor = .clear
@@ -139,7 +151,7 @@ final class DiscoveryViewController: UIViewController {
         table.translatesAutoresizingMaskIntoConstraints = false
         return table
     }()
-    
+
     /// Возобновлять поиск при возврате из фона только если он реально шёл.
     private var shouldResumeDiscovery = false
 
@@ -150,22 +162,22 @@ final class DiscoveryViewController: UIViewController {
     /// Загрузка идёт из базы и асинхронно, а поводов обновиться много —
     /// без этого флага они бы наслаивались.
     private var isReloadingConversations = false
-    
+
     // MARK: - Lifecycle
-    
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
+
         navigationController?.setNavigationBarHidden(true, animated: animated)
 
         // Возврат из чата — там могли написать, и последняя реплика в списке
         // уже другая.
         reloadConversations()
     }
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         // У радара нет заголовка, поэтому кнопка возврата на вложенных
         // экранах называлась бы системным «Back».
         navigationItem.backButtonTitle = "Назад"
@@ -206,7 +218,6 @@ final class DiscoveryViewController: UIViewController {
         linkButton.configuration?.attributedTitle = AttributedString(
             usesRelay ? "связь · через сервер" : "связь · рядом",
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -262,7 +273,6 @@ final class DiscoveryViewController: UIViewController {
         nameButton.configuration?.attributedTitle = AttributedString(
             UserSettings.displayName,
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -280,7 +290,6 @@ final class DiscoveryViewController: UIViewController {
         addressButton.configuration?.attributedTitle = AttributedString(
             text ?? "адрес · \(Fingerprint.display(address))",
             attributes: AttributeContainer([
-                .font: Typography.micro,
                 .kern: Typography.narrow
             ])
         )
@@ -369,10 +378,10 @@ final class DiscoveryViewController: UIViewController {
         alert.preferredAction = confirm
         present(alert, animated: true)
     }
-    
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        
+
         stopAnimations()
 
         // navigationController?.setNavigationBarHidden(false, animated: animated)  // ❌ НЕ НУЖНО
@@ -427,16 +436,22 @@ final class DiscoveryViewController: UIViewController {
     }
 
     // MARK: - Status Bar
-    
+
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        return .lightContent  
+        return .lightContent
     }
-    
+
     override var prefersStatusBarHidden: Bool {
         return false
     }
-    
+
     // MARK: - Layout
+
+    /// Наименьшая область нажатия — 44 пункта, как требует Apple.
+    private static let minimumTarget: CGFloat = 44
+
+    /// Сколько зона нажатия добавляет сверху и снизу к строке мелкого текста.
+    private static let targetSlack: CGFloat = 15
 
     private lazy var layoutConstraints: [NSLayoutConstraint] = {
         [
@@ -445,36 +460,44 @@ final class DiscoveryViewController: UIViewController {
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
                                                 constant: Space.margin),
 
+            // Имя, адрес и строка под радаром нажимаются, а текст у них в одну
+            // мелкую строку — область нажатия выходила около 13 пунктов при
+            // норме 44. Высота — не меньше 44, текст по центру, а отступы
+            // меньше на ту же величину: текст стоит, где стоял, растёт только
+            // невидимая зона нажатия.
+            nameButton.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTarget),
+            addressButton.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTarget),
+            statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTarget),
+
             nameButton.topAnchor.constraint(equalTo: titleLabel.bottomAnchor,
-                                            constant: Space.tight),
+                                            constant: Space.tight - Self.targetSlack),
             nameButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             nameButton.trailingAnchor.constraint(lessThanOrEqualTo: peerCountLabel.leadingAnchor,
                                                  constant: -Space.step),
 
             addressButton.topAnchor.constraint(equalTo: nameButton.bottomAnchor,
-                                               constant: Space.tight),
+                                               constant: Space.tight - 2 * Self.targetSlack),
             addressButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
 
             peerCountLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
             peerCountLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor,
                                                      constant: -Space.margin),
 
-            radarView.topAnchor.constraint(equalTo: addressButton.bottomAnchor, constant: Space.ma),
+            radarView.topAnchor.constraint(equalTo: addressButton.bottomAnchor, constant: Space.ma - Self.targetSlack),
             radarView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             radarView.widthAnchor.constraint(equalToConstant: 240),
             radarView.heightAnchor.constraint(equalToConstant: 240),
 
-            statusLabel.topAnchor.constraint(equalTo: radarView.bottomAnchor, constant: Space.room),
+            statusLabel.topAnchor.constraint(equalTo: radarView.bottomAnchor, constant: Space.room - Self.targetSlack),
             statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma),
+            tableView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: Space.ma - Self.targetSlack),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: linkButton.topAnchor),
 
             linkButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             linkButton.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
-
 
             noConversationsLabel.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
             noConversationsLabel.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
@@ -488,15 +511,15 @@ final class DiscoveryViewController: UIViewController {
                                                constant: -Space.step)
         ]
     }()
-    
+
     // MARK: - Setup
-    
+
     private func setupUI() {
         view.backgroundColor = UIColor.surface
-        
+
         setupLayout()
     }
-    
+
     private func setupLayout() {
         view.addSubview(titleLabel)
         view.addSubview(nameButton)
@@ -524,17 +547,17 @@ final class DiscoveryViewController: UIViewController {
         let statusTap = UITapGestureRecognizer(target: self, action: #selector(showNearby))
         statusLabel.addGestureRecognizer(statusTap)
         statusLabel.isUserInteractionEnabled = true
-        
+
         NSLayoutConstraint.activate(layoutConstraints)
     }
-    
+
     private func setupTableView() {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(ConversationCell.self,
                            forCellReuseIdentifier: ConversationCell.reuseIdentifier)
     }
-    
+
     @objc
     private func showOwnWall() {
         guard let transport = viewModel.multipeerService else {
@@ -561,9 +584,9 @@ final class DiscoveryViewController: UIViewController {
     private func startAnimations() {}
 
     private func stopAnimations() {}
-    
+
     // MARK: - Binding
-    
+
     private func bindViewModel() {
         updateUI()
         scheduleObservation()
@@ -628,7 +651,7 @@ final class DiscoveryViewController: UIViewController {
             navigation.pushViewController(ChatViewController(viewModel: viewModel), animated: true)
         }
     }
-    
+
     private func scheduleObservation() {
         withObservationTracking {
             _ = viewModel.peers
@@ -642,7 +665,7 @@ final class DiscoveryViewController: UIViewController {
             }
         }
     }
-    
+
     /// Что показывать в списке. Демо-список подставляется, только если его
     /// явно попросили аргументом запуска.
     private var displayedPeers: [Peer] {
@@ -651,7 +674,7 @@ final class DiscoveryViewController: UIViewController {
         }
         return viewModel.peers
     }
-    
+
     private func updateUI() {
         let displayPeers = displayedPeers
 
@@ -705,18 +728,17 @@ final class DiscoveryViewController: UIViewController {
             NearbyViewController(viewModel: viewModel), animated: true
         )
     }
-    
 }
- 
+
 // MARK: - TableView
- 
+
 extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
-    
+
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
         conversations.count
     }
-    
+
     func tableView(_ tableView: UITableView,
                    cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         guard let cell = tableView.dequeueReusableCell(
@@ -728,7 +750,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
         cell.configure(with: conversations[indexPath.row])
         return cell
     }
-    
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
@@ -747,7 +769,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
             )
         }
     }
-    
+
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         UITableView.automaticDimension
     }
@@ -763,23 +785,23 @@ extension DiscoveryViewController: PeerConnectionApproving {
                     continuation.resume(returning: false)
                     return
                 }
-                
+
                 let alert = UIAlertController(
                     title: "INCOMING CONNECTION",
                     message: "\(peerName) wants to connect. Accept?",
                     preferredStyle: .alert
                 )
-                
+
                 alert.view.tintColor = UIColor.alive
-                
+
                 alert.addAction(UIAlertAction(title: "ACCEPT", style: .default) { _ in
                     continuation.resume(returning: true)
                 })
-                
+
                 alert.addAction(UIAlertAction(title: "DECLINE", style: .destructive) { _ in
                     continuation.resume(returning: false)
                 })
-                
+
                 self.present(alert, animated: true)
             }
         }
@@ -787,7 +809,7 @@ extension DiscoveryViewController: PeerConnectionApproving {
 }
 
 extension DiscoveryViewController {
-    
+
     private func demoPeers() -> [Peer] {
         return [
             Peer(

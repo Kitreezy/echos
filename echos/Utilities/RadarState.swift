@@ -8,7 +8,7 @@
 import SwiftUI
 
 final class RadarState: ObservableObject {
-    
+
     @Published var isScanning: Bool = false
 
     /// Сколько человек вокруг. Радар рисует их точками — это тот же счётчик,
