@@ -62,8 +62,8 @@ struct ConversationCipherTests {
         let pair = try session(alice, bob)
         let box = try sealed("секрет", by: pair.aliceSide)
 
-        let wire = try JSONEncoder().encode(box)
-        #expect(!(String(decoding: wire, as: UTF8.self).contains("секрет")))
+        let wire = try #require(String(bytes: try JSONEncoder().encode(box), encoding: .utf8))
+        #expect(!wire.contains("секрет"))
         #expect(box.box.range(of: Data("секрет".utf8)) == nil)
     }
 
