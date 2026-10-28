@@ -102,10 +102,11 @@ struct MosaicTests {
 
     @Test func oversizedMosaicFromTheWire_isDropped() throws {
         let cells = Array(repeating: "🟥", count: 100)
+        let encodedCells = try #require(String(bytes: try JSONEncoder().encode(cells), encoding: .utf8))
 
         let raw = """
         {"id":"\(UUID().uuidString)","text":"x","senderName":"A","timestamp":1,
-         "mosaic":{"columns":10,"rows":10,"cells":\(String(decoding: try JSONEncoder().encode(cells), as: UTF8.self))}}
+         "mosaic":{"columns":10,"rows":10,"cells":\(encodedCells)}}
         """
         let decoded = try JSONDecoder().decode(MessagePayload.self, from: Data(raw.utf8))
 
@@ -116,7 +117,7 @@ struct MosaicTests {
     /// не знает, разбирает такой payload как раньше.
     @Test func plainMessage_hasNoMosaicOnTheWire() throws {
         let payload = MessagePayload(from: Message(text: "привет", isFromMe: true), senderName: "A")
-        let wire = String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+        let wire = try #require(String(bytes: try JSONEncoder().encode(payload), encoding: .utf8))
 
         #expect(!wire.contains("mosaic"))
     }

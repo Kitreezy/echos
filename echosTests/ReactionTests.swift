@@ -117,7 +117,7 @@ struct ReactionTests {
 
     @Test func plainMessage_hasNoReactionOnTheWire() throws {
         let payload = MessagePayload(from: Message(text: "привет", isFromMe: true), senderName: "A")
-        let wire = String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+        let wire = try #require(String(bytes: try JSONEncoder().encode(payload), encoding: .utf8))
 
         #expect(!wire.contains("reaction"))
     }

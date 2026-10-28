@@ -33,9 +33,9 @@ struct MessagePayloadTests {
         let payload = MessagePayload(from: Message(text: "x", isFromMe: false), senderName: "Bob")
         let broken = try JSONDecoder().decode(
             MessagePayload.self,
-            from: """
+            from: Data("""
             {"id":"not-a-uuid","text":"x","senderName":"Bob","timestamp":0}
-            """.data(using: .utf8)!
+            """.utf8)
         )
 
         let restored = broken.toMessage(from: "peer-address")

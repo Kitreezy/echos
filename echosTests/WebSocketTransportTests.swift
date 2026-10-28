@@ -152,7 +152,7 @@ struct WebSocketTransportTests {
         let passedThrough = server.received.filter { $0.kind == .message }
         #expect(passedThrough.count == 1)
         for envelope in passedThrough {
-            let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
+            let wire = try #require(String(bytes: try envelope.encoded(), encoding: .utf8))
             #expect(!(wire.contains("только для Боба")), "Текст виден серверу")
             #expect(!wire.contains(payload.id), "Идентификатор сообщения тоже под замком")
         }
@@ -289,7 +289,7 @@ struct WebSocketTransportTests {
         #expect(received.first?.value.text == mosaic.text)
 
         for envelope in server.received where envelope.kind == .message {
-            let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
+            let wire = try #require(String(bytes: try envelope.encoded(), encoding: .utf8))
             #expect(!(wire.contains("🟨")))
             #expect(!wire.contains("cells"))
         }
@@ -329,7 +329,7 @@ struct WebSocketTransportTests {
         #expect(gotWall.first?.value.map(\.id) == [stroke.id])
 
         for envelope in server.received where envelope.kind == .stroke || envelope.kind == .wallState {
-            let wire = String(decoding: try envelope.encoded(), as: UTF8.self)
+            let wire = try #require(String(bytes: try envelope.encoded(), encoding: .utf8))
             #expect(!wire.contains("points"), "Содержимое росчерка видно серверу")
             #expect(!wire.contains(stroke.id.uuidString), "Идентификатор росчерка видно серверу")
         }
