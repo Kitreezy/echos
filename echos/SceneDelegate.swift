@@ -5,6 +5,7 @@
 //  Created by Artem Rodionov on 16.02.2026.
 //
 
+import CoreSpotlight
 import UIKit
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
@@ -51,6 +52,25 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = navigationController
         window.makeKeyAndVisible()
         self.window = window
+
+        // Холодный запуск нажатием в поиске: активность приходит здесь, а
+        // не в `scene(_:continue:)`.
+        connectionOptions.userActivities.forEach(openSearchResult)
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        openSearchResult(userActivity)
+    }
+
+    private func openSearchResult(_ activity: NSUserActivity) {
+        guard activity.activityType == CSSearchableItemActionType,
+              let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+              let target = SpotlightItems.target(from: identifier),
+              let navigation = window?.rootViewController as? UINavigationController,
+              let discovery = navigation.viewControllers.first as? DiscoveryViewController else {
+            return
+        }
+        discovery.open(target)
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {}
