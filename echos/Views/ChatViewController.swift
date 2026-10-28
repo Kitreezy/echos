@@ -230,6 +230,9 @@ final class ChatViewController: UIViewController {
 
     // MARK: Init
 
+    /// Сообщение, которое показать при открытии, — найденное поиском.
+    var focusedMessageID: UUID?
+
     init(viewModel: ChatViewModel) {
         self.sharedViewModel = viewModel
         super.init(nibName: nil, bundle: nil)
@@ -340,6 +343,14 @@ final class ChatViewController: UIViewController {
         setupGestures()
         bindViewModel()
         setupAppLifecycleObservers()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if let id = focusedMessageID {
+            focusedMessageID = nil
+            scrollToMessage(id)
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -890,9 +901,23 @@ final class ChatViewController: UIViewController {
         return UIMenu(title: "", children: children)
     }
 
-    /// Не про конкретный чат: диагностика и вся история разом.
+    /// Не про конкретный чат: поиск, диагностика и вся история разом.
     private func makeGeneralSection() -> UIMenu {
         UIMenu(title: "", options: .displayInline, children: [
+            UIAction(
+                title: "Переписка в поиске iPhone",
+                image: UIImage(systemName: "magnifyingglass"),
+                state: viewModel.showsInSearch ? .on : .off
+            ) { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                Task {
+                    await self.viewModel.setShowsInSearch(!self.viewModel.showsInSearch)
+                    self.updateMenu()
+                }
+            },
+
             UIAction(
                 title: "Поделиться диагностикой",
                 image: UIImage(systemName: "stethoscope")

@@ -49,4 +49,6 @@ extension Logger {
     static let metrics = Logger(subsystem: subsystem, category: "metrics")
     /// Пересказ пропущенного: модель на устройстве и перевод.
     static let digest = Logger(subsystem: subsystem, category: "digest")
+    /// Системный поиск: индекс Spotlight.
+    static let search = Logger(subsystem: subsystem, category: "search")
 }

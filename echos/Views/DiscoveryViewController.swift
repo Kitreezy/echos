@@ -14,7 +14,7 @@ final class DiscoveryViewController: UIViewController {
 
     // MARK: - ViewModel
 
-    private let viewModel = ChatViewModel()
+    let viewModel = ChatViewModel()
 
     private let radarState = RadarState()
 
@@ -329,7 +329,20 @@ final class DiscoveryViewController: UIViewController {
         viewModel.multipeerService?.approvalDelegate = self
         await viewModel.startDeviceDiscovery()
         radarState.isScanning = true
+
+        isStarted = true
+        if let target = pendingSearchTarget {
+            pendingSearchTarget = nil
+            open(target)
+        }
     }
+
+    // MARK: - Из системного поиска
+
+    /// Хранилище подключается в `startDiscovery()`. Нажатие в поиске при
+    /// холодном запуске приходит раньше — и ждёт здесь.
+    var isStarted = false
+    var pendingSearchTarget: SpotlightItems.Target?
 
     /// Спрашивает имя и не отпускает, пока не назовут.
     ///
@@ -636,19 +649,6 @@ final class DiscoveryViewController: UIViewController {
         }
         NoticeBanner.show(notice, in: window) { [weak self] in
             self?.open(conversationWith: notice.address, named: notice.name)
-        }
-    }
-
-    /// Открыть чат с человеком, откуда бы ни нажали: назад к корню и в чат.
-    private func open(conversationWith address: String, named name: String) {
-        guard let navigation = navigationController else {
-            return
-        }
-        navigation.popToRootViewController(animated: false)
-
-        Task {
-            await viewModel.switchToConversation(with: address, named: name)
-            navigation.pushViewController(ChatViewController(viewModel: viewModel), animated: true)
         }
     }
 

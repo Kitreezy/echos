@@ -16,6 +16,8 @@ enum UserSettings {
     private static let mosaicBrushesKey = "echos_mosaic_brushes"
     private static let mosaicDraftsKey = "echos_mosaic_drafts"
     private static let mosaicTemplatesKey = "echos_mosaic_templates"
+    private static let hidesFromSearchKey = "echos_hides_from_search"
+    private static let searchIndexVersionKey = "echos_search_index_version"
 
     /// Куда идти, если человек выбрал дальнюю связь и не назвал свой адрес.
     ///
@@ -46,6 +48,30 @@ enum UserSettings {
     /// По умолчанию выключено: echos прежде всего про тех, кто рядом, а
     /// дальняя связь требует интернета и чужого сервера. Это выбор человека,
     /// а не наше решение за него.
+    /// Показывать ли переписку и собеседников в системном поиске.
+    ///
+    /// По умолчанию включено: найти разговор по слову из него — то, ради
+    /// чего поиск и нужен. Хранится инверсией, чтобы «включено» было
+    /// значением по умолчанию у `UserDefaults`.
+    static var showsInSearch: Bool {
+        get {
+            !UserDefaults.standard.bool(forKey: hidesFromSearchKey)
+        }
+        set {
+            UserDefaults.standard.set(!newValue, forKey: hidesFromSearchKey)
+        }
+    }
+
+    /// Какой версией `SpotlightIndex` собран индекс. 0 — не собирался.
+    static var searchIndexVersion: Int {
+        get {
+            UserDefaults.standard.integer(forKey: searchIndexVersionKey)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: searchIndexVersionKey)
+        }
+    }
+
     static var usesRelay: Bool {
         get {
             UserDefaults.standard.bool(forKey: usesRelayKey)

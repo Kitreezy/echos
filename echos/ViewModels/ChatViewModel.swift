@@ -116,6 +116,10 @@ final class ChatViewModel {
     /// Кого мы уже знаем.
     var knownPeerStore: any KnownPeerStoring = KnownPeerStore()
 
+    /// Системный поиск. Подключается только в приложении: тесты передают
+    /// свои хранилища и в Spotlight симулятора не пишут.
+    private var searchIndex: SpotlightIndex?
+
     /// Сопоставление того, кого видим, с теми, с кем разговаривали.
     /// Пересобирается при каждом изменении списка знакомых.
     private(set) var recognizer = PeerRecognizer(known: [])
@@ -201,7 +205,11 @@ final class ChatViewModel {
         connectionStateTask?.cancel()
 
         multipeerService = transport ?? PeerTransportFactory.make()
-        messageStore = store ?? MessageStore()
+        if let store {
+            messageStore = store
+        } else {
+            connectSearch()
+        }
 
         Task { [weak self] in
             await self?.loadUnreadCounts()
@@ -730,6 +738,43 @@ final class ChatViewModel {
                 }
             }
             persistedBatches += 1
+        }
+    }
+
+    // MARK: - Поиск
+
+    /// Хранилища за индексом: сохранили — нашлось поиском, удалили —
+    /// пропало из поиска.
+    private func connectSearch() {
+        let index = SpotlightIndex.shared
+        searchIndex = index
+        let messages = SearchIndexedMessageStore(MessageStore(), index: index)
+        messageStore = messages
+        if !(knownPeerStore is SearchIndexedKnownPeerStore) {
+            knownPeerStore = SearchIndexedKnownPeerStore(knownPeerStore, index: index)
+        }
+
+        let people = knownPeerStore
+        Task {
+            await index.rebuildIfNeeded(messages: messages, people: people)
+        }
+    }
+
+    var showsInSearch: Bool {
+        UserSettings.showsInSearch
+    }
+
+    /// Выключили — индекс стирается целиком. Включили — собирается заново
+    /// из истории: всё, что пришло, пока поиск был выключен, тоже найдётся.
+    func setShowsInSearch(_ shows: Bool) async {
+        UserSettings.showsInSearch = shows
+        guard let searchIndex, let messageStore else {
+            return
+        }
+        if shows {
+            await searchIndex.rebuild(messages: messageStore, people: knownPeerStore)
+        } else {
+            await searchIndex.removeAll()
         }
     }
 
