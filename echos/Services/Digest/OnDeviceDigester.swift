@@ -64,7 +64,10 @@ struct GeneratedQuestion {
 
     // Сначала вопрос, потом ответы: так модель пишет ответы, уже
     // сформулировав, на что отвечает.
-    @Guide(description: "Replies the user could send to the other person, written as the user, one short sentence each. Each reply gives a different answer: agree, decline, or ask to clarify.",
+    @Guide(description: """
+        Replies the user could send to the other person, written as the user, one short sentence \
+        each. Each reply gives a different answer: agree, decline, or ask to clarify.
+        """,
            .count(2...3))
     var replies: [String]
 }
@@ -209,7 +212,7 @@ final class OnDeviceDigester: Digesting {
             var notes: [String] = []
             for (index, chunk) in chunks.enumerated() {
                 try Task.checkCancellation()
-                continuation.yield(.reading(part: index + 1, of: chunks.count))
+                continuation.yield(.reading(part: index + 1, total: chunks.count))
                 let session = LanguageModelSession(model: model, instructions: Self.notesInstructions)
                 let response = try await session.respond(to: Self.prompt(chunk, with: peerName),
                                                          generating: PartNotes.self,

@@ -157,8 +157,8 @@ final class DigestViewModelTests: XCTestCase {
         let digester = StubDigester()
         let final = Digest(points: ["Боб зовёт в кино"], questions: [DigestQuestion(text: "Пойдёшь?", replies: ["Да", "Не смогу"])], plans: ["Суббота, 19:00"])
         digester.script = [
-            .reading(part: 1, of: 2),
-            .reading(part: 2, of: 2),
+            .reading(part: 1, total: 2),
+            .reading(part: 2, total: 2),
             .draft(Digest(points: ["Боб зовёт"])),
             .draft(final)
         ]

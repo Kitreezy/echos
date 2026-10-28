@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Foundation
 import Testing
 
 /// Ждёт выполнения условия, опрашивая его до таймаута.

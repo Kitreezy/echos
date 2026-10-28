@@ -29,7 +29,7 @@ final class DigestViewModel {
         /// Переписка переводится на язык модели.
         case translating
         /// Длинная переписка читается частями.
-        case reading(part: Int, of: Int)
+        case reading(part: Int, total: Int)
         /// Пересказ пишется: на экране то, что уже есть.
         case writing(Digest)
         /// Пересказ пишется на языке-посреднике — показывать его рано.
@@ -163,7 +163,7 @@ final class DigestViewModel {
         for try await progress in digester.digest(of: messages, with: peerName) {
             switch progress {
             case let .reading(part, total):
-                state = .reading(part: part, of: total)
+                state = .reading(part: part, total: total)
             case let .draft(digest):
                 latest = digest
                 state = showingDrafts ? .writing(digest) : .composing

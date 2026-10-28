@@ -61,14 +61,14 @@ struct DigestQuestion: Equatable, Sendable {
     /// Сообщение, в котором вопрос задан. На него уходит ответ — со
     /// ссылкой, как ответ на сообщение. `nil` — модель не указала или
     /// указала мимо.
-    var messageID: UUID? = nil
+    var messageID: UUID?
 }
 
 /// Ход работы. Длинная переписка в окно модели не влезает и читается
 /// частями — человеку стоит видеть, что дело идёт, а не пустой экран.
 enum DigestProgress: Equatable, Sendable {
-    /// Читается часть `part` из `of`. Только для длинной переписки.
-    case reading(part: Int, of: Int)
+    /// Читается часть `part` из `total`. Только для длинной переписки.
+    case reading(part: Int, total: Int)
     /// Черновик пересказа: поля дописываются по мере генерации.
     case draft(Digest)
 }

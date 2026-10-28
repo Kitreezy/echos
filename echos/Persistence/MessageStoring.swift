@@ -12,23 +12,23 @@ import Foundation
 
 @MainActor
 protocol MessageStoring: AnyObject {
-    
+
     func saveMessage(_ message: Message) async throws
 
     /// Есть ли уже сообщение с таким id. Получатель отсеивает по нему
     /// повторы: после таймаута отправитель шлёт сообщение ещё раз, не зная,
     /// дошло ли первое.
     func containsMessage(id: UUID) async throws -> Bool
-    
+
     func loadMessages() async throws -> [Message]
     func loadMessages(with address: String) async throws -> [Message]
 
     func markAsRead(with address: String) async throws
-    
+
     func deleteOldMessages(olderThan days: Int) async throws
     func deleteConverstaion(with address: String) async throws
     func clearAll() async throws
-    
+
     func getMessageStats() async throws -> [String: Int]
 }
 

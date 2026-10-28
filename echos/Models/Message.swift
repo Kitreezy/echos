@@ -39,7 +39,7 @@ struct Message: Identifiable, Equatable {
 
     /// На какое сообщение это ответ. `nil` — просто сообщение.
     let replyTo: MessageReply?
-    
+
     init(id: UUID = UUID(),
          text: String,
          mosaic: Mosaic? = nil,
@@ -149,7 +149,7 @@ struct MessagePayload: Codable {
     /// На что это ответ. Старая сборка поле не знает и покажет просто
     /// сообщение — без цитаты, но целиком.
     let reply: ReplyPayload?
-    
+
     init(from message: Message, senderName: String) {
         self.id = message.id.uuidString
         self.text = message.text
@@ -172,7 +172,7 @@ struct MessagePayload: Codable {
         self.reaction = reaction
         self.reply = nil
     }
-    
+
     /// Конвертация обратно в Message (входящее — isFromMe = false).
     ///
     /// Адрес отправителя приходит снаружи, от транспорта: `senderName` внутри
