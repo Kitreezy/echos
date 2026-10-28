@@ -26,7 +26,7 @@ enum RawWebSocketEvent: Sendable {
 }
 
 @MainActor
-protocol RawWebSocket: AnyObject {
+protocol RawWebSocket: AnyObject, Sendable {
 
     /// События соединения. Один поток на сокет — сокет одноразовый,
     /// на переподключение создаётся новый.
