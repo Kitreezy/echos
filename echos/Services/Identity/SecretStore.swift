@@ -39,9 +39,9 @@ enum SecretStoreError: Error, Equatable, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .locked:
-            return "Keychain недоступен до первой разблокировки"
+            return String(localized: "Keychain недоступен до первой разблокировки")
         case .failed(let status):
-            return "Keychain вернул ошибку \(status)"
+            return String(localized: "Keychain вернул ошибку \(status)")
         }
     }
 }

@@ -118,7 +118,7 @@ enum UserSettings {
     static var displayName: String {
         guard let name = userName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty else {
-            return "Без имени"
+            return String(localized: "Без имени")
         }
 
         return name

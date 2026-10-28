@@ -1,0 +1,60 @@
+{
+  "sourceLanguage": "ru",
+  "strings": {
+    "NSBluetoothAlwaysUsageDescription": {
+      "comment": "Bluetooth: поиск устройств рядом",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "echos uses Bluetooth to find devices nearby."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "echos использует Bluetooth для поиска устройств рядом."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "comment": "Локальная сеть: обмен сообщениями",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "echos uses the local network to exchange messages."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "echos использует локальную сеть для обмена сообщениями."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription": {
+      "comment": "Фото: сохранение мозаик",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To save emoji mosaics to your photo library."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Чтобы сохранять мозаики из эмодзи в фотоплёнку."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -15,7 +15,9 @@
           "name": "echos"
         }
       ]
-    }
+    },
+    "language": "ru",
+    "region": "RU"
   },
   "testTargets": [
     {

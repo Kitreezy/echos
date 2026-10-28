@@ -42,7 +42,12 @@ final class ChatViewModel {
 
     var messages: [Message] = []
     var peers: [Peer] = []
-    var connectionStatus: String = "Не подключён"
+    var connectionStatus: String = String(localized: "Не подключён")
+
+    /// Собеседник открытого чата на связи, значит, переписка с ним
+    /// зашифрована. Отдельным флагом, а не по тексту `connectionStatus`:
+    /// текст переводится.
+    private(set) var isConversationEncrypted = false
     var isDiscovering: Bool = false
     var typingPeerName: String?  // nil - никто не печатает
 
@@ -553,7 +558,7 @@ final class ChatViewModel {
                 messageID: message.id,
                 address: incoming.sender,
                 name: peers.first { $0.address == incoming.sender }?.displayName ?? message.senderName ?? incoming.sender,
-                preview: message.mosaic == nil ? message.text : "мозаика",
+                preview: message.mosaic == nil ? message.text : String(localized: "мозаика"),
                 mosaic: message.mosaic
             )
         }
@@ -786,7 +791,7 @@ final class ChatViewModel {
             return
         }
         isDiscovering = true
-        connectionStatus = "Ищем устройства..."
+        connectionStatus = String(localized: "Ищем устройства...")
 
         // Список знакомых нужен до того, как придёт первое присутствие:
         // иначе первые пол-секунды все выглядят незнакомцами.
@@ -801,7 +806,7 @@ final class ChatViewModel {
         }
         isDiscovering = false
         multipeerService.stopDeviceDiscovery()
-        connectionStatus = "Поиск остановлен"
+        connectionStatus = String(localized: "Поиск остановлен")
 
         stopTyping()
     }
@@ -822,11 +827,11 @@ final class ChatViewModel {
     private func updateConnectionStatus() {
         switch transportState {
         case .waitingForNetwork:
-            connectionStatus = "Нет сети"
+            connectionStatus = String(localized: "Нет сети")
             return
 
         case .connecting:
-            connectionStatus = "Переподключаемся..."
+            connectionStatus = String(localized: "Переподключаемся...")
             return
 
         case .offline, .online:
@@ -846,13 +851,15 @@ final class ChatViewModel {
             // Зато адрес — то, что стоит показать: это единственное, чем
             // человек может сверить, с кем говорит. И раз он на связи —
             // переписка с ним зашифрована: без ключей в список не попасть.
+            isConversationEncrypted = isReachable
             connectionStatus = isReachable
-                ? "зашифровано · \(Fingerprint.display(address))"
-                : "не на связи"
+                ? String(localized: "зашифровано · \(Fingerprint.display(address))")
+                : String(localized: "не на связи")
             return
         }
 
-        connectionStatus = peers.isEmpty ? "" : "Рядом: \(peers.count)"
+        isConversationEncrypted = false
+        connectionStatus = peers.isEmpty ? "" : String(localized: "Рядом: \(peers.count)")
     }
 
     // MARK: - Messaging
@@ -907,7 +914,7 @@ final class ChatViewModel {
         let index = messages.firstIndex { $0.id == reply.id }
         let original = index.map { messages[$0] }
         let isFromMe = original?.isFromMe ?? reply.isFromMe
-        return Quote(author: isFromMe ? "Вы" : (currentConversationName ?? original?.senderName ?? "Собеседник"),
+        return Quote(author: isFromMe ? String(localized: "Вы") : (currentConversationName ?? original?.senderName ?? String(localized: "Собеседник")),
                      preview: original.map { MessageReply(quoting: $0).preview } ?? reply.preview,
                      index: index)
     }

@@ -73,8 +73,8 @@ final class MosaicView: UIView, UIGestureRecognizerDelegate {
         // клеток». Клетки по отдельности — это эмодзи за эмодзи, и рисунок из
         // них на слух не сложить.
         isAccessibilityElement = true
-        accessibilityLabel = "мозаика \(mosaic.columns) на \(mosaic.rows)"
-        accessibilityValue = "закрашено клеток: \(mosaic.cells.filter { !$0.isEmpty }.count)"
+        accessibilityLabel = String(localized: "мозаика \(mosaic.columns) на \(mosaic.rows)")
+        accessibilityValue = String(localized: "закрашено клеток: \(mosaic.cells.filter { !$0.isEmpty }.count)")
 
         // Та же форма — только перекрасить клетки: в наборе это каждое
         // нажатие, и пересобирать сетку ради одного знака незачем.

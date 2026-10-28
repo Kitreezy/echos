@@ -121,7 +121,7 @@ final class DigestViewModel {
         } catch let failure as DigestFailure {
             state = .failed(failure.message)
         } catch {
-            state = .failed("Пересказ не получился.")
+            state = .failed(String(localized: "Пересказ не получился."))
         }
     }
 
@@ -154,7 +154,7 @@ final class DigestViewModel {
 
     /// Человек отказался скачивать языки или скачивание сорвалось.
     func downloadFailed() {
-        state = .failed("Языки для перевода не скачались. Их можно скачать и вручную: Настройки → Приложения → Перевод → Языки.")
+        state = .failed(String(localized: "Языки для перевода не скачались. Их можно скачать и вручную: Настройки → Приложения → Перевод → Языки."))
     }
 
     // MARK: - Звенья
@@ -171,7 +171,7 @@ final class DigestViewModel {
             }
         }
         guard !latest.isEmpty else {
-            throw DigestFailure(message: "Модель не нашла в пропущенном, что пересказать.")
+            throw DigestFailure(message: String(localized: "Модель не нашла в пропущенном, что пересказать."))
         }
         return latest
     }
@@ -208,7 +208,7 @@ final class DigestViewModel {
             throw failure
         } catch {
             Logger.digest.error("Translation failed: \(error, privacy: .public)")
-            throw DigestFailure(message: "Перевод на устройстве не получился.")
+            throw DigestFailure(message: String(localized: "Перевод на устройстве не получился."))
         }
     }
 }

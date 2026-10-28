@@ -26,7 +26,7 @@ final class NearbyViewController: UIViewController {
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.setTracked(UserSettings.usesRelay ? "кто на связи" : "кто рядом",
+        label.setTracked(UserSettings.usesRelay ? String(localized: "кто на связи") : String(localized: "кто рядом"),
                          tracking: Typography.wide)
         return label
     }()
@@ -38,7 +38,7 @@ final class NearbyViewController: UIViewController {
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Пока никого.\nЭкран сам оживёт, когда кто-нибудь появится."
+        label.text = String(localized: "Пока никого.\nЭкран сам оживёт, когда кто-нибудь появится.")
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -48,7 +48,7 @@ final class NearbyViewController: UIViewController {
         table.backgroundColor = .clear
         table.separatorStyle = .none
         // Пока строк нет, аудит видит пустую таблицу без описания.
-        table.accessibilityLabel = "Кто рядом"
+        table.accessibilityLabel = String(localized: "Кто рядом")
         table.translatesAutoresizingMaskIntoConstraints = false
         return table
     }()
@@ -71,7 +71,7 @@ final class NearbyViewController: UIViewController {
         super.viewDidLoad()
 
         view.backgroundColor = .surface
-        navigationItem.backButtonTitle = "Назад"
+        navigationItem.backButtonTitle = String(localized: "Назад")
 
         setupLayout()
 

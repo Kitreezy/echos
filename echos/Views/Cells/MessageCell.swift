@@ -249,13 +249,13 @@ final class MessageCell: UITableViewCell {
     private func footnote(time: String, status: MessageStatus) -> String {
         switch status {
         case .sending:
-            return "\(time) · отправляется"
+            return String(localized: "\(time) · отправляется")
 
         case .sent:
             return time
 
         case .failed:
-            return "\(time) · не отправлено · повторить"
+            return String(localized: "\(time) · не отправлено · повторить")
         }
     }
 

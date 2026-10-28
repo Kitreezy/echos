@@ -845,19 +845,19 @@ enum MultipeerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noSession:
-            return "MCSession не создана"
+            return String(localized: "MCSession не создана")
 
         case .noPeers:
-            return "Нет подключённых устройств"
+            return String(localized: "Нет подключённых устройств")
 
         case .sendFailed:
-            return "Не удалось отправить сообщение"
+            return String(localized: "Не удалось отправить сообщение")
 
         case .peerNotFound:
-            return "Устройство не найдено"
+            return String(localized: "Устройство не найдено")
 
         case .noCipher:
-            return "Нет ключа переписки с этим устройством"
+            return String(localized: "Нет ключа переписки с этим устройством")
         }
     }
 }

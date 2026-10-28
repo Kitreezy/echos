@@ -46,13 +46,13 @@ enum PeerRecognition: Equatable, Sendable {
             return nil
 
         case .renamed(let previous):
-            return "раньше — \(previous)"
+            return String(localized: "раньше — \(previous)")
 
         case .namesake:
-            return "имя знакомое, человек другой"
+            return String(localized: "имя знакомое, человек другой")
 
         case .new:
-            return "впервые"
+            return String(localized: "впервые")
         }
     }
 

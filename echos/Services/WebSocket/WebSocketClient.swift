@@ -561,7 +561,7 @@ struct TimeoutError: Error, LocalizedError {
     let duration: Duration
 
     var errorDescription: String? {
-        "Нет ответа за \(duration)"
+        String(localized: "Нет ответа за \(duration)")
     }
 }
 

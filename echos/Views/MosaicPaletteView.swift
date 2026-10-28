@@ -77,26 +77,26 @@ final class MosaicPaletteView: UIView {
         return label
     }()
 
-    private lazy var eraserButton = makeToolButton("ластик", symbol: "eraser", action: #selector(pickEraser))
-    private lazy var fillButton = makeToolButton("залить", symbol: "paintbrush.fill", action: #selector(fillTapped))
-    private lazy var clearButton = makeToolButton("очистить", symbol: "trash", action: #selector(clearTapped))
-    private lazy var customButton = makeToolButton("свой", symbol: "keyboard", action: #selector(customTapped))
+    private lazy var eraserButton = makeToolButton(String(localized: "ластик"), symbol: "eraser", action: #selector(pickEraser))
+    private lazy var fillButton = makeToolButton(String(localized: "залить"), symbol: "paintbrush.fill", action: #selector(fillTapped))
+    private lazy var clearButton = makeToolButton(String(localized: "очистить"), symbol: "trash", action: #selector(clearTapped))
+    private lazy var customButton = makeToolButton(String(localized: "свой"), symbol: "keyboard", action: #selector(customTapped))
 
     /// Всё, что делают с готовым рисунком, — под одной кнопкой: ряд
     /// инструментов должен оставаться рядом для рисования.
     private lazy var moreButton: UIButton = {
-        let button = makeToolButton("ещё", symbol: "ellipsis", action: nil)
+        let button = makeToolButton(String(localized: "ещё"), symbol: "ellipsis", action: nil)
         button.showsMenuAsPrimaryAction = true
         button.menu = UIMenu(children: [
-            UIAction(title: "Сохранить мозаику", image: UIImage(systemName: "square.grid.2x2")) { [weak self] _ in
+            UIAction(title: String(localized: "Сохранить мозаику"), image: UIImage(systemName: "square.grid.2x2")) { [weak self] _ in
                 guard let self else { return }
                 self.delegate?.paletteDidAskToSaveTemplate(self)
             },
-            UIAction(title: "Сохранить картинку", image: UIImage(systemName: "arrow.down.to.line")) { [weak self] _ in
+            UIAction(title: String(localized: "Сохранить картинку"), image: UIImage(systemName: "arrow.down.to.line")) { [weak self] _ in
                 guard let self else { return }
                 self.delegate?.paletteDidAskToSaveImage(self)
             },
-            UIAction(title: "Поделиться картинкой", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+            UIAction(title: String(localized: "Поделиться картинкой"), image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
                 guard let self else { return }
                 self.delegate?.paletteDidAskToShare(self)
             }
@@ -109,7 +109,10 @@ final class MosaicPaletteView: UIView {
                                                    clearButton, customButton, moreButton])
         stack.axis = .horizontal
         stack.spacing = Space.hair
-        stack.distribution = .fillProportionally
+        // Кнопки делят ряд поровну, а не по длине подписи: на языке
+        // длиннее русского последняя уезжала за край экрана. Нашла это
+        // псевдолокализация с удвоенными строками.
+        stack.distribution = .fill
         stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
@@ -180,6 +183,10 @@ final class MosaicPaletteView: UIView {
             toolsRow.heightAnchor.constraint(equalToConstant: 48),
             brushPreview.widthAnchor.constraint(equalToConstant: 44),
             brushPreview.heightAnchor.constraint(equalToConstant: 44),
+            fillButton.widthAnchor.constraint(equalTo: eraserButton.widthAnchor),
+            clearButton.widthAnchor.constraint(equalTo: eraserButton.widthAnchor),
+            customButton.widthAnchor.constraint(equalTo: eraserButton.widthAnchor),
+            moreButton.widthAnchor.constraint(equalTo: eraserButton.widthAnchor),
 
             groupsBar.topAnchor.constraint(equalTo: toolsRow.bottomAnchor, constant: Space.tight),
             groupsBar.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -205,6 +212,8 @@ final class MosaicPaletteView: UIView {
         config.title = title
         config.imagePlacement = .top
         config.imagePadding = 1
+        // Не влезла подпись — многоточие, а не перенос по буквам.
+        config.titleLineBreakMode = .byTruncatingTail
         config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4)
         config.baseForegroundColor = .ink
         config.baseBackgroundColor = .surface
@@ -214,6 +223,8 @@ final class MosaicPaletteView: UIView {
             return attributes
         }
         let button = UIButton(configuration: config)
+        // Сжиматься до равной доли ряда, а не держаться за длину подписи.
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         if let action {
             button.addTarget(self, action: action, for: .touchUpInside)
         }
@@ -314,8 +325,8 @@ final class MosaicPaletteView: UIView {
 
         var title: String {
             switch self {
-            case .templates:            return "мозаики"
-            case .recent:               return "недавние"
+            case .templates:            return String(localized: "мозаики")
+            case .recent:               return String(localized: "недавние")
             case .emoji(let group):     return group.title
             }
         }
@@ -425,7 +436,7 @@ extension MosaicPaletteView: UICollectionViewDataSource, UICollectionViewDelegat
 
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             UIMenu(children: [
-                UIAction(title: "Убрать", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+                UIAction(title: String(localized: "Убрать"), image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
                     guard let self else { return }
                     self.delegate?.palette(self, didAskToDelete: mosaic)
                 }

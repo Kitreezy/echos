@@ -258,9 +258,10 @@
 				};
 			};
 			buildConfigurationList = 577A75C92F4362CB0072CE59 /* Build configuration list for PBXProject "echos" */;
-			developmentRegion = en;
+			developmentRegion = ru;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				ru,
 				en,
 				Base,
 			);

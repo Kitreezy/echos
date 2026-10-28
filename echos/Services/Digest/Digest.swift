@@ -142,13 +142,13 @@ struct UnavailableDigester: Digesting {
     func prepare() {}
 
     func digest(of messages: [Message], with peerName: String) -> AsyncThrowingStream<DigestProgress, Error> {
-        AsyncThrowingStream { $0.finish(throwing: DigestFailure(message: "На этом устройстве пересказ недоступен.")) }
+        AsyncThrowingStream { $0.finish(throwing: DigestFailure(message: String(localized: "На этом устройстве пересказ недоступен."))) }
     }
 }
 
 private struct NoTranslator: Translating {
     func translate(_ texts: [String]) async throws -> [String] {
-        throw DigestFailure(message: "На этом устройстве перевод недоступен.")
+        throw DigestFailure(message: String(localized: "На этом устройстве перевод недоступен."))
     }
 }
 

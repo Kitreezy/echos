@@ -291,10 +291,10 @@ enum RelayError: Error, LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyPayload:  return "В конверте нет полезной нагрузки"
-        case .notConnected:  return "Нет соединения с релеем"
-        case .invalidURL:    return "Некорректный адрес релея"
-        case .noCipher(let address): return "Нет ключа переписки с \(address)"
+        case .emptyPayload:  return String(localized: "В конверте нет полезной нагрузки")
+        case .notConnected:  return String(localized: "Нет соединения с релеем")
+        case .invalidURL:    return String(localized: "Некорректный адрес релея")
+        case .noCipher(let address): return String(localized: "Нет ключа переписки с \(address)")
         }
     }
 }
