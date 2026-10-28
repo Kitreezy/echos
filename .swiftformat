@@ -1,0 +1,21 @@
+# SwiftFormat отвечает за вид кода. Правила — белым списком: только
+# гигиена, о которой спорить не о чем. Стиль проекта (catch с новой строки,
+# явный return, порядок try/await) правила по умолчанию переписали бы в 114
+# файлах из 117, и это уже не форматирование, а смена стиля. Расширять — по
+# одному правилу и отдельным коммитом.
+
+--swiftversion 6.0
+--exclude build,fastlane,tests,docs
+
+--rules trailingSpace
+--rules consecutiveBlankLines
+--rules blankLinesAtEndOfScope
+--rules linebreakAtEndOfFile
+--rules linebreaks
+--rules duplicateImports
+--rules redundantNilInit
+--rules semicolons
+--rules spaceInsideParens
+--rules spaceInsideBrackets
+--rules spaceAroundComments
+--rules leadingDelimiters

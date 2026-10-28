@@ -15,13 +15,13 @@ import CoreData
 @testable import echos
 
 enum CoreDataTestStack {
-    
+
     /// Свежий пустой стек. Вызывать в `setUp`, а не в `class` scope.
     @MainActor
     static func makeInMemory() -> PersistenceController {
         PersistenceController(inMemory: true)
     }
-    
+
     /// Хелпер: сообщение с фиксированным временем, чтобы тесты
     /// не зависели от порядка выполнения и скорости машины.
     /// - Parameter peer: адрес собеседника, к чьей переписке относится

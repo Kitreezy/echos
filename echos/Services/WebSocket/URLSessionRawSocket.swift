@@ -9,14 +9,12 @@
 //
 
 import Foundation
-import os
 
 @MainActor
 final class URLSessionRawSocket: NSObject, RawWebSocket {
 
     private let url: URL
     private let configuration: URLSessionConfiguration
-    private let delegate = SocketDelegate()
 
     private var session: URLSession?
     private var socket: URLSessionWebSocketTask?
@@ -29,7 +27,6 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
         self.url = url
         self.configuration = configuration
         super.init()
-        delegate.socket = self
     }
 
     deinit {
@@ -40,7 +37,7 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
 
     func open() {
         let session = URLSession(configuration: configuration,
-                                 delegate: delegate,
+                                 delegate: SocketDelegate(socket: self),
                                  delegateQueue: .main)
         self.session = session
 
@@ -86,14 +83,10 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
         // вызов. Нашёл это параллельный прогон тестов: десятки соединений
         // рвутся одновременно, и стечение, редкое у одного пользователя,
         // случается каждый раз.
-        let resumed = OSAllocatedUnfairLock(initialState: false)
+        let resumed = OnceFlag()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             socket.sendPing { error in
-                let isFirst = resumed.withLock { done in
-                    defer { done = true }
-                    return !done
-                }
-                guard isFirst else {
+                guard resumed.claim() else {
                     return
                 }
                 if let error {
@@ -152,9 +145,17 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
 
 /// Делегат отдельным объектом: `URLSession` держит его сильно, а замыкать
 /// эту ссылку на сам сокет нельзя — получится цикл.
-private final class SocketDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+///
+/// `weak let`, а не `weak var`: ссылка задаётся один раз при создании, и
+/// неизменяемое поле позволяет классу быть `Sendable` без `@unchecked`.
+/// Ссылка обнуляется, когда сокет уходит, — менять её больше некому.
+private final class SocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
 
-    weak var socket: URLSessionRawSocket?
+    weak let socket: URLSessionRawSocket?
+
+    init(socket: URLSessionRawSocket) {
+        self.socket = socket
+    }
 
     func urlSession(_ session: URLSession,
                     webSocketTask: URLSessionWebSocketTask,

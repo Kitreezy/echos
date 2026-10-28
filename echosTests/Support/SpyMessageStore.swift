@@ -21,6 +21,10 @@ final class SpyMessageStore: MessageStoring {
         saved.append(message)
     }
 
+    func containsMessage(id: UUID) async throws -> Bool {
+        saved.contains { $0.id == id }
+    }
+
     func loadMessages() async throws -> [Message] {
         saved
     }

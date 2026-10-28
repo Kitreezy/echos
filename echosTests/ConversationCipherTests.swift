@@ -26,14 +26,14 @@ struct ConversationCipherTests {
         let bobSide: ConversationCipher
     }
 
-    private func session(_ a: DeviceIdentity, _ b: DeviceIdentity) throws -> Session {
-        let aSession = try SessionKey(signedBy: a)
-        let bSession = try SessionKey(signedBy: b)
-        let aAsPeer = try #require(try a.keyBundle(session: aSession).verified())
-        let bAsPeer = try #require(try b.keyBundle(session: bSession).verified())
+    private func session(_ first: DeviceIdentity, _ second: DeviceIdentity) throws -> Session {
+        let firstSession = try SessionKey(signedBy: first)
+        let secondSession = try SessionKey(signedBy: second)
+        let firstAsPeer = try #require(try first.keyBundle(session: firstSession).verified())
+        let secondAsPeer = try #require(try second.keyBundle(session: secondSession).verified())
 
-        return Session(aliceSide: try ConversationCipher(identity: a, session: aSession, peer: bAsPeer),
-                       bobSide: try ConversationCipher(identity: b, session: bSession, peer: aAsPeer))
+        return Session(aliceSide: try ConversationCipher(identity: first, session: firstSession, peer: secondAsPeer),
+                       bobSide: try ConversationCipher(identity: second, session: secondSession, peer: firstAsPeer))
     }
 
     private func payload(_ text: String) -> MessagePayload {
@@ -51,16 +51,16 @@ struct ConversationCipherTests {
     // MARK: - Честная пара
 
     @Test func bothSides_deriveTheSameKey() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
 
-        let opened = try open(try sealed("привет", by: s.aliceSide), with: s.bobSide)
+        let opened = try open(try sealed("привет", by: pair.aliceSide), with: pair.bobSide)
 
         #expect(opened.text == "привет")
     }
 
     @Test func sealedText_isNotVisibleOnTheWire() throws {
-        let s = try session(alice, bob)
-        let box = try sealed("секрет", by: s.aliceSide)
+        let pair = try session(alice, bob)
+        let box = try sealed("секрет", by: pair.aliceSide)
 
         let wire = try JSONEncoder().encode(box)
         #expect(!(String(decoding: wire, as: UTF8.self).contains("секрет")))
@@ -68,19 +68,19 @@ struct ConversationCipherTests {
     }
 
     @Test func sameMessageTwice_looksDifferentOnTheWire() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
 
-        #expect(try sealed("одно и то же", by: s.aliceSide) != sealed("одно и то же", by: s.aliceSide), "nonce должен быть свежим на каждое сообщение")
+        #expect(try sealed("одно и то же", by: pair.aliceSide) != sealed("одно и то же", by: pair.aliceSide), "nonce должен быть свежим на каждое сообщение")
     }
 
     /// Порядок адресов не важен: Боб, считающий ключ с Алисой, и Алиса,
     /// считающая ключ с Бобом, должны сойтись, хотя отпечатки у них
     /// в разном порядке.
     @Test func keyDerivation_isSymmetric() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
 
-        let fromBob = try s.bobSide.seal(payload("ответ"), kind: .message, from: bob.fingerprint, to: alice.fingerprint)
-        let opened = try s.aliceSide.open(fromBob, as: MessagePayload.self, kind: .message,
+        let fromBob = try pair.bobSide.seal(payload("ответ"), kind: .message, from: bob.fingerprint, to: alice.fingerprint)
+        let opened = try pair.aliceSide.open(fromBob, as: MessagePayload.self, kind: .message,
                                           from: bob.fingerprint, to: alice.fingerprint)
 
         #expect(opened.text == "ответ")
@@ -147,31 +147,31 @@ struct ConversationCipherTests {
     // MARK: - Чужие
 
     @Test func thirdParty_cannotOpen() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
         let malloryWithBob = try session(mallory, bob)
         let malloryWithAlice = try session(mallory, alice)
 
-        let box = try sealed("не для тебя", by: s.aliceSide)
+        let box = try sealed("не для тебя", by: pair.aliceSide)
 
         #expect(throws: (any Error).self) { try open(box, with: malloryWithBob.bobSide) }
         #expect(throws: (any Error).self) { try open(box, with: malloryWithAlice.bobSide) }
     }
 
     @Test func tamperedBox_doesNotOpen() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
 
-        let box = try sealed("целое", by: s.aliceSide)
+        let box = try sealed("целое", by: pair.aliceSide)
         var bytes = box.box
         bytes[bytes.count / 2] ^= 0xFF
 
-        #expect(throws: (any Error).self) { try open(SealedPayload(version: box.version, box: bytes), with: s.bobSide) }
+        #expect(throws: (any Error).self) { try open(SealedPayload(version: box.version, box: bytes), with: pair.bobSide) }
     }
 
     @Test func truncatedBox_doesNotOpen() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
         let garbage = SealedPayload(version: SealedPayload.currentVersion, box: Data([1, 2, 3]))
 
-        #expect(throws: (any Error).self) { try open(garbage, with: s.bobSide) }
+        #expect(throws: (any Error).self) { try open(garbage, with: pair.bobSide) }
     }
 
     // MARK: - Направление
@@ -179,18 +179,18 @@ struct ConversationCipherTests {
     /// Релей знает адреса и мог бы отправить конверт Алисы обратно ей же,
     /// выдав за ответ Боба. Направление входит в проверяемые данные.
     @Test func reflectedEnvelope_doesNotOpen() throws {
-        let s = try session(alice, bob)
-        let box = try sealed("моё", by: s.aliceSide)
+        let pair = try session(alice, bob)
+        let box = try sealed("моё", by: pair.aliceSide)
 
-        #expect(throws: (any Error).self) { try s.aliceSide.open(box, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try pair.aliceSide.open(box, as: MessagePayload.self, kind: .message,
                                                   from: bob.fingerprint, to: alice.fingerprint) }
     }
 
     @Test func envelopeWithWrongSender_doesNotOpen() throws {
-        let s = try session(alice, bob)
-        let box = try sealed("от Алисы", by: s.aliceSide)
+        let pair = try session(alice, bob)
+        let box = try sealed("от Алисы", by: pair.aliceSide)
 
-        #expect(throws: (any Error).self) { try s.bobSide.open(box, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: MessagePayload.self, kind: .message,
                                                 from: mallory.fingerprint, to: bob.fingerprint) }
     }
 
@@ -199,26 +199,26 @@ struct ConversationCipherTests {
     /// Росчерк, выданный за сообщение: тот же ключ, то же направление, но
     /// род входит в проверяемые данные — не откроется.
     @Test func strokeSealedAsStroke_doesNotOpenAsMessage() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
         let stroke = Stroke(author: alice.fingerprint, points: [])
 
-        let box = try s.aliceSide.seal(stroke, kind: .stroke, from: alice.fingerprint, to: bob.fingerprint)
+        let box = try pair.aliceSide.seal(stroke, kind: .stroke, from: alice.fingerprint, to: bob.fingerprint)
 
-        #expect(throws: (any Error).self) { try s.bobSide.open(box, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: MessagePayload.self, kind: .message,
                                                 from: alice.fingerprint, to: bob.fingerprint) }
-        #expect(throws: (any Error).self) { try s.bobSide.open(box, as: Stroke.self, kind: .wall,
+        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: Stroke.self, kind: .wall,
                                                 from: alice.fingerprint, to: bob.fingerprint) }
-        #expect(throws: Never.self) { try s.bobSide.open(box, as: Stroke.self, kind: .stroke,
+        #expect(throws: Never.self) { try pair.bobSide.open(box, as: Stroke.self, kind: .stroke,
                                             from: alice.fingerprint, to: bob.fingerprint) }
     }
 
     @Test func wholeWall_sealsAndOpens() throws {
-        let s = try session(alice, bob)
+        let pair = try session(alice, bob)
         let wall = [Stroke(author: bob.fingerprint, points: []),
                     Stroke(author: alice.fingerprint, points: [])]
 
-        let box = try s.aliceSide.seal(wall, kind: .wall, from: alice.fingerprint, to: bob.fingerprint)
-        let opened = try s.bobSide.open(box, as: [Stroke].self, kind: .wall,
+        let box = try pair.aliceSide.seal(wall, kind: .wall, from: alice.fingerprint, to: bob.fingerprint)
+        let opened = try pair.bobSide.open(box, as: [Stroke].self, kind: .wall,
                                         from: alice.fingerprint, to: bob.fingerprint)
 
         #expect(opened.map(\.author) == wall.map(\.author))
@@ -227,36 +227,41 @@ struct ConversationCipherTests {
     // MARK: - Версия
 
     @Test func unknownVersion_isRefusedBeforeDecrypting() throws {
-        let s = try session(alice, bob)
-        let box = try sealed("будущее", by: s.aliceSide)
+        let pair = try session(alice, bob)
+        let box = try sealed("будущее", by: pair.aliceSide)
         let fromTheFuture = SealedPayload(version: 99, box: box.box)
 
-        #expect(throws: ConversationCipherError.unsupportedVersion(99)) { try open(fromTheFuture, with: s.bobSide) }
+        #expect(throws: ConversationCipherError.unsupportedVersion(99)) { try open(fromTheFuture, with: pair.bobSide) }
     }
 
     /// Первая версия — без сессионного ключа. Сборка с ней в список и так
     /// не попадает, а её конверт не должен открываться и случайно.
     @Test func firstVersion_isRefused() throws {
-        let s = try session(alice, bob)
-        let box = try sealed("старое", by: s.aliceSide)
+        let pair = try session(alice, bob)
+        let box = try sealed("старое", by: pair.aliceSide)
 
-        #expect(throws: ConversationCipherError.unsupportedVersion(1)) { try open(SealedPayload(version: 1, box: box.box), with: s.bobSide) }
+        #expect(throws: ConversationCipherError.unsupportedVersion(1)) { try open(SealedPayload(version: 1, box: box.box), with: pair.bobSide) }
     }
 
     @Test func sealedPayload_survivesTheWire() throws {
-        let s = try session(alice, bob)
-        let box = try sealed("по проводу", by: s.aliceSide)
+        let pair = try session(alice, bob)
+        let box = try sealed("по проводу", by: pair.aliceSide)
         let restored = try JSONDecoder().decode(SealedPayload.self, from: try JSONEncoder().encode(box))
 
-        #expect(try open(restored, with: s.bobSide).text == "по проводу")
+        #expect(try open(restored, with: pair.bobSide).text == "по проводу")
     }
 
     // MARK: - Совместимость с Go
+
+    // swiftlint:disable line_length
 
     /// Конверт, запечатанный тестовым собеседником из echos-relay
     /// (`cmd/peer`). Ключи там выводятся из имени, поэтому Боба и его
     /// сессию можно собрать здесь заново. Вектор печатает
     /// `go test ./cmd/peer -run TestVectorForSwift -v`.
+    ///
+    /// Ключи и конверт — строками целиком, как их напечатал Go: перенесённый
+    /// base64 сверять с выводом теста неудобно.
     @Test func opensBoxSealedByGoPeer() throws {
         func key(_ base64: String) -> Data { Data(base64Encoded: base64)! }
 
@@ -287,4 +292,5 @@ struct ConversationCipherTests {
         #expect(opened.senderName == "Alice")
         #expect(opened.id == "00000000-0000-0000-0000-000000000001")
     }
+    // swiftlint:enable line_length
 }

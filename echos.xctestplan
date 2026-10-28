@@ -6,7 +6,17 @@
       "options": {}
     }
   ],
-  "defaultOptions": {},
+  "defaultOptions": {
+    "codeCoverage": {
+      "targets": [
+        {
+          "containerPath": "container:echos.xcodeproj",
+          "identifier": "577A75CD2F4362CB0072CE59",
+          "name": "echos"
+        }
+      ]
+    }
+  },
   "testTargets": [
     {
       "target": {

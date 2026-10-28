@@ -9,21 +9,21 @@ import CoreData
 
 @MainActor
 final class MessageStore {
-    
+
     private let viewContext: NSManagedObjectContext
-    
+
     init(context: NSManagedObjectContext = PersistenceController.shared.container.viewContext) {
         self.viewContext = context
     }
-    
+
     // MARK: - Save
-    
+
     func saveMessage(_ message: Message) async throws {
         let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "id == %@", message.id as CVarArg)
-        
+
         let existing = try viewContext.fetch(fetchRequest)
-        
+
         if existing.isEmpty {
             let entity = MessageEntity(context: viewContext)
             entity.id = message.id
@@ -31,6 +31,8 @@ final class MessageStore {
             // Сетка лежит рядом с текстом как JSON: отдельная сущность
             // под неё — лишняя, а бинарный атрибут переживает миграцию сам.
             entity.mosaic = try message.mosaic.map { try JSONEncoder().encode($0) }
+            // Ответ — так же: JSON рядом с текстом.
+            entity.reply = try message.replyTo.map { try JSONEncoder().encode($0) }
             entity.senderName = message.senderName
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
@@ -39,7 +41,7 @@ final class MessageStore {
             entity.peerReaction = message.peerReaction
             entity.timestamp = message.timestamp
             entity.status = Int16(message.status.rawValue)
-            
+
             try viewContext.save()
             print("[MessageStore] Saved: \(message.text)")
         } else {
@@ -53,34 +55,28 @@ final class MessageStore {
             }
         }
     }
-    
+
+    func containsMessage(id: UUID) async throws -> Bool {
+        let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try viewContext.count(for: fetchRequest) > 0
+    }
+
     // MARK: - Load All
-    
+
     func loadMessages() async throws -> [Message] {
         let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
         fetchRequest.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: true)]
-        
+
         let entities = try viewContext.fetch(fetchRequest)
-        
-        let messages = entities.map { entity in
-            Message(id: entity.id ?? UUID(),
-                    text: entity.text ?? "",
-                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
-                    senderName: entity.senderName,
-                    peerAddress: entity.peerAddress,
-                    isFromMe: entity.isFromMe,
-                    timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
-                    isRead: entity.isRead,
-                    myReaction: entity.myReaction,
-                    peerReaction: entity.peerReaction)
-        }
+
+        let messages = entities.map(Self.message(from:))
         print("[MessageStore] Loaded \(messages.count) messages")
         return messages
     }
-    
+
     // MARK: - Load Filtered
-    
+
     /// Переписка с одним собеседником — по его адресу.
     ///
     /// Раньше выборка была «всё моё плюс входящее с таким именем», и своя
@@ -90,29 +86,32 @@ final class MessageStore {
     func loadMessages(with address: String) async throws -> [Message] {
         let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "peerAddress == %@", address)
-        
+
         fetchRequest.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: true)]
-        
+
         let entities = try viewContext.fetch(fetchRequest)
-        
-        let messages = entities.map { entity in
-            Message(id: entity.id ?? UUID(),
-                    text: entity.text ?? "",
-                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
-                    senderName: entity.senderName,
-                    peerAddress: entity.peerAddress,
-                    isFromMe: entity.isFromMe,
-                    timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
-                    isRead: entity.isRead,
-                    myReaction: entity.myReaction,
-                    peerReaction: entity.peerReaction
-            )
-        }
+
+        let messages = entities.map(Self.message(from:))
         print("[MessageStore] Loaded \(messages.count) messages with \(address)")
         return messages
     }
-    
+
+    /// Строка хранилища — в сообщение. Одно место на обе выборки.
+    private static func message(from entity: MessageEntity) -> Message {
+        Message(id: entity.id ?? UUID(),
+                text: entity.text ?? "",
+                mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
+                senderName: entity.senderName,
+                peerAddress: entity.peerAddress,
+                isFromMe: entity.isFromMe,
+                timestamp: entity.timestamp ?? Date(),
+                status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
+                isRead: entity.isRead,
+                myReaction: entity.myReaction,
+                peerReaction: entity.peerReaction,
+                replyTo: entity.reply.flatMap { try? JSONDecoder().decode(MessageReply.self, from: $0) })
+    }
+
     // MARK: - Read
 
     /// Чат открыли — всё входящее в нём прочитано.
@@ -129,60 +128,60 @@ final class MessageStore {
     }
 
     // MARK: - DeleteOld
-    
+
     func deleteOldMessages(olderThan days: Int) async throws {
         let calendar = Calendar.current
         guard let cutoffDate = calendar.date(byAdding: .day, value: -days, to: Date()) else {
             return
         }
-        
+
         let fetchRequest: NSFetchRequest<NSFetchRequestResult> = MessageEntity.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "timestamp < %@", cutoffDate as CVarArg)
-        
+
         let batchDelete = NSBatchDeleteRequest(fetchRequest: fetchRequest)
         try viewContext.execute(batchDelete)
         try viewContext.save()
-        
+
         print("[MessageStore] Deleted messages older than \(days) days")
     }
-    
+
     func deleteConverstaion(with address: String) async throws {
         let fetchRequest: NSFetchRequest<NSFetchRequestResult> = MessageEntity.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "peerAddress == %@", address)
-        
+
         let batchDelete = NSBatchDeleteRequest(fetchRequest: fetchRequest)
         try viewContext.execute(batchDelete)
         try viewContext.save()
-        
+
         print("[MessageStore] Deleted conversation with \(address)")
     }
-    
+
     // MARK: - Clear All
-    
+
     func clearAll() async throws {
         let fetchRequest: NSFetchRequest<NSFetchRequestResult> = MessageEntity.fetchRequest()
         let batchDelete = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-        
+
         try viewContext.execute(batchDelete)
         try viewContext.save()
-        
+
         print("[MessageStore] Cleared all messages")
     }
-    
+
     // MARK: Stats
-    
+
     func getMessageStats() async throws -> [String: Int] {
         let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
         let all = try viewContext.fetch(fetchRequest)
-        
+
         var stats: [String: Int] = [:]
         stats["total"] = all.count
         stats["fromMe"] = all.filter { $0.isFromMe }.count
         stats["received"] = all.filter { !$0.isFromMe }.count
-        
+
         let senders = all.compactMap { $0.senderName }
         let uniqueSenders = Set(senders)
-        
+
         for sender in uniqueSenders {
             let count = senders.filter { $0 == sender }.count
             stats[sender] = count
