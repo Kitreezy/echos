@@ -10,6 +10,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Вид и качество кода — до сборки и без неё: занимает минуту против
+  # десяти у тестов, и замечание про пробел не ждёт, пока соберётся проект.
+  # Тот же скрипт, что и локально, с теми же закреплёнными версиями.
+  lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ключ — сам скрипт установки: версии и суммы записаны в нём, и смена
+      # версии сама сбрасывает кэш.
+      - uses: actions/cache@v4
+        with:
+          path: build/tools
+          key: tools-${{ hashFiles('scripts/install-tools.sh') }}
+
+      - name: Форматирование и линтер
+        run: scripts/lint.sh
+
+      # Скрипты CI тоже код: порог покрытия, разбор падений и ревью
+      # проверяются своими тестами, и сломанный разбор не должен молча
+      # пропускать красное.
+      - name: Тесты скриптов
+        run: |
+          for test in tests/*_test.py; do
+            echo "── $test"
+            python3 "$test"
+          done
+
   tests:
     runs-on: macos-latest
     env:
@@ -51,6 +79,14 @@ jobs:
           bundle exec fastlane tests
           echo "seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
         id: tests
+
+      # Порог — по логике, без экранов: их проверяют UI-тесты, в этот
+      # прогон они не входят. Число поднимается вслед за покрытием —
+      # см. scripts/coverage.py.
+      - name: Покрытие
+        run: |
+          bundle=$(ls -d build/test_output/*.xcresult | head -1)
+          xcrun xccov view --report --json "$bundle" | python3 scripts/coverage.py --min 68
 
       # Итог виден на странице прогона без раскрытия логов: попал ли кэш
       # и сколько заняли тесты. По этим цифрам и сравниваются прогоны.

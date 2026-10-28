@@ -8,7 +8,7 @@
 import Foundation
 
 enum UserSettings {
-    
+
     private static let userNameKey = "echos_user_name"
     private static let relayURLKey = "echos_relay_url"
     private static let demoPeersKey = "echos_demo_peers"
@@ -23,7 +23,7 @@ enum UserSettings {
     /// значит сделать дальнюю связь доступной только тем, кто знает, что
     /// такое вебсокет.
     static let defaultRelayURL = URL(string: "wss://echos-relay.onrender.com/ws")!
-    
+
     static var userName: String? {
         get {
             UserDefaults.standard.string(forKey: userNameKey)
@@ -32,11 +32,11 @@ enum UserSettings {
             UserDefaults.standard.set(newValue, forKey: userNameKey)
         }
     }
-    
+
     static var hasCompletedOnboarding: Bool {
         userName != nil
     }
-    
+
     /// Идти ли через релей.
     ///
     /// Выключено — работаем через MultipeerConnectivity, то есть только с
@@ -70,7 +70,7 @@ enum UserSettings {
             UserDefaults.standard.set(newValue?.absoluteString, forKey: relayURLKey)
         }
     }
-    
+
     /// Показывать выдуманный список устройств, когда рядом никого нет.
     ///
     /// Нужен, чтобы смотреть вёрстку экрана поиска без второго телефона.
@@ -81,7 +81,7 @@ enum UserSettings {
     static var showsDemoPeers: Bool {
         UserDefaults.standard.bool(forKey: demoPeersKey)
     }
-    
+
     /// Имя, под которым нас видят остальные.
     ///
     /// Запасного варианта из имени устройства здесь больше нет. С iOS 16
@@ -166,7 +166,7 @@ enum UserSettings {
         mosaicTemplates = mosaicTemplates.filter { $0 != mosaic }
     }
 
-    /// Сбросить настройки 
+    /// Сбросить настройки
     static func rest() {
         UserDefaults.standard.removeObject(forKey: userNameKey)
         UserDefaults.standard.removeObject(forKey: relayURLKey)

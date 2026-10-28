@@ -42,6 +42,9 @@ struct EmojiPalette {
                        "🌙", "🌈", "☁️", "💧", "🌊", "🎇", "🎆", "✴️", "❇️"])
     ]
 
+    // Колонки выровнены, чтобы таблицу можно было читать как таблицу.
+    // swiftlint:disable comma
+
     /// Остальное — блоками Unicode. Названия приблизительные: внутри блока
     /// знаки соседствуют по смыслу, но границы у блоков свои, и делить их
     /// точнее значило бы выписывать тысячу знаков руками.
@@ -58,6 +61,7 @@ struct EmojiPalette {
         ("travel",  "дорога",    [0x1F680...0x1F6DF, 0x1F3D4...0x1F3F0]),
         ("symbols", "символы",   [0x2600...0x27BF, 0x1F500...0x1F53F, 0x1F550...0x1F567])
     ]
+    // swiftlint:enable comma
 
     static let groups: [Group] = pixels + blocks.map { block in
         Group(id: block.id, title: block.title, emojis: emojis(in: block.ranges))

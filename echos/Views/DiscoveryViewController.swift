@@ -8,16 +8,18 @@
 import UIKit
 import SwiftUI
 
+// Долг: тип вырос за лимит .swiftlint.yml. Разрезать, а не поднимать лимит.
+// swiftlint:disable:next type_body_length
 final class DiscoveryViewController: UIViewController {
-    
+
     // MARK: - ViewModel
-    
+
     private let viewModel = ChatViewModel()
-    
+
     private let radarState = RadarState()
-    
+
     // MARK: - UI Components
-    
+
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
@@ -70,7 +72,7 @@ final class DiscoveryViewController: UIViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    
+
     private lazy var radarView: UIView = {
         let radarSwiftUI = RadarView(state: radarState)
         let hosting = UIHostingController(rootView: radarSwiftUI)
@@ -83,7 +85,7 @@ final class DiscoveryViewController: UIViewController {
         hosting.didMove(toParent: self)
         return hosting.view
     }()
-    
+
     /// Своя стена. Раньше открывалась только из меню чата, то есть была
     /// недоступна, пока рядом никого нет, — хотя смысл стены как раз в том,
     /// чтобы смотреть её, когда никого нет.
@@ -141,7 +143,7 @@ final class DiscoveryViewController: UIViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
-    
+
     private let tableView: UITableView = {
         let table = UITableView()
         table.backgroundColor = .clear
@@ -149,7 +151,7 @@ final class DiscoveryViewController: UIViewController {
         table.translatesAutoresizingMaskIntoConstraints = false
         return table
     }()
-    
+
     /// Возобновлять поиск при возврате из фона только если он реально шёл.
     private var shouldResumeDiscovery = false
 
@@ -160,22 +162,22 @@ final class DiscoveryViewController: UIViewController {
     /// Загрузка идёт из базы и асинхронно, а поводов обновиться много —
     /// без этого флага они бы наслаивались.
     private var isReloadingConversations = false
-    
+
     // MARK: - Lifecycle
-    
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        
+
         navigationController?.setNavigationBarHidden(true, animated: animated)
 
         // Возврат из чата — там могли написать, и последняя реплика в списке
         // уже другая.
         reloadConversations()
     }
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         // У радара нет заголовка, поэтому кнопка возврата на вложенных
         // экранах называлась бы системным «Back».
         navigationItem.backButtonTitle = "Назад"
@@ -376,10 +378,10 @@ final class DiscoveryViewController: UIViewController {
         alert.preferredAction = confirm
         present(alert, animated: true)
     }
-    
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        
+
         stopAnimations()
 
         // navigationController?.setNavigationBarHidden(false, animated: animated)  // ❌ НЕ НУЖНО
@@ -434,15 +436,15 @@ final class DiscoveryViewController: UIViewController {
     }
 
     // MARK: - Status Bar
-    
+
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        return .lightContent  
+        return .lightContent
     }
-    
+
     override var prefersStatusBarHidden: Bool {
         return false
     }
-    
+
     // MARK: - Layout
 
     /// Наименьшая область нажатия — 44 пункта, как требует Apple.
@@ -497,7 +499,6 @@ final class DiscoveryViewController: UIViewController {
             linkButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             linkButton.bottomAnchor.constraint(equalTo: wallButton.topAnchor),
 
-
             noConversationsLabel.centerXAnchor.constraint(equalTo: tableView.centerXAnchor),
             noConversationsLabel.centerYAnchor.constraint(equalTo: tableView.centerYAnchor),
             noConversationsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
@@ -510,15 +511,15 @@ final class DiscoveryViewController: UIViewController {
                                                constant: -Space.step)
         ]
     }()
-    
+
     // MARK: - Setup
-    
+
     private func setupUI() {
         view.backgroundColor = UIColor.surface
-        
+
         setupLayout()
     }
-    
+
     private func setupLayout() {
         view.addSubview(titleLabel)
         view.addSubview(nameButton)
@@ -546,17 +547,17 @@ final class DiscoveryViewController: UIViewController {
         let statusTap = UITapGestureRecognizer(target: self, action: #selector(showNearby))
         statusLabel.addGestureRecognizer(statusTap)
         statusLabel.isUserInteractionEnabled = true
-        
+
         NSLayoutConstraint.activate(layoutConstraints)
     }
-    
+
     private func setupTableView() {
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(ConversationCell.self,
                            forCellReuseIdentifier: ConversationCell.reuseIdentifier)
     }
-    
+
     @objc
     private func showOwnWall() {
         guard let transport = viewModel.multipeerService else {
@@ -583,9 +584,9 @@ final class DiscoveryViewController: UIViewController {
     private func startAnimations() {}
 
     private func stopAnimations() {}
-    
+
     // MARK: - Binding
-    
+
     private func bindViewModel() {
         updateUI()
         scheduleObservation()
@@ -650,7 +651,7 @@ final class DiscoveryViewController: UIViewController {
             navigation.pushViewController(ChatViewController(viewModel: viewModel), animated: true)
         }
     }
-    
+
     private func scheduleObservation() {
         withObservationTracking {
             _ = viewModel.peers
@@ -664,7 +665,7 @@ final class DiscoveryViewController: UIViewController {
             }
         }
     }
-    
+
     /// Что показывать в списке. Демо-список подставляется, только если его
     /// явно попросили аргументом запуска.
     private var displayedPeers: [Peer] {
@@ -673,7 +674,7 @@ final class DiscoveryViewController: UIViewController {
         }
         return viewModel.peers
     }
-    
+
     private func updateUI() {
         let displayPeers = displayedPeers
 
@@ -727,18 +728,17 @@ final class DiscoveryViewController: UIViewController {
             NearbyViewController(viewModel: viewModel), animated: true
         )
     }
-    
 }
- 
+
 // MARK: - TableView
- 
+
 extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
-    
+
     func tableView(_ tableView: UITableView,
                    numberOfRowsInSection section: Int) -> Int {
         conversations.count
     }
-    
+
     func tableView(_ tableView: UITableView,
                    cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         guard let cell = tableView.dequeueReusableCell(
@@ -750,7 +750,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
         cell.configure(with: conversations[indexPath.row])
         return cell
     }
-    
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
@@ -769,7 +769,7 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
             )
         }
     }
-    
+
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         UITableView.automaticDimension
     }
@@ -785,23 +785,23 @@ extension DiscoveryViewController: PeerConnectionApproving {
                     continuation.resume(returning: false)
                     return
                 }
-                
+
                 let alert = UIAlertController(
                     title: "INCOMING CONNECTION",
                     message: "\(peerName) wants to connect. Accept?",
                     preferredStyle: .alert
                 )
-                
+
                 alert.view.tintColor = UIColor.alive
-                
+
                 alert.addAction(UIAlertAction(title: "ACCEPT", style: .default) { _ in
                     continuation.resume(returning: true)
                 })
-                
+
                 alert.addAction(UIAlertAction(title: "DECLINE", style: .destructive) { _ in
                     continuation.resume(returning: false)
                 })
-                
+
                 self.present(alert, animated: true)
             }
         }
@@ -809,7 +809,7 @@ extension DiscoveryViewController: PeerConnectionApproving {
 }
 
 extension DiscoveryViewController {
-    
+
     private func demoPeers() -> [Peer] {
         return [
             Peer(

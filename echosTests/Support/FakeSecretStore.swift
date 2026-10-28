@@ -6,52 +6,70 @@
 //
 
 import Foundation
+import Synchronization
 @testable import echos
 
-final class FakeSecretStore: SecretStore, @unchecked Sendable {
+final class FakeSecretStore: SecretStore {
 
-    private let lock = NSLock()
-    private var items: [String: Data] = [:]
+    /// Всё изменяемое — в одном `Mutex`. Пока был `NSLock` и
+    /// `@unchecked Sendable`, `readFailure` и `writeFailure` писались мимо
+    /// замка, и компилятор об этом молчал. Теперь до состояния иначе как
+    /// под замком не добраться.
+    private struct State {
+        var items: [String: Data]
+        var readFailure: SecretStoreError?
+        var writeFailure: SecretStoreError?
+        var reads = 0
+        var writes = 0
+    }
+
+    private let state: Mutex<State>
 
     /// Что бросать на чтении, пока не снимут. `locked` — устройство ещё
     /// не разблокировали, запись на месте, но не достать.
-    var readFailure: SecretStoreError?
+    var readFailure: SecretStoreError? {
+        get { state.withLock { $0.readFailure } }
+        set { state.withLock { $0.readFailure = newValue } }
+    }
 
     /// Что бросать на записи.
-    var writeFailure: SecretStoreError?
+    var writeFailure: SecretStoreError? {
+        get { state.withLock { $0.writeFailure } }
+        set { state.withLock { $0.writeFailure = newValue } }
+    }
 
-    private(set) var reads = 0
-    private(set) var writes = 0
+    var reads: Int { state.withLock { $0.reads } }
+    var writes: Int { state.withLock { $0.writes } }
 
     init(_ items: [String: Data] = [:]) {
-        self.items = items
+        state = Mutex(State(items: items))
     }
 
     subscript(account: String) -> Data? {
-        lock.withLock { items[account] }
+        state.withLock { $0.items[account] }
     }
 
     func read(account: String) throws -> Data? {
-        try lock.withLock {
-            reads += 1
-            if let readFailure {
+        try state.withLock { state in
+            state.reads += 1
+            if let readFailure = state.readFailure {
                 throw readFailure
             }
-            return items[account]
+            return state.items[account]
         }
     }
 
     func write(_ data: Data, account: String) throws {
-        try lock.withLock {
-            writes += 1
-            if let writeFailure {
+        try state.withLock { state in
+            state.writes += 1
+            if let writeFailure = state.writeFailure {
                 throw writeFailure
             }
-            items[account] = data
+            state.items[account] = data
         }
     }
 
     func delete(account: String) throws {
-        lock.withLock { items[account] = nil }
+        state.withLock { $0.items[account] = nil }
     }
 }
