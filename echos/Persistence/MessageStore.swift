@@ -56,6 +56,12 @@ final class MessageStore {
         }
     }
     
+    func containsMessage(id: UUID) async throws -> Bool {
+        let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return try viewContext.count(for: fetchRequest) > 0
+    }
+
     // MARK: - Load All
     
     func loadMessages() async throws -> [Message] {

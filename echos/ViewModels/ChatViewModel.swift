@@ -144,6 +144,11 @@ final class ChatViewModel {
     /// Буфер перед каналом. Нужен, чтобы зафиксировать порядок синхронно —
     /// см. `persist(_:)`.
     private var pendingPersistence: [Message] = []
+
+    /// Id входящих за эту сессию. Хранилище знает только записанное, а
+    /// запись идёт пачками с задержкой — повтор, пришедший следом за
+    /// оригиналом, в хранилище его ещё не найдёт.
+    private var receivedMessageIDs: Set<UUID> = []
     private var persistencePump: Task<Void, Never>?
     
     /// Состояние связи транспорта. Для Multipeer остаётся `.offline` —
@@ -445,7 +450,7 @@ final class ChatViewModel {
                 await handlePeers(discoveredPeers)
                 
             case .message(let incoming):
-                handleIncomingMessage(incoming)
+                await handleIncomingMessage(incoming)
                 
             case .typing(let incoming):
                 handleTypingEvent(incoming)
@@ -497,7 +502,7 @@ final class ChatViewModel {
         }
     }
 
-    private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) {
+    private func handleIncomingMessage(_ incoming: Addressed<MessagePayload>) async {
         // Реакция — не сообщение: она меняет то, на что поставлена, и в
         // ленту не попадает.
         if let reaction = incoming.value.reaction {
@@ -506,6 +511,14 @@ final class ChatViewModel {
         }
 
         var message = incoming.value.toMessage(from: incoming.sender)
+
+        // Доставка «хотя бы раз»: отправитель после таймаута шлёт повторно,
+        // и одно сообщение может прийти дважды. Второй раз — ни пузыря, ни
+        // счётчика непрочитанных.
+        guard await isFirstDelivery(of: message.id) else {
+            print("[ChatViewModel] Duplicate \(message.id) from \(incoming.sender), dropped")
+            return
+        }
 
         // Прочитано — только если пришло в открытый чат. Остальное ждёт
         // человека: в списке точкой, сверху баннером.
@@ -534,6 +547,14 @@ final class ChatViewModel {
         }
         
         persist(message)
+    }
+
+    private func isFirstDelivery(of id: UUID) async -> Bool {
+        guard receivedMessageIDs.insert(id).inserted else {
+            return false
+        }
+        let stored = (try? await messageStore?.containsMessage(id: id)) ?? false
+        return !stored
     }
 
     // MARK: - Реакции
