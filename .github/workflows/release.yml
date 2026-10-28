@@ -23,6 +23,17 @@ jobs:
           # Полная история нужна и для номера сборки, и для changelog.
           fetch-depth: 0
 
+      # Журнал в репозитории собирает scripts/release.sh перед тегом. Если
+      # тег поставлен без него, CHANGELOG.md отстал от истории — выпуск
+      # останавливается до сборки, а не после неё.
+      - name: Журнал соответствует истории
+        if: github.ref_type == 'tag'
+        run: |
+          if ! python3 scripts/changelog.py file | diff -u CHANGELOG.md -; then
+            echo "::error::CHANGELOG.md не совпадает с историей. Перед тегом — scripts/release.sh."
+            exit 1
+          fi
+
       - name: Выбрать Xcode
         id: xcode
         run: |

@@ -52,6 +52,17 @@ final class WebSocketClient {
     /// Сколько ждать pong, прежде чем считать соединение мёртвым.
     var pongTimeout: Duration = .seconds(5)
 
+    /// Сколько ждать открытия сокета. Без своего предела на сети с потерями
+    /// рукопожатие висит до минуты — столько URLSession ждёт по умолчанию,
+    /// — и всё это время откат не работает: клиент не подключён, но и
+    /// неудачей это не считается.
+    var connectTimeout: Duration = .seconds(10)
+
+    /// Сколько ждать завершения одной отправки. На заглохшем соединении
+    /// буфер сокета полон, и `send` не возвращается, пока сокет не умрёт
+    /// сам, — а сообщение всё это время ни отправлено, ни в очереди.
+    var sendTimeout: Duration = .seconds(10)
+
     var initialReconnectDelay: Duration = .milliseconds(500)
     var maxReconnectDelay: Duration = .seconds(30)
 
@@ -89,6 +100,7 @@ final class WebSocketClient {
     private var heartbeatTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var networkTask: Task<Void, Never>?
+    private var connectTimeoutTask: Task<Void, Never>?
 
     /// Интерфейс, на котором стоит текущее соединение. Нужен, чтобы поймать
     /// переход Wi-Fi ↔ LTE.
@@ -226,12 +238,24 @@ final class WebSocketClient {
         }
 
         do {
-            try await socket.send(data)
+            try await send(data, over: socket)
         }
         catch {
             Logger.relay.error("Send failed: \(error.localizedDescription, privacy: .public)")
             enqueue(data)
             handleFailure()
+        }
+    }
+
+    /// Отправка с пределом по времени.
+    ///
+    /// Сообщение, отправка которого не дождалась ответа, может всё-таки
+    /// дойти: байты уже ушли, не вернулось только подтверждение. Его всё
+    /// равно кладут обратно в очередь — лучше дубль, чем потеря. Дубли
+    /// отсеивает получатель по `id` сообщения.
+    private func send(_ data: Data, over socket: any RawWebSocket) async throws {
+        try await withTimeout(sendTimeout) {
+            try await socket.send(data)
         }
     }
 
@@ -255,7 +279,7 @@ final class WebSocketClient {
 
         for data in pending {
             do {
-                try await socket.send(data)
+                try await send(data, over: socket)
             }
             catch {
                 enqueue(data)
@@ -285,6 +309,23 @@ final class WebSocketClient {
         }
 
         socket.open()
+        startConnectTimeout()
+    }
+
+    /// Не открылся вовремя — считаем это такой же неудачей, как обрыв:
+    /// следующая попытка пойдёт через откат.
+    private func startConnectTimeout() {
+        let timeout = connectTimeout
+        connectTimeoutTask = Task { [weak self] in
+            guard (try? await Task.sleep(for: timeout)) != nil else {
+                return
+            }
+            guard let self, self.state == .connecting else {
+                return
+            }
+            Logger.relay.error("Not opened in \(timeout, privacy: .public), giving up on this attempt")
+            self.handleFailure()
+        }
     }
 
     private func handle(event: RawWebSocketEvent) {
@@ -306,7 +347,13 @@ final class WebSocketClient {
     }
 
     private func handleOpen() {
-        reconnectAttempt = 0
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
+
+        // Счётчик попыток здесь не сбрасывается: открыться и сразу упасть —
+        // обычное дело на плохой сети, и сброс на открытии превращал откат
+        // в долбёжку раз в полсекунды. Сбрасывает его первый pong —
+        // доказательство, что соединение живое в обе стороны.
         connectedInterface = networkMonitor.currentPath?.interface
         state = .connected
         startHeartbeat()
@@ -344,6 +391,9 @@ final class WebSocketClient {
         eventsTask?.cancel()
         eventsTask = nil
 
+        connectTimeoutTask?.cancel()
+        connectTimeoutTask = nil
+
         heartbeatTask?.cancel()
         heartbeatTask = nil
 
@@ -375,36 +425,31 @@ final class WebSocketClient {
                     self?.handleFailure()
                     return
                 }
+
+                self?.reconnectAttempt = 0
             }
         }
     }
 
     /// Пинг с таймаутом.
     ///
-    /// Без гонки с таймером это не работает: если соединение оборвалось
-    /// «тихо», pong не придёт никогда, и `await` повиснет навсегда — вместе
-    /// с обнаружением обрыва.
+    /// Если соединение оборвалось «тихо», pong не придёт никогда, и без
+    /// таймаута `await` повиснет навсегда — вместе с обнаружением обрыва.
+    /// Раньше здесь была task group, и она висела всё равно: перед выходом
+    /// группа ждёт и проигравший `ping()`. Нашёл это тест с теряющимися pong.
     private func pingWithTimeout() async -> Bool {
         guard let socket else {
             return false
         }
 
-        let boxed = UncheckedSendableBox(socket)
-        let timeout = pongTimeout
-
-        return await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                (try? await boxed.value.ping()) != nil
+        do {
+            try await withTimeout(pongTimeout) {
+                try await socket.ping()
             }
-
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return false
-            }
-
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+            return true
+        }
+        catch {
+            return false
         }
     }
 
@@ -445,6 +490,80 @@ final class WebSocketClient {
 }
 
 // MARK: - Helpers
+
+/// Операция, которой отведено не больше `timeout`.
+///
+/// Task group здесь не годится: перед выходом она дожидается всех детей, а
+/// `sendPing` с колбэком и `send` у `URLSessionWebSocketTask` на отмену не
+/// реагируют. Таймаут, ждущий зависшую операцию, ничего не ограничивает.
+/// Поэтому результат отдаётся через continuation тому, кто успел первым, а
+/// проигравшую операцию отменяют и бросают — она доживёт до закрытия сокета.
+@MainActor
+func withTimeout<T: Sendable>(_ timeout: Duration,
+                              _ operation: @escaping @MainActor () async throws -> T) async throws -> T {
+    let race = TimeoutRace<T>()
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            race.start(continuation, timeout: timeout, operation: operation)
+        }
+    } onCancel: {
+        Task { @MainActor in race.finish(.failure(CancellationError())) }
+    }
+}
+
+/// Кто первый — операция, таймер или отмена снаружи — тот и возобновляет.
+/// Всё на главном акторе, поэтому «первый» определяется без замков: шаги
+/// не перемежаются.
+@MainActor
+private final class TimeoutRace<T: Sendable> {
+
+    private var continuation: CheckedContinuation<T, Error>?
+    private var isFinished = false
+    private var tasks: [Task<Void, Never>] = []
+
+    func start(_ continuation: CheckedContinuation<T, Error>,
+               timeout: Duration,
+               operation: @escaping @MainActor () async throws -> T) {
+        // Отмена снаружи могла прийти раньше, чем continuation появился.
+        guard !isFinished else {
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+        self.continuation = continuation
+
+        tasks.append(Task { @MainActor in
+            do {
+                finish(.success(try await operation()))
+            } catch {
+                finish(.failure(error))
+            }
+        })
+        tasks.append(Task { @MainActor in
+            guard (try? await Task.sleep(for: timeout)) != nil else {
+                return
+            }
+            finish(.failure(TimeoutError(duration: timeout)))
+        })
+    }
+
+    func finish(_ result: Result<T, Error>) {
+        guard !isFinished else {
+            return
+        }
+        isFinished = true
+        tasks.forEach { $0.cancel() }
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
+struct TimeoutError: Error, LocalizedError {
+    let duration: Duration
+
+    var errorDescription: String? {
+        "Нет ответа за \(duration)"
+    }
+}
 
 extension Duration {
 

@@ -38,6 +38,9 @@
          <TestPlanReference
             reference = "container:Accessibility.xctestplan">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Profiling.xctestplan">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <LaunchAction

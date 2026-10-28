@@ -119,19 +119,9 @@ platform :ios do
 
   desc "Что изменилось с прошлого тега. Кладётся в build/notes.md"
   lane :notes do
-    # Предыдущий тег, а если тегов ещё нет — самый первый коммит.
-    base = sh(
-      "git describe --tags --abbrev=0 HEAD^ 2>/dev/null || " \
-      "git rev-list --max-parents=0 HEAD | tail -1",
-      log: false
-    ).strip
-
-    text = changelog_from_git_commits(
-      between: [base, "HEAD"],
-      pretty: "- %s",
-      merge_commit_filtering: "exclude_merges"
-    )
-    text = "- без заметных изменений" if text.to_s.strip.empty?
+    # Разбор — в scripts/changelog.py: тот же скрипт собирает CHANGELOG.md,
+    # и заметки с журналом не расходятся. Диапазон — от предыдущего тега.
+    text = sh("python3 '#{ROOT}/scripts/changelog.py' notes", log: false)
 
     path = "#{BUILD}/notes.md"
     FileUtils.mkdir_p(File.dirname(path))

@@ -144,7 +144,7 @@ final class NearbyViewController: UIViewController {
                 try await viewModel.multipeerService?.connectToPeer(address: peer.address)
             }
             catch {
-                Logger.ui.error("Nearby: failed to connect: \(error, privacy: .public)")
+                Logger.screens.error("Nearby: failed to connect: \(error, privacy: .public)")
             }
         }
     }

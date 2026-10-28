@@ -21,11 +21,11 @@ import OSLog
 /// синхронизации ходят через iCloud на все устройства владельца.
 @MainActor
 final class PersistenceController {
-    
+
     /// В UI-тестах — в памяти: тест не должен трогать настоящую переписку
     /// на симуляторе и не должен зависеть от того, что там осталось.
     static let shared = PersistenceController(inMemory: UITestMode.isActive)
-    
+
     let container: NSPersistentCloudKitContainer
 
     /// Контейнер CloudKit. Появляется в App Store Connect сам, когда в
@@ -46,12 +46,12 @@ final class PersistenceController {
     static let remoteChangesNotification = Notification.Name("PersistenceController.remoteChanges")
 
     private var remoteChangesTask: Task<Void, Never>?
-    
+
     static let preview: PersistenceController = {
         let controller = PersistenceController(inMemory: true)
-        
+
         let viewContext = controller.container.viewContext
-        
+
         for i in 0..<10 {
             let message = MessageEntity(context: viewContext)
             message.id = UUID()
@@ -60,11 +60,11 @@ final class PersistenceController {
             message.timestamp = Date()
             message.status = 1
         }
-        
+
         try? viewContext.save()
         return controller
     }()
-    
+
     /// Модель грузится из бандла ОДИН раз на процесс.
     ///
     /// `NSPersistentContainer(name:)` при каждом вызове создаёт новый
@@ -80,7 +80,7 @@ final class PersistenceController {
     }()
 
     // MARK: - Init
-    
+
     convenience init(inMemory: Bool = false) {
         if inMemory {
             self.init(storeDirectory: nil, cloudSync: false)
@@ -126,13 +126,13 @@ final class PersistenceController {
         // До этой версии всё лежало в одном файле echos.sqlite. Проверять
         // надо до загрузки: она создаст облачный файл, и признак пропадёт.
         let needsSplit = Self.legacyStoreNeedsSplit(in: directory)
-        
+
         container.loadPersistentStores { description, error in
             if let error = error {
                 fatalError("CoreData failed to load \(description.configuration ?? "?"): \(error.localizedDescription)")
             }
         }
-        
+
         // Правка в памяти важнее того, что успело прийти из облака:
         // иначе набранное здесь имя знакомого перетёрлось бы импортом
         // с другого устройства, который случился между чтением и записью.
@@ -164,9 +164,9 @@ final class PersistenceController {
     // MARK: - Legacy store
 
     private static func legacyStoreNeedsSplit(in directory: URL) -> Bool {
-        let fm = FileManager.default
-        return fm.fileExists(atPath: directory.appending(path: "echos.sqlite").path())
-            && !fm.fileExists(atPath: directory.appending(path: "echos-cloud.sqlite").path())
+        let files = FileManager.default
+        return files.fileExists(atPath: directory.appending(path: "echos.sqlite").path())
+            && !files.fileExists(atPath: directory.appending(path: "echos-cloud.sqlite").path())
     }
 
     /// Старый файл остаётся локальным хранилищем — сообщения из него никуда

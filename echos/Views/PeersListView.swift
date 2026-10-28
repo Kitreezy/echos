@@ -62,9 +62,9 @@ struct PeersListView: View {
         Task {
             do {
                 try await viewModel.multipeerService?.connectToPeer(address: peer.address)
-                Logger.ui.info("Peers: sent invite to '\(peer.displayName)'")
+                Logger.screens.info("Peers: sent invite to '\(peer.displayName)'")
             } catch {
-                Logger.ui.error("Peers: failed to connect: \(error, privacy: .public)")
+                Logger.screens.error("Peers: failed to connect: \(error, privacy: .public)")
             }
         }
     }
@@ -75,7 +75,7 @@ struct PeersListView: View {
         } else {
             viewModel.multipeerService?.disconnect(from: peer.address)
         }
-        Logger.ui.info("Peers: disconnected from '\(peer.displayName)'")
+        Logger.screens.info("Peers: disconnected from '\(peer.displayName)'")
     }
 }
 

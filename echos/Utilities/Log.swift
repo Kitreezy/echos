@@ -38,7 +38,7 @@ extension Logger {
     static let lifecycle = Logger(subsystem: subsystem, category: "lifecycle")
     static let chat = Logger(subsystem: subsystem, category: "chat")
     static let wall = Logger(subsystem: subsystem, category: "wall")
-    static let ui = Logger(subsystem: subsystem, category: "ui")
+    static let screens = Logger(subsystem: subsystem, category: "screens")
     static let persistence = Logger(subsystem: subsystem, category: "persistence")
     static let identity = Logger(subsystem: subsystem, category: "identity")
     /// Multipeer: поиск, приглашения, сессия.
@@ -47,4 +47,6 @@ extension Logger {
     static let relay = Logger(subsystem: subsystem, category: "relay")
     static let network = Logger(subsystem: subsystem, category: "network")
     static let metrics = Logger(subsystem: subsystem, category: "metrics")
+    /// Пересказ пропущенного: модель на устройстве и перевод.
+    static let digest = Logger(subsystem: subsystem, category: "digest")
 }
