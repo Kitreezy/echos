@@ -37,6 +37,9 @@ struct Message: Identifiable, Equatable {
     var myReaction: String?
     var peerReaction: String?
 
+    /// На какое сообщение это ответ. `nil` — просто сообщение.
+    let replyTo: MessageReply?
+
     init(id: UUID = UUID(),
          text: String,
          mosaic: Mosaic? = nil,
@@ -47,7 +50,8 @@ struct Message: Identifiable, Equatable {
          status: MessageStatus = .sending,
          isRead: Bool = true,
          myReaction: String? = nil,
-         peerReaction: String? = nil
+         peerReaction: String? = nil,
+         replyTo: MessageReply? = nil
     ) {
         self.id = id
         self.text = text
@@ -60,6 +64,7 @@ struct Message: Identifiable, Equatable {
         self.isRead = isRead
         self.myReaction = myReaction
         self.peerReaction = peerReaction
+        self.replyTo = replyTo
     }
 
     var isUnread: Bool {
@@ -78,8 +83,47 @@ struct Message: Identifiable, Equatable {
                 status: status,
                 isRead: isRead,
                 myReaction: myReaction,
-                peerReaction: peerReaction)
+                peerReaction: peerReaction,
+                replyTo: replyTo)
     }
+}
+
+/// Ссылка ответа на оригинал.
+///
+/// Кроме идентификатора, хранится короткий текст оригинала: историю могли
+/// очистить, а цитата должна остаться понятной. Показывается он, только
+/// если оригинала нет под рукой, — свой экземпляр надёжнее того, что
+/// прислали: собеседник мог процитировать «моё» сообщение, которого я не
+/// писал.
+struct MessageReply: Codable, Equatable, Sendable {
+    let id: UUID
+    let preview: String
+    /// Чей оригинал — с точки зрения этого устройства.
+    let isFromMe: Bool
+
+    /// Сколько текста оригинала носить с собой. Цитате хватит строки.
+    static let previewLength = 140
+
+    init(id: UUID, preview: String, isFromMe: Bool) {
+        self.id = id
+        self.preview = String(preview.prefix(Self.previewLength))
+        self.isFromMe = isFromMe
+    }
+
+    /// Ответ на это сообщение.
+    init(quoting message: Message) {
+        self.init(id: message.id,
+                  preview: message.mosaic == nil ? message.text : "мозаика",
+                  isFromMe: message.isFromMe)
+    }
+}
+
+/// Ссылка на оригинал в конверте. Сторона записана от лица отправителя
+/// конверта: «моё» у него — «чужое» у получателя.
+struct ReplyPayload: Codable, Equatable {
+    let id: String
+    let preview: String
+    let isFromSender: Bool
 }
 
 /// Реакция на сообщение: на какое и какая.
@@ -102,6 +146,9 @@ struct MessagePayload: Codable {
     /// ни транспорту, ни релею новый род не нужен. Старая сборка увидит
     /// эмодзи текстом; текст для этого и заполняется.
     let reaction: ReactionPayload?
+    /// На что это ответ. Старая сборка поле не знает и покажет просто
+    /// сообщение — без цитаты, но целиком.
+    let reply: ReplyPayload?
 
     init(from message: Message, senderName: String) {
         self.id = message.id.uuidString
@@ -110,6 +157,9 @@ struct MessagePayload: Codable {
         self.timestamp = message.timestamp.timeIntervalSince1970
         self.mosaic = message.mosaic
         self.reaction = nil
+        self.reply = message.replyTo.map {
+            ReplyPayload(id: $0.id.uuidString, preview: $0.preview, isFromSender: $0.isFromMe)
+        }
     }
 
     /// Реакция на чужое или своё сообщение. `emoji` пустая — реакция снята.
@@ -120,6 +170,7 @@ struct MessagePayload: Codable {
         self.timestamp = Date().timeIntervalSince1970
         self.mosaic = nil
         self.reaction = reaction
+        self.reply = nil
     }
 
     /// Конвертация обратно в Message (входящее — isFromMe = false).
@@ -130,6 +181,11 @@ struct MessagePayload: Codable {
         // Сетка снаружи может быть какой угодно: не сошлась — остаётся
         // текстовая форма, она есть всегда.
         let mosaic = mosaic.flatMap { $0.isValid ? $0 : nil }
+        let replyTo = reply.flatMap { reply in
+            UUID(uuidString: reply.id).map {
+                MessageReply(id: $0, preview: reply.preview, isFromMe: !reply.isFromSender)
+            }
+        }
 
         return Message(
             id: UUID(uuidString: id) ?? UUID(),
@@ -139,7 +195,8 @@ struct MessagePayload: Codable {
             peerAddress: sender,
             isFromMe: false,
             timestamp: Date(timeIntervalSince1970: timestamp),
-            status: .sent
+            status: .sent,
+            replyTo: replyTo
         )
     }
 }

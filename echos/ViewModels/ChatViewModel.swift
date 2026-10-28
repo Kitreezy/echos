@@ -82,6 +82,24 @@ final class ChatViewModel {
     /// показывать человеку незачем, а имени в адресе нет.
     var currentConversationName: String?
 
+    /// Что пришло в открытый сейчас чат, пока его не было на экране.
+    /// Запоминается до того, как чат помечен прочитанным: иначе к моменту,
+    /// когда человек попросит пересказ, пересказывать будет нечего.
+    var missedMessages: [Message] = []
+
+    /// С какого числа пропущенных предлагать пересказ. Два-три сообщения
+    /// быстрее прочитать, чем ждать модель.
+    static let digestThreshold = 5
+
+    /// Кто пересказывает пропущенное. Тесты подставляют заглушку.
+    var digester: any Digesting = Digesters.system()
+
+    /// Предлагать ли пересказ: пропущенного много, а модель есть или
+    /// может появиться.
+    var canDigest: Bool {
+        missedMessages.count >= Self.digestThreshold && digester.availability != .never
+    }
+
     // MARK: - Services
 
     /// Тип — протокол, а не конкретный класс: в тестах сюда подставляется фейк.
@@ -230,6 +248,8 @@ final class ChatViewModel {
             let filtered = try await messageStore.loadMessages(with: address)
             messages = filtered
             currentConversationPeer = address
+            missedMessages = filtered.filter(\.isUnread)
+            await prepareDigest()
 
             // Открыли — значит, прочитали. И в памяти, и в хранилище.
             if unreadCounts[address] != nil {
@@ -246,6 +266,21 @@ final class ChatViewModel {
         }
         catch {
             print("[ChatViewModel] Failed to switch: \(error)")
+        }
+    }
+
+    /// Прогреть модель, если пересказ скорее всего попросят. Ради
+    /// переписки, которую она не прочтёт, — незачем; если языки для
+    /// перевода ещё не скачаны — тоже: сначала будет вопрос о скачивании.
+    private func prepareDigest() async {
+        guard canDigest else {
+            return
+        }
+        switch await digester.plan(for: missedMessages) {
+        case .direct, .translate:
+            digester.prepare()
+        case .download, .impossible:
+            break
         }
     }
 
@@ -298,6 +333,7 @@ final class ChatViewModel {
         }
         try await messageStore.deleteConverstaion(with: address)
         messages = []
+        missedMessages = []
         currentConversationPeer = nil
         currentConversationName = nil
         print("[ChatViewModel] Cleared conversation with \(address)")
@@ -310,6 +346,7 @@ final class ChatViewModel {
 
         try await messageStore.clearAll()
         messages = []
+        missedMessages = []
         print("[ChatViewModel] Cleared all messages")
     }
 
@@ -323,6 +360,7 @@ final class ChatViewModel {
 
         multipeerService.disconnect(from: address)
         messages = []
+        missedMessages = []
         currentConversationPeer = nil
         currentConversationName = nil
         print("[ChatViewModel] Disconnected from \(address)")
@@ -772,7 +810,7 @@ final class ChatViewModel {
     // MARK: - Messaging
 
     /// Отправка сообщения
-    func sendMessage(_ text: String) async {
+    func sendMessage(_ text: String, replyingTo original: Message? = nil) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
@@ -781,12 +819,13 @@ final class ChatViewModel {
                            senderName: nil,
                            peerAddress: currentConversationPeer,
                            isFromMe: true,
-                           status: .sending))
+                           status: .sending,
+                           replyTo: original.map(MessageReply.init(quoting:))))
     }
 
     /// Отправка мозаики. Текст — её текстовая форма: превью и старые сборки
     /// получают его, сетка едет рядом.
-    func sendMosaic(_ mosaic: Mosaic) async {
+    func sendMosaic(_ mosaic: Mosaic, replyingTo original: Message? = nil) async {
         guard !mosaic.isEmpty else {
             return
         }
@@ -795,7 +834,39 @@ final class ChatViewModel {
                            senderName: nil,
                            peerAddress: currentConversationPeer,
                            isFromMe: true,
-                           status: .sending))
+                           status: .sending,
+                           replyTo: original.map(MessageReply.init(quoting:))))
+    }
+
+    // MARK: - Ответы
+
+    /// Цитата над ответом: чей оригинал и что в нём.
+    struct Quote: Equatable {
+        let author: String
+        let preview: String
+        /// Где оригинал в ленте. `nil` — его нет: историю очистили или
+        /// он был до неё.
+        let index: Int?
+    }
+
+    /// Что показать над ответом. Текст — из своего экземпляра оригинала,
+    /// а присланный — только если своего нет: собеседник мог бы
+    /// «процитировать» то, чего я не писал.
+    func quote(for message: Message) -> Quote? {
+        guard let reply = message.replyTo else {
+            return nil
+        }
+        let index = messages.firstIndex { $0.id == reply.id }
+        let original = index.map { messages[$0] }
+        let isFromMe = original?.isFromMe ?? reply.isFromMe
+        return Quote(author: isFromMe ? "Вы" : (currentConversationName ?? original?.senderName ?? "Собеседник"),
+                     preview: original.map { MessageReply(quoting: $0).preview } ?? reply.preview,
+                     index: index)
+    }
+
+    /// На какие сообщения я уже ответил — чтобы пересказ отметил вопросы.
+    var answeredMessageIDs: Set<UUID> {
+        Set(messages.compactMap { $0.isFromMe ? $0.replyTo?.id : nil })
     }
 
     /// Общий путь для всего, что уходит собеседнику как сообщение.
