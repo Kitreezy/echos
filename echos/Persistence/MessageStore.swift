@@ -31,6 +31,8 @@ final class MessageStore {
             // Сетка лежит рядом с текстом как JSON: отдельная сущность
             // под неё — лишняя, а бинарный атрибут переживает миграцию сам.
             entity.mosaic = try message.mosaic.map { try JSONEncoder().encode($0) }
+            // Ответ — так же: JSON рядом с текстом.
+            entity.reply = try message.replyTo.map { try JSONEncoder().encode($0) }
             entity.senderName = message.senderName
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
@@ -62,19 +64,7 @@ final class MessageStore {
         
         let entities = try viewContext.fetch(fetchRequest)
         
-        let messages = entities.map { entity in
-            Message(id: entity.id ?? UUID(),
-                    text: entity.text ?? "",
-                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
-                    senderName: entity.senderName,
-                    peerAddress: entity.peerAddress,
-                    isFromMe: entity.isFromMe,
-                    timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
-                    isRead: entity.isRead,
-                    myReaction: entity.myReaction,
-                    peerReaction: entity.peerReaction)
-        }
+        let messages = entities.map(Self.message(from:))
         print("[MessageStore] Loaded \(messages.count) messages")
         return messages
     }
@@ -95,24 +85,27 @@ final class MessageStore {
         
         let entities = try viewContext.fetch(fetchRequest)
         
-        let messages = entities.map { entity in
-            Message(id: entity.id ?? UUID(),
-                    text: entity.text ?? "",
-                    mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
-                    senderName: entity.senderName,
-                    peerAddress: entity.peerAddress,
-                    isFromMe: entity.isFromMe,
-                    timestamp: entity.timestamp ?? Date(),
-                    status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
-                    isRead: entity.isRead,
-                    myReaction: entity.myReaction,
-                    peerReaction: entity.peerReaction
-            )
-        }
+        let messages = entities.map(Self.message(from:))
         print("[MessageStore] Loaded \(messages.count) messages with \(address)")
         return messages
     }
     
+    /// Строка хранилища — в сообщение. Одно место на обе выборки.
+    private static func message(from entity: MessageEntity) -> Message {
+        Message(id: entity.id ?? UUID(),
+                text: entity.text ?? "",
+                mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
+                senderName: entity.senderName,
+                peerAddress: entity.peerAddress,
+                isFromMe: entity.isFromMe,
+                timestamp: entity.timestamp ?? Date(),
+                status: MessageStatus(rawValue: Int(entity.status)) ?? .sent,
+                isRead: entity.isRead,
+                myReaction: entity.myReaction,
+                peerReaction: entity.peerReaction,
+                replyTo: entity.reply.flatMap { try? JSONDecoder().decode(MessageReply.self, from: $0) })
+    }
+
     // MARK: - Read
 
     /// Чат открыли — всё входящее в нём прочитано.

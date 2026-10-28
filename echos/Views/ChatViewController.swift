@@ -158,6 +158,37 @@ final class ChatViewController: UIViewController {
         return button
     }()
     
+    // MARK: - Ответ
+
+    /// На что отвечаем. `nil` — пишем просто сообщение.
+    private var replyingTo: Message?
+
+    private lazy var replyBar: ReplyBar = {
+        let bar = ReplyBar()
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.onClose = { [weak self] in
+            self?.cancelReply()
+        }
+        bar.onTap = { [weak self] in
+            if let id = self?.replyingTo?.id {
+                self?.scrollToMessage(id)
+            }
+        }
+        return bar
+    }()
+
+    /// Плашка спрятана нулевой высотой, а не `isHidden`: лента над ней
+    /// привязана к ней же и сжимается сама, без ручных отступов.
+    private lazy var replyBarHeight = replyBar.heightAnchor.constraint(equalToConstant: 0)
+
+    // MARK: - Пересказ
+
+    /// Пересказ живёт, пока не сменилось пропущенное: открыть его снова —
+    /// увидеть готовое, а не ждать модель второй раз.
+    private var digestViewModel: DigestViewModel?
+    private var digestKey: [UUID] = []
+    private weak var digestButton: UIBarButtonItem?
+
     private var typingAnimationTimer: Timer?
     private var typingDots = 0
     private var currentTypingPeer: String?
@@ -218,6 +249,14 @@ final class ChatViewController: UIViewController {
         // Пока экран чата на экране, входящее в него — прочитанное, и
         // баннер о нём не нужен.
         viewModel.isConversationOnScreen = true
+
+        // Чат мог смениться из списка разговоров, не пересоздавая экран:
+        // заголовок и кнопки — от нового собеседника, а начатый ответ
+        // остаётся в своей переписке.
+        if let replyingTo, replyingTo.peerAddress != viewModel.currentConversationPeer {
+            cancelReply()
+        }
+        setupNavigationBar()
     }
 
     /// Набросок этой переписки — сразу на экран, без палитры: видно, что
@@ -372,6 +411,21 @@ final class ChatViewController: UIViewController {
             items.append(wall)
         }
 
+        // Пересказ — только когда есть что пересказывать. Остаётся до
+        // выхода из чата: прочитать пересказ можно и второй раз.
+        if viewModel.canDigest {
+            let digest = UIBarButtonItem(
+                image: UIImage(systemName: "text.badge.star"),
+                style: .plain,
+                target: self,
+                action: #selector(showDigest)
+            )
+            digest.accessibilityLabel = "Что я пропустил"
+            items.append(digest)
+            digestButton = digest
+            refreshDigestBadge()
+        }
+
         navigationItem.rightBarButtonItems = items
     }
 
@@ -409,7 +463,13 @@ final class ChatViewController: UIViewController {
             typingLabel.topAnchor.constraint(equalTo: tableView.bottomAnchor, constant: 4),
             typingLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             typingLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            typingLabel.bottomAnchor.constraint(equalTo: inputContainer.topAnchor, constant: -4),
+            typingLabel.bottomAnchor.constraint(equalTo: replyBar.topAnchor, constant: -4),
+
+            // Ответ — между лентой и полем ввода
+            replyBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            replyBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            replyBar.bottomAnchor.constraint(equalTo: inputContainer.topAnchor),
+            replyBarHeight,
             
             // InputContainer
             inputContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -455,6 +515,7 @@ final class ChatViewController: UIViewController {
         view.addSubview(tableView)
         view.addSubview(emptyStateView)
         view.addSubview(typingLabel)
+        view.addSubview(replyBar)
         view.addSubview(inputContainer)
         inputContainer.addSubview(mosaicButton)
         inputContainer.addSubview(textField)
@@ -535,6 +596,7 @@ final class ChatViewController: UIViewController {
         }
         
         updateMenu()
+        refreshDigestBadge()
         
         if let peerName = viewModel.typingPeerName {
             if currentTypingPeer != peerName {
@@ -689,9 +751,11 @@ final class ChatViewController: UIViewController {
                 return
             }
             let mosaic = mosaicDraft
+            let original = replyingTo
             Task {
-                await viewModel.sendMosaic(mosaic)
+                await viewModel.sendMosaic(mosaic, replyingTo: original)
             }
+            cancelReply()
             mosaicDraft = Mosaic(columns: mosaic.columns, rows: mosaic.rows)
             saveMosaicDraft()
             setComposingMosaic(false)
@@ -701,10 +765,12 @@ final class ChatViewController: UIViewController {
         guard let text = textField.text, !text.isEmpty else {
             return
         }
+        let original = replyingTo
         Task {
-            await viewModel.sendMessage(text)
+            await viewModel.sendMessage(text, replyingTo: original)
         }
         textField.text = ""
+        cancelReply()
     }
     
     @objc
@@ -1032,6 +1098,113 @@ final class ChatViewController: UIViewController {
     }
 
     @objc
+    private func showDigest() {
+        let key = viewModel.missedMessages.map(\.id)
+        if digestViewModel == nil || digestKey != key {
+            digestViewModel = DigestViewModel(
+                messages: viewModel.missedMessages,
+                peerName: viewModel.currentConversationName ?? "собеседник",
+                digester: viewModel.digester
+            )
+            digestKey = key
+        }
+        guard let digestViewModel else {
+            return
+        }
+        digestViewModel.answered = viewModel.answeredMessageIDs
+
+        let digestView = DigestView(
+            viewModel: digestViewModel,
+            onReply: { [weak self] reply, messageID in
+                self?.draftReply(reply, to: messageID)
+            },
+            onShowMessage: { [weak self] id in
+                self?.scrollToMessage(id)
+            }
+        )
+        let hostingVC = UIHostingController(rootView: digestView)
+        if let sheet = hostingVC.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(hostingVC, animated: true)
+    }
+
+    /// Сколько вопросов пересказа ещё ждут ответа — числом на кнопке.
+    /// Ответил на один — видно, что остались другие и где их взять.
+    private func refreshDigestBadge() {
+        guard #available(iOS 26.0, *), let digestButton else {
+            return
+        }
+        guard let digestViewModel else {
+            digestButton.badge = nil
+            return
+        }
+        digestViewModel.answered = viewModel.answeredMessageIDs
+        let count = digestViewModel.unansweredCount
+        digestButton.badge = count > 0 ? .count(count) : nil
+    }
+
+    /// Готовый ответ из пересказа — в поле ввода, с клавиатурой и ссылкой
+    /// на сообщение с вопросом: поправить и отправить, как обычный ответ.
+    private func draftReply(_ reply: String, to messageID: UUID?) {
+        if isComposingMosaic {
+            setComposingMosaic(false)
+        }
+        if let messageID, let original = viewModel.messages.first(where: { $0.id == messageID }) {
+            startReply(to: original)
+        }
+        textField.text = reply
+        textFieldDidChange()
+        textField.becomeFirstResponder()
+    }
+
+    // MARK: - Ответ на сообщение
+
+    private func startReply(to message: Message) {
+        replyingTo = message
+        let quote = MessageReply(quoting: message)
+        replyBar.show(author: message.isFromMe ? "Вы" : (viewModel.currentConversationName ?? message.senderName ?? "Собеседник"),
+                      preview: quote.preview,
+                      isFromMe: message.isFromMe)
+        setReplyBarVisible(true)
+        if !isComposingMosaic {
+            textField.becomeFirstResponder()
+        }
+    }
+
+    private func cancelReply() {
+        guard replyingTo != nil else {
+            return
+        }
+        replyingTo = nil
+        setReplyBarVisible(false)
+    }
+
+    private func setReplyBarVisible(_ visible: Bool) {
+        replyBarHeight.constant = visible ? ReplyBar.height : 0
+        UIView.animate(withDuration: 0.2) {
+            self.view.layoutIfNeeded()
+        }
+    }
+
+    /// Показать сообщение в ленте и мигнуть им.
+    private func scrollToMessage(_ id: UUID) {
+        guard let row = viewModel.messages.firstIndex(where: { $0.id == id }) else {
+            // Оригинала нет — историю очистили. Цитата осталась, а
+            // показать нечего.
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            return
+        }
+        let indexPath = IndexPath(row: row, section: 0)
+        tableView.scrollToRow(at: indexPath, at: .middle, animated: true)
+        // Ячейка может появиться только после прокрутки.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            (self?.tableView.cellForRow(at: indexPath) as? MessageCell)?.flash()
+        }
+    }
+
+    @objc
     private func showConversationsList() {
         let conversationsView = ConversationsListView(viewModel: viewModel)
         let hostingVC = UIHostingController(rootView: conversationsView)
@@ -1095,7 +1268,12 @@ extension ChatViewController: UITableViewDataSource {
             return UITableViewCell()
         }
         let message = viewModel.messages[indexPath.row]
-        cell.configure(with: message)
+        cell.configure(with: message, quote: viewModel.quote(for: message))
+        if let id = message.replyTo?.id {
+            cell.onQuoteTap = { [weak self] in
+                self?.scrollToMessage(id)
+            }
+        }
         cell.onRetry = { [weak self] in
             Task {
                 await self?.viewModel.resend(message.id)
@@ -1108,6 +1286,21 @@ extension ChatViewController: UITableViewDataSource {
 // MARK: - UITableViewDelegate
 
 extension ChatViewController: UITableViewDelegate {
+
+    /// Свайп влево — ответить, как в Telegram. Полный свайп — сразу.
+    func tableView(_ tableView: UITableView,
+                   trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        let message = viewModel.messages[indexPath.row]
+        let reply = UIContextualAction(style: .normal, title: "Ответить") { [weak self] _, _, done in
+            self?.startReply(to: message)
+            done(true)
+        }
+        reply.image = UIImage(systemName: "arrowshape.turn.up.left")
+        reply.backgroundColor = .action
+        let configuration = UISwipeActionsConfiguration(actions: [reply])
+        configuration.performsFirstActionWithFullSwipe = true
+        return configuration
+    }
 
     /// Долгое нажатие на мозаику: скопировать как текст, отправить снова.
     ///
@@ -1229,6 +1422,10 @@ extension ChatViewController: UIGestureRecognizerDelegate {
             return true
         }
         if let picker = reactionPicker, view.isDescendant(of: picker) {
+            return false
+        }
+        // Цитата — переход к оригиналу, а не реакция на ответ.
+        if sequence(first: view, next: \.superview).contains(where: { $0 is QuoteView }) {
             return false
         }
         if view is UIControl {
