@@ -388,12 +388,11 @@ final class WebSocketClient {
             return false
         }
 
-        let boxed = UncheckedSendableBox(socket)
         let timeout = pongTimeout
 
         return await withTaskGroup(of: Bool.self) { group in
             group.addTask {
-                (try? await boxed.value.ping()) != nil
+                (try? await socket.ping()) != nil
             }
 
             group.addTask {
