@@ -11,6 +11,7 @@
 
 import Foundation
 import UIKit
+import OSLog
 
 @MainActor
 final class WebSocketTransport: NSObject {
@@ -274,7 +275,7 @@ final class WebSocketTransport: NSObject {
     /// Разорвать связь с одним собеседником релей не позволяет — рвётся
     /// только соединение с сервером целиком.
     func disconnect(from address: String) {
-        print("[WebSocketTransport] Per-peer disconnect is not supported by the relay")
+        Logger.relay.info("Per-peer disconnect is not supported by the relay")
     }
 
     func disconnectAll() {
@@ -330,13 +331,19 @@ final class WebSocketTransport: NSObject {
     /// прислал свою случайную строку. Зато и подслушанная подпись ничего не
     /// даёт — она годится ровно для одного подключения.
     private func performHandshake() async {
+        // От подключения до отправленного hello. Виден в Instruments и
+        // попадает в суточную сводку MetricKit.
+        let signposter = MetricsCollector.signposter
+        let interval = signposter.beginInterval("Relay handshake")
+        defer { signposter.endInterval("Relay handshake", interval) }
+
         guard let challenge = await awaitChallenge() else {
-            print("[WebSocketTransport] No challenge from the relay, giving up on this connection")
+            Logger.relay.error("No challenge from the relay, giving up on this connection")
             return
         }
 
         guard let identity else {
-            print("[WebSocketTransport] No device key, cannot introduce myself")
+            Logger.relay.fault("No device key, cannot introduce myself")
             return
         }
 
@@ -353,7 +360,7 @@ final class WebSocketTransport: NSObject {
                                   session: session))
         }
         catch {
-            print("[WebSocketTransport] Handshake failed: \(error.localizedDescription)")
+            Logger.relay.error("Handshake failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -426,7 +433,7 @@ final class WebSocketTransport: NSObject {
             }
         }
         catch {
-            print("[WebSocketTransport] Failed to decode envelope: \(error.localizedDescription)")
+            Logger.relay.error("Failed to decode envelope: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -475,7 +482,7 @@ final class WebSocketTransport: NSObject {
             .compactMap { participant -> RelayParticipant? in
                 guard let identity, let session,
                       let peer = participant.verifiedIdentity else {
-                    print("[WebSocketTransport] '\(participant.name)' (\(participant.id)) has no usable keys")
+                    Logger.relay.info("'\(participant.name)' (\(participant.id, privacy: .private(mask: .hash))) has no usable keys")
                     return nil
                 }
 

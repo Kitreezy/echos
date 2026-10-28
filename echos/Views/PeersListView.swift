@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 /// Список тех, кто рядом.
 ///
@@ -61,9 +62,9 @@ struct PeersListView: View {
         Task {
             do {
                 try await viewModel.multipeerService?.connectToPeer(address: peer.address)
-                print("[PeersListView] Sent invite to '\(peer.displayName)'")
+                Logger.screens.info("Peers: sent invite to '\(peer.displayName)'")
             } catch {
-                print("[PeersListView] Failed to connect: \(error)")
+                Logger.screens.error("Peers: failed to connect: \(error, privacy: .public)")
             }
         }
     }
@@ -74,7 +75,7 @@ struct PeersListView: View {
         } else {
             viewModel.multipeerService?.disconnect(from: peer.address)
         }
-        print("[PeersListView] Disconnected from '\(peer.displayName)'")
+        Logger.screens.info("Peers: disconnected from '\(peer.displayName)'")
     }
 }
 

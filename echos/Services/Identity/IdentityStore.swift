@@ -14,6 +14,7 @@
 
 import CryptoKit
 import Foundation
+import OSLog
 import Synchronization
 
 /// Отдельный тип нужен из-за кэша: обращаться в Keychain на каждое
@@ -90,7 +91,7 @@ final class IdentityStore: Sendable {
             if let key = try? parse(raw) {
                 return key
             }
-            print("[IdentityStore] Ключ \(account) в Keychain повреждён, создаётся новый")
+            Logger.identity.fault("Ключ \(account, privacy: .public) в Keychain повреждён, создаётся новый")
         }
 
         let key = make()

@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import OSLog
 import Observation
 
 @MainActor
@@ -206,7 +207,7 @@ final class DigestViewModel {
         } catch let failure as DigestFailure {
             throw failure
         } catch {
-            print("[DigestViewModel] translation: \(error)")
+            Logger.digest.error("Translation failed: \(error, privacy: .public)")
             throw DigestFailure(message: "Перевод на устройстве не получился.")
         }
     }

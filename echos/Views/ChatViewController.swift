@@ -7,6 +7,7 @@
 
 import UIKit
 import SwiftUI
+import OSLog
 
 // Долг: файл и тип выросли за лимиты .swiftlint.yml. Разрезать, а не
 // поднимать лимиты.
@@ -349,7 +350,7 @@ final class ChatViewController: UIViewController {
         super.viewWillDisappear(animated)
         viewModel.isConversationOnScreen = false
 
-        print("[lifecycle] ChatViewController viewWillDisappear (isMovingFromParent: \(isMovingFromParent))")
+        Logger.lifecycle.debug("ChatViewController viewWillDisappear (isMovingFromParent: \(self.isMovingFromParent))")
         stopTypingAnimation()
     }
 
@@ -884,7 +885,25 @@ final class ChatViewController: UIViewController {
             ])
         }
 
-        let generalSection = UIMenu(title: "", options: .displayInline, children: [
+        var children: [UIMenuElement] = [navigationSection]
+        if let chatSection = chatSection {
+            children.append(chatSection)
+        }
+        children.append(makeGeneralSection())
+
+        return UIMenu(title: "", children: children)
+    }
+
+    /// Не про конкретный чат: диагностика и вся история разом.
+    private func makeGeneralSection() -> UIMenu {
+        UIMenu(title: "", options: .displayInline, children: [
+            UIAction(
+                title: "Поделиться диагностикой",
+                image: UIImage(systemName: "stethoscope")
+            ) { [weak self] _ in
+                self?.shareDiagnostics()
+            },
+
             UIAction(
                 title: "Очистить всю историю",
                 image: UIImage(systemName: "trash.fill"),
@@ -893,14 +912,6 @@ final class ChatViewController: UIViewController {
                 self?.confirmClearAllMessages()
             }
         ])
-
-        var children: [UIMenuElement] = [navigationSection]
-        if let chatSection = chatSection {
-            children.append(chatSection)
-        }
-        children.append(generalSection)
-
-        return UIMenu(title: "", children: children)
     }
 
     // MARK: - Menu Update
@@ -928,7 +939,7 @@ final class ChatViewController: UIViewController {
         let disconnectAction = UIAlertAction(title: "Отключиться",
                                              style: .destructive) { [weak self] _ in
             self?.viewModel.disconnectFromCurrentPeer()
-            print("[ChatViewController] Disconnected from  '\(peerName)'... [DONE]")
+            Logger.screens.info("Chat: disconnected from '\(peerName)'")
         }
 
         let cancelAction = UIAlertAction(title: "Отмена", style: .cancel)
@@ -959,10 +970,10 @@ final class ChatViewController: UIViewController {
                     await MainActor.run {
                         self?.updateUI()
                     }
-                    print("[ChatViewController] Cleared conversation with '\(peerName)'")
+                    Logger.screens.info("Chat: cleared conversation with '\(peerName)'")
                 }
                 catch {
-                    print("[ChatViewController] Failed to clear: \(error)")
+                    Logger.screens.error("Chat: failed to clear: \(error)")
                     await MainActor.run {
                         self?.showError("Не удалось очистить историю")
                     }
@@ -993,9 +1004,9 @@ final class ChatViewController: UIViewController {
                     await MainActor.run {
                         self?.updateUI()
                     }
-                    print("[ChatViewController] Cleared all messages")
+                    Logger.screens.info("Chat: cleared all messages")
                 } catch {
-                    print("[ChatViewController] Failed to clear all: \(error)")
+                    Logger.screens.error("Chat: failed to clear all: \(error)")
                     await MainActor.run {
                         self?.showError("Не удалось очистить историю")
                     }
@@ -1256,7 +1267,7 @@ final class ChatViewController: UIViewController {
     }
 
     deinit {
-        print("[lifecycle] ChatViewController deinit")
+        Logger.lifecycle.debug("ChatViewController deinit")
         NotificationCenter.default.removeObserver(self)
     }
 }
@@ -1371,6 +1382,20 @@ extension ChatViewController: UITableViewDelegate {
 }
 
 extension ChatViewController {
+
+    /// Журнал и отчёты MetricKit — человеку, который поможет разобраться.
+    /// Чтение журнала занимает заметное время, поэтому не на главном потоке.
+    private func shareDiagnostics() {
+        Task { [weak self] in
+            let files = await Task.detached { DiagnosticsExport.files() }.value
+            guard let self, !files.isEmpty else {
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: files, applicationActivities: nil)
+            sheet.popoverPresentationController?.sourceView = view
+            present(sheet, animated: true)
+        }
+    }
 
     private func share(mosaic: Mosaic?) {
         guard let mosaic, !mosaic.isEmpty else {
@@ -1583,7 +1608,7 @@ extension ChatViewController: PeerConnectionApproving {
                 }
 
                 guard self.isViewLoaded && self.view.window != nil else {
-                    print("[ChatViewController] Not in hierarchy, auto-accepting")
+                    Logger.screens.info("Chat: not in hierarchy, auto-accepting invite")
                     continuation.resume(returning: true)
                     return
                 }

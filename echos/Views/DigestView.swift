@@ -8,6 +8,7 @@
 //  ответ незачем, главное идёт первым.
 //
 
+import OSLog
 import SwiftUI
 import Translation
 
@@ -59,7 +60,7 @@ struct DigestView: View {
             } catch is CancellationError {
                 return  // экран закрыли
             } catch {
-                print("[DigestView] prepareTranslation: \(error)")
+                Logger.digest.error("prepareTranslation failed: \(error, privacy: .public)")
                 await viewModel.downloadFailed()
                 return
             }

@@ -28,6 +28,7 @@
 
 import Foundation
 import FoundationModels
+import OSLog
 import Translation
 
 @available(iOS 26.0, *)
@@ -179,7 +180,7 @@ final class OnDeviceDigester: Digesting {
                     // Не всё приходит перечислением: сбой внутри системной
                     // службы модели долетает сырым NSError. «Доступна» в
                     // `availability` ещё не значит «ответит».
-                    print("[OnDeviceDigester] \(error)")
+                    Logger.digest.error("Model failed: \(error)")
                     continuation.finish(throwing: DigestFailure(message: "Модель на устройстве не ответила. Попробуйте позже."))
                 }
             }

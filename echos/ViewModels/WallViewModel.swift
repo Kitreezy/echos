@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import OSLog
 
 /// Стена одного собеседника.
 ///
@@ -87,7 +88,7 @@ final class WallViewModel {
             strokes = try await store.loadStrokes(wallOwner: owner)
         }
         catch {
-            print("[WallViewModel] Failed to load wall: \(error)")
+            Logger.wall.error("Failed to load wall: \(error)")
         }
     }
 
@@ -134,7 +135,7 @@ final class WallViewModel {
             // Владельца нет рядом — сверимся в следующий раз. Локальная копия
             // при этом остаётся: терять нарисованное из-за его отсутствия
             // было бы хуже, чем показать её неполной.
-            print("[WallViewModel] Owner is away, wall not reconciled: \(error)")
+            Logger.wall.info("Owner is away, wall not reconciled: \(error, privacy: .public)")
             return
         }
 
@@ -178,12 +179,11 @@ final class WallViewModel {
             }
         }
         catch {
-            print("[WallViewModel] Failed to merge wall: \(error)")
+            Logger.wall.error("Failed to merge wall: \(error)")
         }
 
         if !arrived.isEmpty || !missing.isEmpty {
-            print("[WallViewModel] Wall reconciled: +\(arrived.count) received, "
-                  + "\(missing.count) resent")
+            Logger.wall.info("Wall reconciled: +\(arrived.count) received, \(missing.count) resent")
         }
     }
 
@@ -232,7 +232,7 @@ final class WallViewModel {
             try await store.saveStroke(stroke, wallOwner: owner)
         }
         catch {
-            print("[WallViewModel] Failed to save stroke: \(error)")
+            Logger.wall.error("Failed to save stroke: \(error)")
         }
 
         // На своей стене рисуют для себя — отправлять некому.
@@ -244,7 +244,7 @@ final class WallViewModel {
             try await transport.sendStroke(stroke, to: owner)
         }
         catch {
-            print("[WallViewModel] Failed to send stroke: \(error)")
+            Logger.wall.error("Failed to send stroke: \(error, privacy: .public)")
         }
     }
 
@@ -258,7 +258,7 @@ final class WallViewModel {
             try await store.clearWall(owner)
         }
         catch {
-            print("[WallViewModel] Failed to clear wall: \(error)")
+            Logger.wall.error("Failed to clear wall: \(error)")
         }
     }
 

@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Подтверждение входящего подключения пользователем.
 @MainActor
@@ -171,12 +172,12 @@ enum PeerTransportFactory {
         #endif
         switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
         case .relay(let url):
-            print("[PeerTransportFactory] Nearby + relay transport: \(url)")
+            Logger.network.notice("Transport: nearby + relay \(url, privacy: .public)")
             return CompositeTransport(nearby: MultipeerService(),
                                       relay: WebSocketTransport(url: url))
 
         case .nearby:
-            print("[PeerTransportFactory] Multipeer transport")
+            Logger.network.notice("Transport: nearby only")
             return MultipeerService()
         }
     }
