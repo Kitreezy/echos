@@ -18,4 +18,6 @@ extension Tag {
     @Tag static var crypto: Self
     /// Общее хранилище — UserDefaults, Core Data, Keychain.
     @Tag static var persistence: Self
+    /// Разбор на тысячах сгенерированных входов (Fuzz/).
+    @Tag static var fuzz: Self
 }

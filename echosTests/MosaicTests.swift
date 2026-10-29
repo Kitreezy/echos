@@ -40,6 +40,21 @@ struct MosaicTests {
         #expect(flag[0, 0] == "🇷🇺")
     }
 
+    /// Самые длинные настоящие эмодзи помещаются в клетку.
+    @Test(arguments: ["👨🏻‍👩🏻‍👧🏻‍👦🏻", "🏳️‍⚧️", "1️⃣", "🇷🇺"])
+    func longestRealEmoji_fitsACell(_ emoji: String) {
+        #expect(Mosaic(columns: 1, rows: 1, cells: [emoji]) != nil)
+    }
+
+    /// Для `count` это один знак, но в нём тысячи кодовых точек. Нашла
+    /// проверка на сгенерированных входах (Fuzz/ParserFuzzTests).
+    @Test(arguments: ["a" + String(repeating: "\u{0301}", count: 5_000),
+                      "🟥" + String(repeating: "\u{FE0F}", count: 1_000)])
+    func oneGraphemeOfThousandsOfScalars_isRejected(_ cell: String) {
+        #expect(cell.count == 1)
+        #expect(Mosaic(columns: 1, rows: 1, cells: [cell]) == nil)
+    }
+
     // MARK: - Границы
 
     /// Сетка, которой быть не может, не создаётся. Раньше это были три теста
