@@ -16,7 +16,8 @@
       },
       "skippedTags": {
         "tags": [
-          "network"
+          "network",
+          "fuzz"
         ]
       }
     },
@@ -28,7 +29,8 @@
       },
       "skippedTags": {
         "tags": [
-          "network"
+          "network",
+          "fuzz"
         ]
       }
     }

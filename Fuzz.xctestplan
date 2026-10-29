@@ -1,0 +1,32 @@
+{
+  "configurations": [
+    {
+      "id": "7D2B9E41-6A3C-4F58-8E17-C4A9B05D3F62",
+      "name": "Default",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "FUZZ_ITERATIONS",
+        "value": "5000"
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "selectedTags": {
+        "tags": [
+          "fuzz"
+        ]
+      },
+      "target": {
+        "containerPath": "container:echos.xcodeproj",
+        "identifier": "AA1100000000000000000001",
+        "name": "echosTests"
+      }
+    }
+  ],
+  "version": 1
+}

@@ -41,6 +41,9 @@
          <TestPlanReference
             reference = "container:Profiling.xctestplan">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Fuzz.xctestplan">
+         </TestPlanReference>
       </TestPlans>
    </TestAction>
    <LaunchAction

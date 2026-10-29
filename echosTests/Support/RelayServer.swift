@@ -347,6 +347,15 @@ final class RelayServer {
         }
     }
 
+    /// Отправить кадр как есть — минуя разбор и проверки сервера. Для
+    /// проверки клиента на мусоре: настоящий релей такого не шлёт, но
+    /// между ним и клиентом может стоять кто угодно.
+    func sendRaw(_ data: Data, to fingerprint: String) {
+        for client in clients.values where client.fingerprint == fingerprint {
+            send(data, over: client.connection)
+        }
+    }
+
     private func relay(_ envelope: RelayEnvelope, excluding sender: NWConnection) {
         guard let data = try? envelope.encoded() else {
             return

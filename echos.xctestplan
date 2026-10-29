@@ -23,6 +23,11 @@
         "containerPath": "container:echos.xcodeproj",
         "identifier": "AA1100000000000000000001",
         "name": "echosTests"
+      },
+      "skippedTags": {
+        "tags": [
+          "fuzz"
+        ]
       }
     },
     {
@@ -30,6 +35,11 @@
         "containerPath": "container:echos.xcodeproj",
         "identifier": "AA2200000000000000000001",
         "name": "echosIntegrationTests"
+      },
+      "skippedTags": {
+        "tags": [
+          "fuzz"
+        ]
       }
     }
   ],

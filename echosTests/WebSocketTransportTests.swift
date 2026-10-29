@@ -130,6 +130,41 @@ struct WebSocketTransportTests {
         #expect(received.first?.sender == alice.myAddress, "Отправителя проставляет релей, из ключа")
     }
 
+    /// Поток испорченных кадров не ломает приём: после него настоящее
+    /// сообщение доходит, а всё, что прошло за время мусора, — копии
+    /// настоящего, а не подделки. Кадры — порча настоящего, как в
+    /// Fuzz/ParserFuzzTests.
+    @Test(.tags(.fuzz)) func garbageFromRelay_doesNotBreakReceiving() async throws {
+        let (alice, bob) = await makePair()
+        defer {
+            alice.stopDeviceDiscovery()
+            bob.stopDeviceDiscovery()
+        }
+        let incoming = bob.messageStream
+        _ = await waitUntil { !alice.ciphersAreEmpty && !bob.ciphersAreEmpty }
+
+        let first = MessagePayload(from: Message(text: "до мусора", isFromMe: true), senderName: "Alice")
+        try await alice.sendMessage(first, to: bob.myAddress)
+        _ = await collect(incoming, count: 1, timeout: .seconds(5))
+        let samples = try server.received.filter { $0.kind == .message }.map { try $0.encoded() }
+        #expect(!samples.isEmpty)
+
+        var generator = SeededGenerator(seed: Fuzz.seed("garbageFromRelay"))
+        for _ in 0..<1_000 {
+            server.sendRaw(Fuzz.input(from: samples, using: &generator), to: bob.myAddress)
+        }
+
+        let second = MessagePayload(from: Message(text: "после мусора", isFromMe: true), senderName: "Alice")
+        try await alice.sendMessage(second, to: bob.myAddress)
+
+        // Копии первого — законный повтор: испорченный, но уцелевший кадр
+        // открывается в тот же текст. Всё остальное, кроме второго, — подделка.
+        let (firstID, secondID) = (first.id, second.id)
+        let received = await firstElement(of: incoming, timeout: .seconds(15)) { $0.value.id != firstID }
+        #expect(received?.value.id == secondID,
+                received == nil ? "После мусора сообщение не дошло" : "Дошло то, чего Алиса не отправляла")
+    }
+
     /// Ради этого всё и затевалось: релей сообщение переносит, но прочитать
     /// не может.
     @Test func relay_doesNotSeeTheText() async throws {
