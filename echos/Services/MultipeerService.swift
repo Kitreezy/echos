@@ -5,6 +5,7 @@
 //  Created by Artem Rodionov on 18.02.2026.
 //
 
+import AsyncAlgorithms
 import Foundation
 import UIKit
 import OSLog
@@ -181,11 +182,7 @@ final class MultipeerService: NSObject {
         browser?.delegate = self
         browser?.startBrowsingForPeers()
 
-        // Временно решение: симуляция RSSI для найденных peers
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            simulateRSSIUpdates()
-        }
+        startRSSISimulation()
 
         Logger.nearby.notice("Discovery started: advertising as '\(self.myPeerID.displayName)'")
     }
@@ -196,6 +193,8 @@ final class MultipeerService: NSObject {
     }
 
     private func suspendDiscovery() {
+        stopRSSISimulation()
+
         advertiser?.stopAdvertisingPeer()
         advertiser?.delegate = nil
         advertiser = nil
@@ -219,36 +218,41 @@ final class MultipeerService: NSObject {
     /// другое — там соединение в фоне ещё полминуты живёт, — поэтому
     /// каждый транспорт решает за себя.
     private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.wantsDiscovery else { return }
-                self.suspendDiscovery()
-            }
-        }
-        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.wantsDiscovery else { return }
-                self.resumeDiscovery()
-            }
-        }
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appWillEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil)
     }
 
-    // Симуляция RSSI (пока нет Core Bluetooth)
-    private func simulateRSSIUpdates() {
-        for peerID in discoveredPeers.keys {
-            let rssi = Int.random(in: -90...(-40))
-            peerRSSI[peerID] = rssi
-            peerDistances[peerID] = calculateDistance(from: rssi)
+    @objc
+    private func appDidEnterBackground() {
+        guard wantsDiscovery else {
+            return
         }
-        emitPeers()
-
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            simulateRSSIUpdates()
-        }
+        suspendDiscovery()
     }
+
+    @objc
+    private func appWillEnterForeground() {
+        guard wantsDiscovery else {
+            return
+        }
+        resumeDiscovery()
+    }
+
+    // MARK: - Симуляция RSSI (сама симуляция — в extension ниже)
+
+    /// Интервал между обновлениями. Меняется до старта — тесты ставят меньше.
+    var rssiUpdateInterval: Duration = .seconds(3)
+
+    /// Сколько раз крутилась симуляция. Диагностика для тестов на отмену.
+    private(set) var rssiSimulationTicks = 0
+
+    private var rssiSimulationTask: Task<Void, Never>?
 
     // MARK: - Manual Connection
 
@@ -557,13 +561,61 @@ final class MultipeerService: NSObject {
         peerBroadcast.yield(peers)
     }
 
-    /// `deinit` вызывается вне главного актора, поэтому изолированный стейт
-    /// здесь трогать нельзя. Закрывать потоки руками и не нужно: вместе с
+    /// `deinit` — `isolated`: обычный, вне главного актора, до изолированного
+    /// состояния не дотягивается. Закрывать потоки руками не нужно: вместе с
     /// сервисом освобождаются броадкастеры, а `AsyncStream` завершается сам,
     /// когда его continuation деаллоцируется.
     /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
-    deinit {
+    isolated deinit {
+        NotificationCenter.default.removeObserver(self)
+        // Таймер симуляции держит self слабо и сам бы не закончился никогда.
+        rssiSimulationTask?.cancel()
         Logger.lifecycle.debug("MultipeerService deinit")
+    }
+}
+
+// MARK: - Симуляция RSSI (пока нет Core Bluetooth)
+
+extension MultipeerService {
+
+    /// Одна отменяемая задача с таймером вместо цепочки
+    /// `Task { sleep; simulateRSSIUpdates() }`, которая порождала себя заново
+    /// после каждого тика. Та цепочка не отменялась вовсе: жила после
+    /// остановки поиска, заводила вторую ветку на каждом возврате из фона
+    /// и держала сервис в памяти вечно — `deinit` никогда не наступал.
+    ///
+    /// Internal ради тестов на отмену: в проде вызывается из
+    /// `resumeDiscovery`/`suspendDiscovery`.
+    func startRSSISimulation() {
+        guard rssiSimulationTask == nil else {
+            return
+        }
+
+        let interval = rssiUpdateInterval
+        rssiSimulationTask = Task { [weak self] in
+            let ticks = AsyncTimerSequence.repeating(every: interval)
+            for await _ in ticks {
+                guard !Task.isCancelled else {
+                    return
+                }
+                self?.simulateRSSIStep()
+            }
+        }
+    }
+
+    func stopRSSISimulation() {
+        rssiSimulationTask?.cancel()
+        rssiSimulationTask = nil
+    }
+
+    private func simulateRSSIStep() {
+        for peerID in discoveredPeers.keys {
+            let rssi = Int.random(in: -90...(-40))
+            peerRSSI[peerID] = rssi
+            peerDistances[peerID] = calculateDistance(from: rssi)
+        }
+        rssiSimulationTicks += 1
+        emitPeers()
     }
 }
 

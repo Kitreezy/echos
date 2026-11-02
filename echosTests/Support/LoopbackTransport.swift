@@ -80,7 +80,20 @@ final class LoopbackTransport: PeerTransport {
         strokeBroadcast.subscriberCount
     }
 
-    /// Один вызов `consumeTransportEvents()` подписывается на четыре потока.
+    /// Сколько живых подписок на все потоки сейчас. Отменённые задачи
+    /// снимают подписки; утечка оставила бы их висеть после смерти
+    /// подписчика — на этом и строятся тесты на отмену.
+    var liveSubscriptions: Int {
+        peerBroadcast.subscriberCount
+            + messageBroadcast.subscriberCount
+            + typingBroadcast.subscriberCount
+            + strokeBroadcast.subscriberCount
+            + wallRequestBroadcast.subscriberCount
+            + wallStateBroadcast.subscriberCount
+            + connectionStateBroadcast.subscriberCount
+    }
+
+    /// Один конвейер ViewModel подписывается на четыре потока.
     var pipelinesConnected: Int {
         subscriptionsCreated / 4
     }

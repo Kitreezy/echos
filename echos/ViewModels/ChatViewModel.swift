@@ -30,9 +30,7 @@ struct IncomingNotice: Equatable, Sendable {
     let mosaic: Mosaic?
 }
 
-// Долг: файл и тип выросли за лимиты .swiftlint.yml. Разрезать, а не
-// поднимать лимиты.
-// swiftlint:disable file_length
+// Долг: тип вырос за лимит .swiftlint.yml. Разрезать, а не поднимать лимиты.
 @Observable
 @MainActor
 // swiftlint:disable:next type_body_length
@@ -135,7 +133,7 @@ final class ChatViewModel {
     private var isCurrentlyTyping = false
 
     /// Поток нажатий. `startTyping()` только кладёт сюда событие — всё
-    /// остальное делают операторы в `observeTyping()`.
+    /// остальное делают операторы в `typingTask` (см. `initialize`).
     private let keystrokes: AsyncStream<Void>
     private let keystrokeContinuation: AsyncStream<Void>.Continuation
 
@@ -160,6 +158,10 @@ final class ChatViewModel {
     private var receivedMessageIDs: Set<UUID> = []
     private var persistencePump: Task<Void, Never>?
 
+    /// Пересборка поискового индекса при запуске. Хранится, чтобы отменить
+    /// вместе с остальным конвейером, а не дожидаться её вечно.
+    private var searchReindexTask: Task<Void, Never>?
+
     /// Состояние связи транспорта. Для Multipeer остаётся `.offline` —
     /// у него нет единого соединения, и статус там формируют сами пиры.
     private(set) var transportState: TransportConnectionState = .offline
@@ -182,7 +184,18 @@ final class ChatViewModel {
         Logger.lifecycle.debug("ChatViewModel init")
     }
 
-    deinit {
+    isolated deinit {
+        // Подписки отменяются вместе с моделью: иначе циклы `for await`
+        // жили бы вечно — потоки транспорта принадлежат сервису, который
+        // переживает модель, и сами не завершаются. `isolated`, потому что
+        // обычный `deinit` до свойств `@Observable`-класса не дотягивается.
+        transportTask?.cancel()
+        typingTask?.cancel()
+        connectionStateTask?.cancel()
+        persistenceTask?.cancel()
+        remoteChangesTask?.cancel()
+        persistencePump?.cancel()
+        searchReindexTask?.cancel()
         Logger.lifecycle.debug("ChatViewModel deinit")
     }
 
@@ -215,24 +228,14 @@ final class ChatViewModel {
             await self?.loadUnreadCounts()
         }
 
-        transportTask = Task { [weak self] in
-            await self?.consumeTransportEvents()
-        }
-
-        typingTask = Task { [weak self] in
-            await self?.observeTyping()
-        }
-
-        connectionStateTask = Task { [weak self] in
-            await self?.observeConnectionState()
-        }
+        transportTask = makeTransportTask()
+        typingTask = makeTypingTask()
+        connectionStateTask = makeConnectionStateTask()
 
         // Конвейер записи переживает переподключения: он не привязан к
         // конкретному транспорту и не должен терять накопленную пачку.
         if persistenceTask == nil {
-            persistenceTask = Task { [weak self] in
-                await self?.consumePersistenceQueue()
-            }
+            persistenceTask = makePersistenceTask()
         }
 
         // Знакомые могут прийти из iCloud с другого устройства. Контекст
@@ -245,6 +248,114 @@ final class ChatViewModel {
                 for await _ in changes {
                     await self?.loadKnownPeers()
                 }
+            }
+        }
+    }
+
+    // MARK: - Подписки
+
+    /// Бесконечные циклы живут в замыканиях, а не в методах: задача
+    /// `Task { [weak self] in await self?.method() }` держит self сильно всё
+    /// время работы метода, и у бесконечного `for await` это — вечность:
+    /// модель не умирает, `deinit` не наступает, подписки не снимаются.
+    /// Здесь self захватывается на одну итерацию, а между событиями
+    /// модель свободна — и отмена в `deinit` действительно наступает.
+    private func makeTransportTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let service = self?.multipeerService else {
+                return
+            }
+
+            let peers = service.peerStream
+                // Список пересобирается на каждый чих, включая симуляцию RSSI
+                // раз в три секунды. Содержательные повторы отсекаем —
+                // перерисовывать экран из-за случайного числа незачем.
+                .removeDuplicates { $0.hasSameState(as: $1) }
+                .map(TransportEvent.peers)
+            let messages = service.messageStream.map(TransportEvent.message)
+            let typing = service.typingStream.map(TransportEvent.typing)
+            let strokes = service.strokeStream.map(TransportEvent.stroke)
+            let wallRequests = service.wallRequestStream.map(TransportEvent.wallRequest)
+
+            for await event in merge(merge(peers, messages),
+                                     merge(typing, strokes),
+                                     wallRequests) {
+                await self?.handle(event)
+            }
+        }
+    }
+
+    private func makeTypingTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let keystrokes = self?.keystrokes,
+                  let startDelay = self?.typingStartDelay,
+                  let idleTimeout = self?.typingIdleTimeout else {
+                return
+            }
+
+            // Два потребителя одного потока нажатий с разными интервалами.
+            // `share()` обязателен — без него второй `for await` начал бы
+            // отбирать нажатия у первого.
+            let shared = keystrokes.share()
+
+            await withTaskGroup(of: Void.self) { group in
+                // Короткая пауза после нажатия — пользователь печатает.
+                group.addTask { [weak self] in
+                    for await _ in shared.debounce(for: startDelay) {
+                        await self?.sendTypingStart()
+                    }
+                }
+
+                // Длинная пауза — печатать перестали.
+                group.addTask { [weak self] in
+                    for await _ in shared.debounce(for: idleTimeout) {
+                        await self?.sendTypingStop()
+                    }
+                }
+            }
+        }
+    }
+
+    private func makeConnectionStateTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let updates = self?.multipeerService?.connectionStateUpdates else {
+                return
+            }
+
+            for await state in updates {
+                self?.transportState = state
+                self?.updateConnectionStatus()
+            }
+        }
+    }
+
+    /// Пишет накопленное пачками: `chunked(by:)` собирает всё пришедшее за
+    /// интервал в массив, записи идут последовательно одной задачей.
+    private func makePersistenceTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let queue = self?.messagesToPersist,
+                  let interval = self?.persistenceFlushInterval else {
+                return
+            }
+
+            let batches = queue.chunked(
+                by: AsyncTimerSequence.repeating(every: interval)
+            )
+
+            for await batch in batches {
+                guard let store = self?.messageStore else {
+                    continue
+                }
+
+                for message in batch {
+                    do {
+                        try await store.saveMessage(message)
+                    }
+                    catch {
+                        Logger.chat.error("Failed to save message: \(error)")
+                    }
+                }
+                self?.persistedBatches += 1
             }
         }
     }
@@ -425,54 +536,27 @@ final class ChatViewModel {
 
     // MARK: - Listening
 
-    /// Один цикл на три потока.
+    /// Одно событие из слипшихся потоков транспорта.
     ///
     /// Было: три независимые `Task`, каждая со своим `for await`. Стало: потоки
-    /// приводятся к общему типу события и сливаются `merge`. Плюсы — одна точка
-    /// отмены, один `switch` и гарантированный порядок обработки внутри цикла.
-    private func consumeTransportEvents() async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
+    /// приводятся к общему типу события и сливаются `merge` в одном цикле —
+    /// одна точка отмены, один `switch` и гарантированный порядок обработки.
+    private func handle(_ event: TransportEvent) async {
+        switch event {
+        case .peers(let discoveredPeers):
+            await handlePeers(discoveredPeers)
 
-        let peers = multipeerService.peerStream
-            // Список пересобирается на каждый чих, включая симуляцию RSSI раз
-            // в три секунды. Содержательные повторы отсекаем — перерисовывать
-            // экран из-за случайного числа незачем.
-            //
-            // Ограничения частоты здесь больше нет. `_throttle(latest:)`
-            // придерживает последний элемент серии до следующего, а следующего
-            // может не быть: двое, подключившиеся в пределах окна, оставляли
-            // список навсегда отстающим на одно обновление. Настоящих
-            // источников частых событий тут нет — присутствие меняется, когда
-            // кто-то приходит или уходит.
-            .removeDuplicates { $0.hasSameState(as: $1) }
-            .map(TransportEvent.peers)
+        case .message(let incoming):
+            await handleIncomingMessage(incoming)
 
-        let messages = multipeerService.messageStream.map(TransportEvent.message)
-        let typing = multipeerService.typingStream.map(TransportEvent.typing)
-        let strokes = multipeerService.strokeStream.map(TransportEvent.stroke)
-        let wallRequests = multipeerService.wallRequestStream.map(TransportEvent.wallRequest)
+        case .typing(let incoming):
+            handleTypingEvent(incoming)
 
-        for await event in merge(merge(peers, messages),
-                                 merge(typing, strokes),
-                                 wallRequests) {
-            switch event {
-            case .peers(let discoveredPeers):
-                await handlePeers(discoveredPeers)
+        case .stroke(let incoming):
+            await handleIncomingStroke(incoming)
 
-            case .message(let incoming):
-                await handleIncomingMessage(incoming)
-
-            case .typing(let incoming):
-                handleTypingEvent(incoming)
-
-            case .stroke(let incoming):
-                await handleIncomingStroke(incoming)
-
-            case .wallRequest(let asker):
-                await answerWallRequest(from: asker)
-            }
+        case .wallRequest(let asker):
+            await answerWallRequest(from: asker)
         }
     }
 
@@ -713,34 +797,6 @@ final class ChatViewModel {
         pendingPersistence.isEmpty ? nil : pendingPersistence.removeFirst()
     }
 
-    /// Пишет накопленное пачками.
-    ///
-    /// Было: `Task { try? await store.saveMessage(message) }` на каждое
-    /// сообщение — незаказанные конкурентные записи в Core Data без гарантии
-    /// порядка. Стало: один потребитель, `chunked(by:)` собирает всё
-    /// пришедшее за интервал в массив, записи идут последовательно.
-    private func consumePersistenceQueue() async {
-        let batches = messagesToPersist.chunked(
-            by: AsyncTimerSequence.repeating(every: persistenceFlushInterval)
-        )
-
-        for await batch in batches {
-            guard let messageStore = messageStore else {
-                continue
-            }
-
-            for message in batch {
-                do {
-                    try await messageStore.saveMessage(message)
-                }
-                catch {
-                    Logger.chat.error("Failed to save message: \(error)")
-                }
-            }
-            persistedBatches += 1
-        }
-    }
-
     // MARK: - Поиск
 
     /// Хранилища за индексом: сохранили — нашлось поиском, удалили —
@@ -755,7 +811,8 @@ final class ChatViewModel {
         }
 
         let people = knownPeerStore
-        Task {
+        searchReindexTask?.cancel()
+        searchReindexTask = Task {
             await index.rebuildIfNeeded(messages: messages, people: people)
         }
     }
@@ -804,19 +861,6 @@ final class ChatViewModel {
         connectionStatus = "Поиск остановлен"
 
         stopTyping()
-    }
-
-    /// Состояние связи важнее числа найденных устройств: если сети нет,
-    /// «Нет устройств рядом» вводит в заблуждение.
-    private func observeConnectionState() async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
-
-        for await state in multipeerService.connectionStateUpdates {
-            transportState = state
-            updateConnectionStatus()
-        }
     }
 
     private func updateConnectionStatus() {
@@ -970,38 +1014,10 @@ final class ChatViewModel {
     // MARK: - Typing indication
 
     /// Вызывается на каждое нажатие клавиши. Никакой логики — только событие
-    /// в поток; решение «печатает / перестал» принимают операторы.
+    /// в поток; решение «печатает / перестал» принимают операторы в
+    /// `typingTask` (см. `initialize`).
     func startTyping() {
         keystrokeContinuation.yield()
-    }
-
-    /// Два потребителя одного потока нажатий с разными интервалами.
-    ///
-    /// Было: `typingDebounceTimer` и `typingTimer` — две задачи с `Task.sleep`,
-    /// которые надо было руками отменять в четырёх местах. Стало: тот же
-    /// поток нажатий, размноженный `share()`, и два `debounce` с разными
-    /// интервалами. `share()` здесь обязателен — без него второй `for await`
-    /// начал бы отбирать нажатия у первого.
-    private func observeTyping() async {
-        let shared = keystrokes.share()
-        let startDelay = typingStartDelay
-        let idleTimeout = typingIdleTimeout
-
-        await withTaskGroup(of: Void.self) { group in
-            // Короткая пауза после нажатия — пользователь печатает.
-            group.addTask { [weak self] in
-                for await _ in shared.debounce(for: startDelay) {
-                    await self?.sendTypingStart()
-                }
-            }
-
-            // Длинная пауза — печатать перестали.
-            group.addTask { [weak self] in
-                for await _ in shared.debounce(for: idleTimeout) {
-                    await self?.sendTypingStop()
-                }
-            }
-        }
     }
 
     /// Явная остановка: отправка сообщения, уход с экрана, остановка поиска.
