@@ -56,6 +56,23 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Холодный запуск нажатием в поиске: активность приходит здесь, а
         // не в `scene(_:continue:)`.
         connectionOptions.userActivities.forEach(openSearchResult)
+
+        // Холодный запуск ссылкой echos://: контексты приходят здесь,
+        // тёплый — в `scene(_:openURLContexts:)`.
+        connectionOptions.urlContexts.forEach(openURLContext)
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        URLContexts.forEach(openURLContext)
+    }
+
+    private func openURLContext(_ context: UIOpenURLContext) {
+        guard let link = DeepLink(url: context.url),
+              let navigation = window?.rootViewController as? UINavigationController,
+              let discovery = navigation.viewControllers.first as? DiscoveryViewController else {
+            return
+        }
+        discovery.open(link)
     }
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
