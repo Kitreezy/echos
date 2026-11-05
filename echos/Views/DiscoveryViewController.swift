@@ -335,14 +335,19 @@ final class DiscoveryViewController: UIViewController {
             pendingSearchTarget = nil
             open(target)
         }
+        if let link = pendingDeepLink {
+            pendingDeepLink = nil
+            open(link)
+        }
     }
 
-    // MARK: - Из системного поиска
+    // MARK: - Из системного поиска и по ссылке
 
-    /// Хранилище подключается в `startDiscovery()`. Нажатие в поиске при
-    /// холодном запуске приходит раньше — и ждёт здесь.
+    /// Хранилище подключается в `startDiscovery()`. Нажатие в поиске или
+    /// переход по ссылке при холодном запуске приходят раньше — и ждут здесь.
     var isStarted = false
     var pendingSearchTarget: SpotlightItems.Target?
+    var pendingDeepLink: DeepLink?
 
     /// Спрашивает имя и не отпускает, пока не назовут.
     ///

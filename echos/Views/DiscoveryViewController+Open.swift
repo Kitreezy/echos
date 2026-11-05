@@ -2,8 +2,8 @@
 //  DiscoveryViewController+Open.swift
 //  echos
 //
-//  Переход в чат извне главного экрана: из уведомления о сообщении и из
-//  системного поиска.
+//  Переход в чат извне главного экрана: из уведомления о сообщении, из
+//  системного поиска и по ссылке echos://.
 //
 
 import UIKit
@@ -22,6 +22,19 @@ extension DiscoveryViewController {
             open(conversationWith: address, named: nil)
         case let .message(id, address):
             open(conversationWith: address, named: nil, focusing: id)
+        }
+    }
+
+    /// Открыть чат по ссылке. Дорога та же, что из поиска: назад к корню
+    /// и в чат.
+    func open(_ link: DeepLink) {
+        guard isStarted else {
+            pendingDeepLink = link
+            return
+        }
+        switch link {
+        case .chat(let address):
+            open(conversationWith: address, named: nil)
         }
     }
 
