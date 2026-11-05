@@ -48,12 +48,13 @@ final class RelayServer {
     /// Порт сохраняется между перезапусками: клиент переподключается по тому
     /// же адресу, поэтому поднимать сервер обратно надо там же.
     private(set) var port: NWEndpoint.Port?
+    private var usesTLS = false
 
     var url: URL {
         guard let port else {
             fatalError("Сервер ещё не запущен")
         }
-        return URL(string: "ws://127.0.0.1:\(port.rawValue)")!
+        return URL(string: "\(usesTLS ? "wss" : "ws")://127.0.0.1:\(port.rawValue)")!
     }
 
     var connectedClientCount: Int {
@@ -93,8 +94,17 @@ final class RelayServer {
 
     // MARK: - Lifecycle
 
-    func start() async throws {
-        let parameters = NWParameters.tcp
+    func start(identity: SecIdentity? = nil) async throws {
+        usesTLS = identity != nil
+        let parameters: NWParameters
+        if let identity {
+            let tlsOptions = NWProtocolTLS.Options()
+            sec_protocol_options_set_local_identity(tlsOptions.securityProtocolOptions,
+                                                    sec_identity_create(identity)!)
+            parameters = NWParameters(tls: tlsOptions)
+        } else {
+            parameters = .tcp
+        }
         // SO_REUSEADDR. Без него перезапуск на том же порту падает с
         // EADDRINUSE: сокет ещё висит в TIME_WAIT после cancel().
         parameters.allowLocalEndpointReuse = true
