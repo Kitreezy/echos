@@ -117,8 +117,12 @@ final class WebSocketClient {
 
     init(url: URL,
          configuration: URLSessionConfiguration = .ephemeral,
+         publicKeyPins: Set<Data>? = nil,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
-        self.makeSocket = { URLSessionRawSocket(url: url, configuration: configuration) }
+        let pins = publicKeyPins ?? CertificatePinning.pins(for: url)
+        self.makeSocket = {
+            URLSessionRawSocket(url: url, configuration: configuration, publicKeyPins: pins)
+        }
         self.networkMonitor = networkMonitor
     }
 
