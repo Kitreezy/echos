@@ -12,7 +12,9 @@
         "key": "ECHOS_PROFILING",
         "value": "1"
       }
-    ]
+    ],
+    "language": "ru",
+    "region": "RU"
   },
   "testTargets": [
     {

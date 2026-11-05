@@ -11,6 +11,12 @@
 //  обычном размере текста и при самом крупном из специальных возможностей:
 //  там вылезает текст, который обрезается.
 //
+//  Псевдолокализация — те же экраны с удвоенными строками и с вёрсткой
+//  справа налево. Удвоение — грубая модель немецкого и финского: строки
+//  там в полтора-два раза длиннее русских, и обрезанное видно сразу.
+//  Проверяется только обрезанный текст, остальное уже проверено выше;
+//  снимки экранов остаются в отчёте — посмотреть глазами.
+//
 //  UI-тесты — на XCTest: Swift Testing управлять интерфейсом не умеет.
 //  Приложение запускается с `-UITests`: собеседники и переписка — декорация
 //  (DemoTransport), хранилище — в памяти.
@@ -45,6 +51,55 @@ final class AccessibilityAuditTests: XCTestCase {
     func test_mosaicPalette() throws { try audit(.palette, size: nil) }
     func test_mosaicPalette_largestText() throws { try audit(.palette, size: Self.largest) }
 
+    // MARK: - Псевдолокализация
+
+    func test_home_doubleLength() throws { try audit(.home, pseudo: .doubleLength) }
+    func test_nearby_doubleLength() throws { try audit(.nearby, pseudo: .doubleLength) }
+    func test_wall_doubleLength() throws { try audit(.wall, pseudo: .doubleLength) }
+    func test_chat_doubleLength() throws { try audit(.chat, pseudo: .doubleLength) }
+    func test_mosaicPalette_doubleLength() throws { try audit(.palette, pseudo: .doubleLength) }
+
+    func test_home_rightToLeft() throws { try audit(.home, pseudo: .rightToLeft) }
+    func test_chat_rightToLeft() throws { try audit(.chat, pseudo: .rightToLeft) }
+    func test_mosaicPalette_rightToLeft() throws { try audit(.palette, pseudo: .rightToLeft) }
+
+    /// Псевдоязыки Xcode — это аргументы запуска Foundation и UIKit.
+    enum Pseudo: String {
+        case doubleLength = "удвоенные строки"
+        case rightToLeft = "справа налево"
+
+        var arguments: [String] {
+            switch self {
+            case .doubleLength: ["-NSDoubleLocalizedStrings", "YES"]
+            case .rightToLeft: ["-AppleTextDirection", "YES", "-NSForceRightToLeftWritingDirection", "YES"]
+            }
+        }
+    }
+
+    private func audit(_ screen: Screen, pseudo: Pseudo) throws {
+        let app = launch(size: nil, extra: pseudo.arguments)
+        try open(screen, in: app)
+
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "\(screen.rawValue), \(pseudo.rawValue)"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        try app.performAccessibilityAudit(for: .textClipped) { issue in
+            // Плейсхолдер поля ввода аудит под удвоением считает обрезанным,
+            // хотя «Сообщение Сообщение» занимает 190 pt из 292 — видно на
+            // снимке. Без удвоения находки нет, обрезки на снимке нет и с ним.
+            // Похоже на ложное срабатывание на плейсхолдере `UITextField`;
+            // само поле однострочное, и длинный текст в нём прокручивается.
+            if issue.element?.elementType == .textField {
+                return true
+            }
+            let element = issue.element.map { "«\($0.label)» \($0.elementType) \($0.frame)" } ?? "без элемента"
+            XCTFail("\(screen.rawValue), \(pseudo.rawValue): \(issue.compactDescription) — \(element)")
+            return true
+        }
+    }
+
     // MARK: - Как дойти до экрана
 
     enum Screen: String {
@@ -65,10 +120,10 @@ final class AccessibilityAuditTests: XCTestCase {
         }
     }
 
-    private func launch(size: String?) -> XCUIApplication {
+    private func launch(size: String?, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         // Имя — аргументом: попадает в UserDefaults, и знакомство пропускается.
-        app.launchArguments = ["-UITests", "-echos_user_name", "Тест"]
+        app.launchArguments = ["-UITests", "-echos_user_name", "Тест"] + extra
         if let size {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", size]
         }
@@ -87,18 +142,25 @@ final class AccessibilityAuditTests: XCTestCase {
             try tap(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Рядом'")).firstMatch)
             XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
         case .wall:
-            try tap(app.buttons["моя стена"])
+            try tap(app.buttons.matching(Self.starts("моя стена")).firstMatch)
             XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 5))
         case .chat:
             try tap(app.cells.matching(NSPredicate(format: "label BEGINSWITH 'Боб'")).firstMatch)
             XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 5))
         case .palette:
             try open(.chat, in: app)
-            try tap(app.buttons["Мозаика"])
-            XCTAssertTrue(app.buttons["Мозаика"].value as? String == "палитра открыта")
+            let mosaic = app.buttons.matching(Self.starts("Мозаика")).firstMatch
+            try tap(mosaic)
+            XCTAssertTrue((mosaic.value as? String)?.hasPrefix("палитра открыта") == true)
         }
         // Переходы с анимацией: аудит посреди неё видит полупрозрачное.
         sleep(1)
+    }
+
+    /// Элементы ищутся по началу подписи: при удвоенных строках «моя стена»
+    /// становится «моя стена моя стена», а начало у неё то же.
+    private static func starts(_ prefix: String) -> NSPredicate {
+        NSPredicate(format: "label BEGINSWITH %@", prefix)
     }
 
     private func tap(_ element: XCUIElement) throws {

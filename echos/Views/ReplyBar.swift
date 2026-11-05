@@ -34,7 +34,7 @@ final class ReplyBar: UIView {
         config.image = UIImage(systemName: "xmark")
         config.baseForegroundColor = .inkMuted
         let button = UIButton(configuration: config)
-        button.accessibilityLabel = "Не отвечать"
+        button.accessibilityLabel = String(localized: "Не отвечать")
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
