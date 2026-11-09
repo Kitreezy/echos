@@ -106,16 +106,16 @@ struct Peer: Identifiable, Equatable {
     var statusLabel: String {
         switch status {
         case .notConnected:
-            return "Не подключён"
+            return String(localized: "Не подключён")
 
         case .connecting:
-            return "Подключение..."
+            return String(localized: "Подключение...")
 
         case .connected:
-            return "Подключён"
+            return String(localized: "Подключён")
 
         case .failed:
-            return "Недоступен"
+            return String(localized: "Недоступен")
         }
     }
 

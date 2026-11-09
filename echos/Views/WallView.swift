@@ -114,12 +114,12 @@ struct WallView: View {
     // MARK: - Texts
 
     private var title: String {
-        viewModel.owner ?? "Моя стена"
+        viewModel.owner ?? String(localized: "Моя стена")
     }
 
     private var hint: String {
         viewModel.owner == nil
-            ? "Здесь пусто. Сюда рисуют другие"
-            : "Нарисуйте что-нибудь"
+            ? String(localized: "Здесь пусто. Сюда рисуют другие")
+            : String(localized: "Нарисуйте что-нибудь")
     }
 }

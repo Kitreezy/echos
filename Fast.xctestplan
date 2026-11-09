@@ -6,7 +6,10 @@
       "options": {}
     }
   ],
-  "defaultOptions": {},
+  "defaultOptions": {
+    "language": "ru",
+    "region": "RU"
+  },
   "testTargets": [
     {
       "target": {

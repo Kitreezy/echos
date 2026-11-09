@@ -66,7 +66,7 @@ enum SpotlightItems {
     static func person(address: String, name: String) -> CSSearchableItem {
         let attributes = CSSearchableItemAttributeSet(contentType: .contact)
         attributes.title = name
-        attributes.contentDescription = "Чат в echos"
+        attributes.contentDescription = String(localized: "Чат в echos")
         attributes.displayName = name
 
         return CSSearchableItem(uniqueIdentifier: identifier(for: .conversation(address: address)),
@@ -83,18 +83,18 @@ enum SpotlightItems {
         guard let address = message.peerAddress else {
             return nil
         }
-        let text = message.mosaic == nil ? message.text : "Мозаика"
+        let text = message.mosaic == nil ? message.text : String(localized: "Мозаика")
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
-        let name = peerName ?? message.senderName ?? "Собеседник"
+        let name = peerName ?? message.senderName ?? String(localized: "Собеседник")
         let attributes = CSSearchableItemAttributeSet(contentType: .message)
-        attributes.title = message.isFromMe ? "Вы → \(name)" : name
+        attributes.title = message.isFromMe ? String(localized: "Вы → \(name)") : name
         attributes.contentDescription = text
         attributes.textContent = text
         attributes.contentCreationDate = message.timestamp
-        attributes.authorNames = [message.isFromMe ? "Вы" : name]
+        attributes.authorNames = [message.isFromMe ? String(localized: "Вы") : name]
 
         let item = CSSearchableItem(uniqueIdentifier: identifier(for: .message(id: message.id, address: address)),
                                     domainIdentifier: domain(of: address),
