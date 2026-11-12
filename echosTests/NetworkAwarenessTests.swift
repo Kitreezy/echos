@@ -9,6 +9,7 @@
 //  смену интерфейса, о которой сокет не сообщает.
 //
 
+import EchosCrypto
 import Network
 import Foundation
 import Testing

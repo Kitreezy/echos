@@ -9,6 +9,7 @@
 //  соединение одно — с сервером; все, кто на нём сейчас есть, доступны сразу.
 //
 
+import EchosCrypto
 import Foundation
 import UIKit
 import OSLog

@@ -18,24 +18,25 @@
 import CryptoKit
 import Foundation
 
-struct SessionKey: Sendable {
+public struct SessionKey: Sendable {
 
     /// Открытая часть — уходит собеседникам.
-    let publicKey: Data
+    public let publicKey: Data
 
     /// Подпись под `bindingMessage(for: publicKey)` подписывающим ключом.
-    let proof: Data
+    public let proof: Data
 
     private let privateKey: Curve25519.KeyAgreement.PrivateKey
 
     /// Свежая пара, подписанная личностью.
-    init(signedBy identity: DeviceIdentity) throws {
+    public init(signedBy identity: DeviceIdentity) throws {
         privateKey = Curve25519.KeyAgreement.PrivateKey()
         publicKey = privateKey.publicKey.rawRepresentation
         proof = try identity.signature(for: Self.bindingMessage(for: publicKey))
     }
 
-    /// Пара вокруг готового ключа — для тестов и вектора совместимости.
+    /// Пара вокруг готового ключа. Закрытый API пакета: внешний код обязан
+    /// создавать сессионный ключ подписанным конструктором.
     init(privateKey: Curve25519.KeyAgreement.PrivateKey, signedBy identity: DeviceIdentity) throws {
         self.privateKey = privateKey
         publicKey = privateKey.publicKey.rawRepresentation
@@ -44,12 +45,12 @@ struct SessionKey: Sendable {
 
     /// Свой префикс, отличный и от вызова, и от привязки статического ключа:
     /// три вида подписей одним ключом не должны сходить друг за друга.
-    static func bindingMessage(for publicKey: Data) -> Data {
+    public static func bindingMessage(for publicKey: Data) -> Data {
         Data("echos/session-key/v1:".utf8) + publicKey
     }
 
     /// Эфемерная часть общего секрета.
-    func sharedSecret(with peer: PeerIdentity) throws -> SharedSecret {
+    public func sharedSecret(with peer: PeerIdentity) throws -> SharedSecret {
         let theirKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: peer.sessionKey)
         return try privateKey.sharedSecretFromKeyAgreement(with: theirKey)
     }

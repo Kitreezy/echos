@@ -13,6 +13,7 @@
 //
 
 import CryptoKit
+import EchosCrypto
 import Foundation
 import OSLog
 import Synchronization

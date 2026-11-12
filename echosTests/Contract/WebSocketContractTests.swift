@@ -11,6 +11,7 @@
 //  для этого служило наследование набора, которого в Swift Testing нет.
 //
 
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

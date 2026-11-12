@@ -5,8 +5,9 @@
 //  Created by Artem Rodionov on 13.03.2026.
 //
 
-import UIKit
+import EchosCrypto
 import SwiftUI
+import UIKit
 
 // Долг: тип вырос за лимит .swiftlint.yml. Разрезать, а не поднимать лимит.
 // swiftlint:disable:next type_body_length

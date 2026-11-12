@@ -7,6 +7,7 @@
 //  проверяется как раз то, что происходит при реальном обрыве TCP.
 //
 
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

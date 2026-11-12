@@ -5,6 +5,7 @@
 //  Unit: формат конверта релея — чистая сериализация, без сети.
 //
 
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

@@ -6,6 +6,7 @@
 //  в одном процессе видят друг друга и обмениваются сообщениями.
 //
 
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

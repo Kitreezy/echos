@@ -16,6 +16,7 @@
 //
 
 import CryptoKit
+import EchosCrypto
 import Foundation
 
 enum NearbyHandshake {

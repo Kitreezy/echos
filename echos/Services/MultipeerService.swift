@@ -6,6 +6,7 @@
 //
 
 import AsyncAlgorithms
+import EchosCrypto
 import Foundation
 import UIKit
 import OSLog

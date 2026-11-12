@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		AA3300000000000000000003 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = AA3300000000000000000002 /* AsyncAlgorithms */; };
 		AA3300000000000000000005 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = AA3300000000000000000004 /* AsyncAlgorithms */; };
+		AA5500000000000000000003 /* EchosCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = AA5500000000000000000002 /* EchosCrypto */; };
+		AA5500000000000000000005 /* EchosCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = AA5500000000000000000004 /* EchosCrypto */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +42,7 @@
 		AA1100000000000000000002 /* echosTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA2200000000000000000002 /* echosIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA4400000000000000000002 /* echosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA5500000000000000000001 /* Packages/EchosCrypto */ = {isa = PBXFileReference; lastKnownFileType = wrapper.swiftpackage; path = Packages/EchosCrypto; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -84,6 +87,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA3300000000000000000003 /* AsyncAlgorithms in Frameworks */,
+				AA5500000000000000000003 /* EchosCrypto in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -92,6 +96,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA3300000000000000000005 /* AsyncAlgorithms in Frameworks */,
+				AA5500000000000000000005 /* EchosCrypto in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +124,7 @@
 				AA1100000000000000000003 /* echosTests */,
 				AA2200000000000000000003 /* echosIntegrationTests */,
 				AA4400000000000000000003 /* echosUITests */,
+				AA5500000000000000000006 /* Packages */,
 				577A75CF2F4362CB0072CE59 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -132,6 +138,14 @@
 				AA4400000000000000000002 /* echosUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA5500000000000000000006 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				AA5500000000000000000001 /* Packages/EchosCrypto */,
+			);
+			name = Packages;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -155,6 +169,7 @@
 			name = echos;
 			packageProductDependencies = (
 				AA3300000000000000000002 /* AsyncAlgorithms */,
+				AA5500000000000000000002 /* EchosCrypto */,
 			);
 			productName = echos;
 			productReference = 577A75CE2F4362CB0072CE59 /* echos.app */;
@@ -179,6 +194,7 @@
 			name = echosTests;
 			packageProductDependencies = (
 				AA3300000000000000000004 /* AsyncAlgorithms */,
+				AA5500000000000000000004 /* EchosCrypto */,
 			);
 			productName = echosTests;
 			productReference = AA1100000000000000000002 /* echosTests.xctest */;
@@ -269,6 +285,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
+				AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 577A75CF2F4362CB0072CE59 /* Products */;
@@ -376,6 +393,7 @@
 				INFOPLIST_FILE = echos/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "echos использует Bluetooth для поиска устройств рядом.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "echos использует локальную сеть для обмена сообщениями.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Чтобы сохранять мозаики из эмодзи в фотоплёнку.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -406,6 +424,7 @@
 				INFOPLIST_FILE = echos/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "echos использует Bluetooth для поиска устройств рядом.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "echos использует локальную сеть для обмена сообщениями.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Чтобы сохранять мозаики из эмодзи в фотоплёнку.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
@@ -603,24 +622,6 @@
 			};
 			name = Debug;
 		};
-		AA4400000000000000000008 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = LJZ97X76W9;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echosUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = echos;
-			};
-			name = Debug;
-		};
 		AA2200000000000000000009 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -640,6 +641,24 @@
 				TEST_TARGET_NAME = echos;
 			};
 			name = Release;
+		};
+		AA4400000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LJZ97X76W9;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echosUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = echos;
+			};
+			name = Debug;
 		};
 		AA4400000000000000000009 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -709,6 +728,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/EchosCrypto;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -730,6 +756,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */;
 			productName = AsyncAlgorithms;
+		};
+		AA5500000000000000000002 /* EchosCrypto */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */;
+			productName = EchosCrypto;
+		};
+		AA5500000000000000000004 /* EchosCrypto */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */;
+			productName = EchosCrypto;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

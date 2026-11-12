@@ -10,6 +10,7 @@
 //
 
 import CryptoKit
+import EchosCrypto
 import Foundation
 import Network
 @testable import echos

@@ -13,10 +13,13 @@ echos/
     MultipeerService.swift   рядом: MultipeerConnectivity
     WebSocket/               через сервер: свой WebSocket-клиент и релей
     CompositeTransport.swift оба канала разом
-    Identity/                ключи устройства, рукопожатия, шифр переписки
+    Identity/                хранение личности и рукопожатия
     Network/                 есть ли сеть
   Persistence/     Core Data: два хранилища, см. ADR 002
   Utilities/       AsyncBroadcast, настройки, отсрочка в фоне
+Packages/
+  EchosCrypto/     локальный пакет шифрования: личность, ключи сессии, шифр
+                   переписки. Без UI, Keychain и транспорта.
 docs/adr/          почему сделано так, а не иначе
 echosTests/        модульные, с поддельными транспортом и релеем
 echosIntegrationTests/  с настоящими Core Data и Keychain
