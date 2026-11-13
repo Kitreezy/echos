@@ -11,6 +11,13 @@ Packages/EchosCrypto/    # Локальный пакет чистого шифр
         ConversationCipher.swift    # X25519 + HKDF + AES-GCM
     Tests/EchosCryptoTests/         # 35 тестов пакета, включая вектор совместимости с Go
 
+Packages/EchosLiveActivityKit/  # Общая модель Live Activity для приложения и виджета.
+    Sources/EchosLiveActivityKit/
+        EchosLiveActivityAttributes.swift  # атрибуты и изменяемое состояние
+
+echosLiveActivity/        # Widget Extension: экран блокировки и Dynamic Island.
+    EchosLiveActivityWidget.swift          # ActivityConfiguration на WidgetKit
+
 echosTests/               # Unit — чистая логика, без I/O. Миллисекунды.
     Support/
         LoopbackTransport.swift   # подставной PeerTransport
@@ -269,6 +276,14 @@ accessibility-размерах слабее остальных, и аудит с
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Accessibility -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
+
+## Live Activities
+
+Live Activity проверяется на устройстве руками: автотесты могут увидеть
+наличие виджета, но не то, как он выглядит на экране блокировки и в Dynamic
+Island. Сценарий: отправить сообщение, свернуть приложение, увидеть «отправляется»;
+дождаться отправки и увидеть исчезновение активности; выключить сеть во время
+отправки и убедиться, что статус связи изменился локально, без сервера и пушей.
 
 ## Длинная переписка
 

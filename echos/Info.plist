@@ -23,6 +23,8 @@
 		<string>_echos-chat._tcp</string>
 		<string>_echos-chat._udp</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

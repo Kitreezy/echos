@@ -16,7 +16,7 @@ import Foundation
 @MainActor
 final class SearchIndexedMessageStore: MessageStoring {
 
-    private let store: any MessageStoring
+    let store: any MessageStoring
     private let index: any SearchIndexing
 
     init(_ store: any MessageStoring, index: any SearchIndexing) {

@@ -20,6 +20,8 @@ echos/
 Packages/
   EchosCrypto/     локальный пакет шифрования: личность, ключи сессии, шифр
                    переписки. Без UI, Keychain и транспорта.
+  EchosLiveActivityKit/  общая модель Live Activity для приложения и
+                   расширения виджета. Без пушей: обновления локальные.
 docs/adr/          почему сделано так, а не иначе
 echosTests/        модульные, с поддельными транспортом и релеем
 echosIntegrationTests/  с настоящими Core Data и Keychain
