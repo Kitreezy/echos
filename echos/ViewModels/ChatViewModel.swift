@@ -230,6 +230,9 @@ final class ChatViewModel {
         }
 
         Task { [weak self] in
+            #if DEBUG
+            await self?.seedLongConversationIfRequested()
+            #endif
             await self?.loadUnreadCounts()
         }
 
@@ -256,6 +259,27 @@ final class ChatViewModel {
             }
         }
     }
+
+    #if DEBUG
+    /// Засеять длинную переписку одной пачкой, если приложение запущено
+    /// сценарием Profiling. Через транспорт 5000 сообщений идти не должны:
+    /// каждое вызвало бы обновление UI, и Instruments мерил бы построение
+    /// демо-данных, а не прокрутку.
+    private func seedLongConversationIfRequested() async {
+        guard UITestMode.isActive,
+              let count = DemoTransport.requestedMessageCount,
+              let store = messageStore as? any MessageSeeding else {
+            return
+        }
+
+        do {
+            try await store.seedMessages(DemoTransport.longConversationMessages(count: count))
+        }
+        catch {
+            Logger.persistence.error("Не удалось засеять длинную переписку: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+    #endif
 
     // MARK: - Подписки
 
@@ -373,6 +397,11 @@ final class ChatViewModel {
         }
         do {
             let filtered = try await messageStore.loadMessages(with: address)
+            // Переход могли отменить, пока история читалась: тогда открытым
+            // должен остаться чат последнего запроса, а не этот.
+            guard !Task.isCancelled else {
+                return
+            }
             messages = filtered
             currentConversationPeer = address
             missedMessages = filtered.filter(\.isUnread)
@@ -389,6 +418,10 @@ final class ChatViewModel {
             currentConversationName = name
                 ?? peers.first { $0.address == address }?.displayName
                 ?? filtered.last { !$0.isFromMe }?.senderName
+            // Строка под заголовком относится к новому собеседнику сразу,
+            // а не со следующим сетевым событием — иначе при открытии чата
+            // видно статус предыдущего.
+            updateConnectionStatus()
             Logger.chat.info("Showing conversation with \(address, privacy: .private(mask: .hash)): \(filtered.count) messages")
         }
         catch {
@@ -871,10 +904,12 @@ final class ChatViewModel {
     private func updateConnectionStatus() {
         switch transportState {
         case .waitingForNetwork:
+            isConversationEncrypted = false
             connectionStatus = String(localized: "Нет сети")
             return
 
         case .connecting:
+            isConversationEncrypted = false
             connectionStatus = String(localized: "Переподключаемся...")
             return
 

@@ -255,6 +255,27 @@ accessibility-размерах слабее остальных, и аудит с
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Accessibility -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+## Длинная переписка
+
+`DemoTransport` принимает `-echos_seed_messages 5000`: `ChatViewModel`
+одной пачкой засеивает хранилище, и чат Боба получает 5000 сообщений,
+каждое десятое — мозаика. Сценарий
+`ProfilingScenarioTests/test_longConversationScroll` открывает его и
+прокручивает ленту туда и обратно.
+
+Запись Hitch Time Profiler на одном сценарии:
+
+```bash
+TEST_NAME=test_longConversationScroll scripts/profile.sh "Hitch Time Profiler"
+```
+
+Для сравнения «до» и «после» снимают две трассы на одном устройстве, в одном
+плане Profiling и с одним сценарием. Сравнивают Hitch Time Ratio, число
+hitches и основной вклад в Time Profiler: до изменения им был
+`MosaicView.rebuild()` внутри `MessageCell.configure`, после —
+prefetch должен убирать его из кадра, а повторные мозаики — приходить из
+`MosaicChatImageCache`.
+
 ## Что дальше
 
 - **Phase 3** — связка двух `ChatViewModel`. Два «устройства» в одном процессе

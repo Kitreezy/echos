@@ -6,6 +6,9 @@
 #   scripts/profile.sh "Time Profiler" главный поток и зависания
 #   scripts/profile.sh Allocations     рост памяти по кругам
 #
+# TEST_NAME=test_longConversationScroll scripts/profile.sh "Hitch Time Profiler"
+#   одна длинная переписка без остального сценария
+#
 # Сценарий — UI-тест: он ходит по экранам туда и обратно, а xctrace
 # подключается к запущенному им приложению. Руками то же самое не
 # повторить одинаково дважды, а сравнивать трассы «до» и «после» можно
@@ -44,8 +47,12 @@ LANG=en_US.UTF-8 xcodebuild build-for-testing -project "$root/echos.xcodeproj" -
   -testPlan Profiling -destination "id=$simulator" -derivedDataPath "$derived" -quiet
 
 echo "── сценарий"
+test_target=echosUITests/ProfilingScenarioTests
+if [ -n "${TEST_NAME:-}" ]; then
+  test_target="$test_target/$TEST_NAME"
+fi
 LANG=en_US.UTF-8 xcodebuild test-without-building -project "$root/echos.xcodeproj" -scheme echos \
-  -testPlan Profiling -only-testing:echosUITests/ProfilingScenarioTests \
+  -testPlan Profiling -only-testing:"$test_target" \
   -destination "id=$simulator" -derivedDataPath "$derived" \
   > "$out/scenario.log" 2>&1 &
 scenario=$!

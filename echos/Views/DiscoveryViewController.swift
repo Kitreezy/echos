@@ -350,6 +350,11 @@ final class DiscoveryViewController: UIViewController {
     var pendingSearchTarget: SpotlightItems.Target?
     var pendingDeepLink: DeepLink?
 
+    /// Последний запрошенный извне переход. Поиск, ссылка и входящее могут
+    /// прийти почти одновременно; без отмены два перехода открыли бы два чата
+    /// поверх друг друга.
+    var openConversationTask: Task<Void, Never>?
+
     /// Спрашивает имя и не отпускает, пока не назовут.
     ///
     /// Отмены нет намеренно: без имени в echos делать нечего, а «Без имени»
@@ -451,6 +456,7 @@ final class DiscoveryViewController: UIViewController {
     }
 
     deinit {
+        openConversationTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 

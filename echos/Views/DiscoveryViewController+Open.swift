@@ -45,11 +45,20 @@ extension DiscoveryViewController {
         }
         navigation.popToRootViewController(animated: false)
 
-        Task {
+        openConversationTask?.cancel()
+        openConversationTask = Task { [weak self, weak navigation] in
+            guard let self else {
+                return
+            }
             await viewModel.switchToConversation(with: address, named: name)
+            guard !Task.isCancelled, let navigation else {
+                return
+            }
+
             let chat = ChatViewController(viewModel: viewModel)
             chat.focusedMessageID = messageID
             navigation.pushViewController(chat, animated: true)
+            self.openConversationTask = nil
         }
     }
 }
