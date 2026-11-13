@@ -906,11 +906,13 @@ final class ChatViewModel {
         case .waitingForNetwork:
             isConversationEncrypted = false
             connectionStatus = String(localized: "Нет сети")
+            syncLiveActivity()
             return
 
         case .connecting:
             isConversationEncrypted = false
             connectionStatus = String(localized: "Переподключаемся...")
+            syncLiveActivity()
             return
 
         case .offline, .online:
@@ -934,11 +936,36 @@ final class ChatViewModel {
             connectionStatus = isReachable
                 ? String(localized: "зашифровано · \(Fingerprint.display(address))")
                 : String(localized: "не на связи")
+            syncLiveActivity()
             return
         }
 
         isConversationEncrypted = false
         connectionStatus = peers.isEmpty ? "" : String(localized: "Рядом: \(peers.count)")
+        syncLiveActivity()
+    }
+
+    /// Live Activity держит связь и отправку там, где человек уже не смотрит
+    /// на приложение: на экране блокировки и в Dynamic Island. Состояние
+    /// считается здесь, а ActivityKit обновляется только при реальном
+    /// изменении.
+    private func syncLiveActivity() {
+        let sendingCount = messages.filter { $0.isFromMe && $0.status == .sending }.count
+        let failedCount = messages.filter { $0.isFromMe && $0.status == .failed }.count
+        let peerAddress = currentConversationPeer ?? "echos"
+        let peerName = currentConversationName ?? currentConversationPeer ?? "echos"
+        let connectionText = connectionStatus.isEmpty
+            ? String(localized: "Соединение устанавливается")
+            : connectionStatus
+
+        LiveActivityService.shared.sync(
+            peerAddress: peerAddress,
+            peerName: peerName,
+            connectionText: connectionText,
+            isEncrypted: isConversationEncrypted,
+            sendingCount: sendingCount,
+            failedCount: failedCount
+        )
     }
 
     // MARK: - Messaging
@@ -1008,6 +1035,7 @@ final class ChatViewModel {
         // Адрес проставлен сразу: без него сообщение не принадлежит ни
         // одной переписке и в чате собеседника не покажется.
         messages.append(message)
+        syncLiveActivity()
         stopTyping()
         await deliver(message)
     }
@@ -1106,6 +1134,7 @@ final class ChatViewModel {
         }
 
         messages[idx].status = status
+        syncLiveActivity()
         persist(messages[idx])
     }
 }

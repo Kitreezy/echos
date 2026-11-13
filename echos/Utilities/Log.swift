@@ -51,4 +51,6 @@ extension Logger {
     static let digest = Logger(subsystem: subsystem, category: "digest")
     /// Системный поиск: индекс Spotlight.
     static let search = Logger(subsystem: subsystem, category: "search")
+    /// Live Activity: локальные обновления ActivityKit.
+    static let liveActivity = Logger(subsystem: subsystem, category: "liveActivity")
 }

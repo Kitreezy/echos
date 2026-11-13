@@ -11,6 +11,9 @@
 		AA3300000000000000000005 /* AsyncAlgorithms in Frameworks */ = {isa = PBXBuildFile; productRef = AA3300000000000000000004 /* AsyncAlgorithms */; };
 		AA5500000000000000000003 /* EchosCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = AA5500000000000000000002 /* EchosCrypto */; };
 		AA5500000000000000000005 /* EchosCrypto in Frameworks */ = {isa = PBXBuildFile; productRef = AA5500000000000000000004 /* EchosCrypto */; };
+		AA6600000000000000000003 /* echosLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000002 /* echosLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA6600000000000000000010 /* EchosLiveActivityKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA660000000000000000000F /* EchosLiveActivityKit */; };
+		AA6600000000000000000012 /* EchosLiveActivityKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA6600000000000000000011 /* EchosLiveActivityKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,6 +38,13 @@
 			remoteGlobalIDString = 577A75CD2F4362CB0072CE59;
 			remoteInfo = echos;
 		};
+		AA6600000000000000000013 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 577A75C62F4362CB0072CE59 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA6600000000000000000001;
+			remoteInfo = echosLiveActivity;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +53,8 @@
 		AA2200000000000000000002 /* echosIntegrationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosIntegrationTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA4400000000000000000002 /* echosUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = echosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA5500000000000000000001 /* Packages/EchosCrypto */ = {isa = PBXFileReference; lastKnownFileType = wrapper.swiftpackage; path = Packages/EchosCrypto; sourceTree = "<group>"; };
+		AA6600000000000000000002 /* echosLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = echosLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA660000000000000000000D /* Packages/EchosLiveActivityKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper.swiftpackage; path = Packages/EchosLiveActivityKit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -52,6 +64,13 @@
 				Info.plist,
 			);
 			target = 577A75CD2F4362CB0072CE59 /* echos */;
+		};
+		AA660000000000000000000C /* Exceptions for "echosLiveActivity" folder in "echosLiveActivity" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA6600000000000000000001 /* echosLiveActivity */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -79,7 +98,29 @@
 			path = echosUITests;
 			sourceTree = "<group>";
 		};
+		AA660000000000000000000B /* echosLiveActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA660000000000000000000C /* Exceptions for "echosLiveActivity" folder in "echosLiveActivity" target */,
+			);
+			path = echosLiveActivity;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA6600000000000000000004 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA6600000000000000000003 /* echosLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		577A75CB2F4362CB0072CE59 /* Frameworks */ = {
@@ -88,6 +129,15 @@
 			files = (
 				AA3300000000000000000003 /* AsyncAlgorithms in Frameworks */,
 				AA5500000000000000000003 /* EchosCrypto in Frameworks */,
+				AA6600000000000000000010 /* EchosLiveActivityKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA6600000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA6600000000000000000012 /* EchosLiveActivityKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -124,6 +174,7 @@
 				AA1100000000000000000003 /* echosTests */,
 				AA2200000000000000000003 /* echosIntegrationTests */,
 				AA4400000000000000000003 /* echosUITests */,
+				AA660000000000000000000B /* echosLiveActivity */,
 				AA5500000000000000000006 /* Packages */,
 				577A75CF2F4362CB0072CE59 /* Products */,
 			);
@@ -136,6 +187,7 @@
 				AA1100000000000000000002 /* echosTests.xctest */,
 				AA2200000000000000000002 /* echosIntegrationTests.xctest */,
 				AA4400000000000000000002 /* echosUITests.xctest */,
+				AA6600000000000000000002 /* echosLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -144,6 +196,7 @@
 			isa = PBXGroup;
 			children = (
 				AA5500000000000000000001 /* Packages/EchosCrypto */,
+				AA660000000000000000000D /* Packages/EchosLiveActivityKit */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -158,10 +211,12 @@
 				577A75CA2F4362CB0072CE59 /* Sources */,
 				577A75CB2F4362CB0072CE59 /* Frameworks */,
 				577A75CC2F4362CB0072CE59 /* Resources */,
+				AA6600000000000000000004 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA6600000000000000000014 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				577A75D02F4362CB0072CE59 /* echos */,
@@ -170,6 +225,7 @@
 			packageProductDependencies = (
 				AA3300000000000000000002 /* AsyncAlgorithms */,
 				AA5500000000000000000002 /* EchosCrypto */,
+				AA660000000000000000000F /* EchosLiveActivityKit */,
 			);
 			productName = echos;
 			productReference = 577A75CE2F4362CB0072CE59 /* echos.app */;
@@ -246,6 +302,29 @@
 			productReference = AA4400000000000000000002 /* echosUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		AA6600000000000000000001 /* echosLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA660000000000000000000A /* Build configuration list for PBXNativeTarget "echosLiveActivity" */;
+			buildPhases = (
+				AA6600000000000000000005 /* Sources */,
+				AA6600000000000000000006 /* Frameworks */,
+				AA6600000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA660000000000000000000B /* echosLiveActivity */,
+			);
+			name = echosLiveActivity;
+			packageProductDependencies = (
+				AA6600000000000000000011 /* EchosLiveActivityKit */,
+			);
+			productName = echosLiveActivity;
+			productReference = AA6600000000000000000002 /* echosLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -271,6 +350,9 @@
 						CreatedOnToolsVersion = 27.1;
 						TestTargetID = 577A75CD2F4362CB0072CE59;
 					};
+					AA6600000000000000000001 = {
+						CreatedOnToolsVersion = 27.1;
+					};
 				};
 			};
 			buildConfigurationList = 577A75C92F4362CB0072CE59 /* Build configuration list for PBXProject "echos" */;
@@ -286,6 +368,7 @@
 			packageReferences = (
 				AA3300000000000000000001 /* XCRemoteSwiftPackageReference "swift-async-algorithms" */,
 				AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */,
+				AA660000000000000000000E /* XCLocalSwiftPackageReference "Packages/EchosLiveActivityKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 577A75CF2F4362CB0072CE59 /* Products */;
@@ -296,6 +379,7 @@
 				AA1100000000000000000001 /* echosTests */,
 				AA2200000000000000000001 /* echosIntegrationTests */,
 				AA4400000000000000000001 /* echosUITests */,
+				AA6600000000000000000001 /* echosLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -323,6 +407,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		AA4400000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA6600000000000000000007 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -360,6 +451,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA6600000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -377,6 +475,11 @@
 			isa = PBXTargetDependency;
 			target = 577A75CD2F4362CB0072CE59 /* echos */;
 			targetProxy = AA440000000000000000000B /* PBXContainerItemProxy */;
+		};
+		AA6600000000000000000014 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA6600000000000000000001 /* echosLiveActivity */;
+			targetProxy = AA6600000000000000000013 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -407,6 +510,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR)";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -438,6 +542,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR)";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -678,6 +783,52 @@
 			};
 			name = Release;
 		};
+		AA6600000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LJZ97X76W9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = echosLiveActivity/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echos.liveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA6600000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LJZ97X76W9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = echosLiveActivity/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kitreezy.echos.liveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -726,12 +877,25 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		AA660000000000000000000A /* Build configuration list for PBXNativeTarget "echosLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA6600000000000000000008 /* Debug */,
+				AA6600000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
 		AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/EchosCrypto;
+		};
+		AA660000000000000000000E /* XCLocalSwiftPackageReference "Packages/EchosLiveActivityKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/EchosLiveActivityKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -766,6 +930,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA5500000000000000000007 /* XCLocalSwiftPackageReference "Packages/EchosCrypto" */;
 			productName = EchosCrypto;
+		};
+		AA660000000000000000000F /* EchosLiveActivityKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA660000000000000000000E /* XCLocalSwiftPackageReference "Packages/EchosLiveActivityKit" */;
+			productName = EchosLiveActivityKit;
+		};
+		AA6600000000000000000011 /* EchosLiveActivityKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA660000000000000000000E /* XCLocalSwiftPackageReference "Packages/EchosLiveActivityKit" */;
+			productName = EchosLiveActivityKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
