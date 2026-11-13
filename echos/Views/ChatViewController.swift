@@ -38,6 +38,16 @@ final class ChatViewController: UIViewController {
         return table
     }()
 
+    /// Последний показанный снимок сообщений. Состояние подключения и
+    /// печать приходят тем же наблюдением, но таблицу из-за них перегружать
+    /// не нужно — на длинной переписке это и есть заметный hitch.
+    private var renderedMessages: [Message] = []
+    private var renderedConversationPeer: String?
+
+    /// Задачи prefetch для отмены, когда строки ушли с экрана раньше, чем
+    /// успели подготовиться.
+    private var prefetchTasks: [IndexPath: Task<Void, Never>] = [:]
+
     /// Цвета — токенами палитры, а не системными `secondaryLabel`: системные
     /// зависят от оформления элемента, и строка шифрования выходила тёмно-
     /// серой на почти чёрном — 2.4:1 по аудиту доступности.
@@ -547,6 +557,7 @@ final class ChatViewController: UIViewController {
 
     private func setupTableView() {
         tableView.dataSource = self
+        tableView.prefetchDataSource = self
         tableView.delegate = self
 
         // Нажатие на сообщение — ряд реакций. Одно нажатие свободно:
@@ -599,12 +610,26 @@ final class ChatViewController: UIViewController {
         statusLabel.text = viewModel.connectionStatus
         emptyStateView.isHidden = !viewModel.messages.isEmpty
 
-        tableView.reloadData()
-        // До первого показа крутить нечего: лента ещё без размера, за это
-        // отвечает раскладка. Дальше — плавно, как и положено новому
-        // сообщению.
-        if view.window != nil {
-            scrollToBottom(animated: true)
+        // Подключение, печать и статусы приходят через то же наблюдение, что
+        // и сообщения. Таблицу перегружаем только по смене самих сообщений:
+        // на 5000 строк полный reload ради строки состояния — готовый hitch.
+        if renderedMessages != viewModel.messages {
+            let shouldFollowBottom = isNearBottom()
+            let structureChanged = renderedMessages.count != viewModel.messages.count
+                || renderedConversationPeer != viewModel.currentConversationPeer
+            renderedMessages = viewModel.messages
+            renderedConversationPeer = viewModel.currentConversationPeer
+            if structureChanged {
+                prefetchTasks.values.forEach { $0.cancel() }
+                prefetchTasks.removeAll()
+            }
+            tableView.reloadData()
+
+            // Новое сообщение догоняет ленту, только если человек уже был у
+            // конца. Читающего старое не дёргаем обратно вниз.
+            if view.window != nil && shouldFollowBottom {
+                scrollToBottom(animated: true)
+            }
         }
 
         updateMenu()
@@ -619,6 +644,17 @@ final class ChatViewController: UIViewController {
             currentTypingPeer = nil
             stopTypingAnimation()
         }
+    }
+
+    /// Человек у конца ленты и готов увидеть новое сообщение. Порог —
+    /// примерно одна высота строки, чтобы обычное покачивание пальца не
+    /// отключало следование.
+    private func isNearBottom() -> Bool {
+        guard tableView.contentSize.height > tableView.bounds.height else {
+            return true
+        }
+        let visibleBottom = tableView.contentOffset.y + tableView.bounds.height
+        return tableView.contentSize.height - visibleBottom <= 120
     }
 
     // MARK: - Actions
@@ -1325,6 +1361,40 @@ extension ChatViewController: UITableViewDataSource {
             }
         }
         return cell
+    }
+}
+
+// MARK: - UITableViewDataSourcePrefetching
+
+extension ChatViewController: UITableViewDataSourcePrefetching {
+
+    /// Готовим изображения мозаик до того, как ячейка попросит их на
+    /// главном потоке. Кэш общий с `MessageCell`, поэтому prefetch — это не
+    /// отдельная отрисовка, а досрочное выполнение той же работы.
+    func tableView(_ tableView: UITableView, prefetchRowsAt indexPaths: [IndexPath]) {
+        for indexPath in indexPaths {
+            guard viewModel.messages.indices.contains(indexPath.row) else {
+                continue
+            }
+
+            if let mosaic = viewModel.messages[indexPath.row].mosaic,
+               MosaicChatImageCache.shared.image(for: mosaic) == nil,
+               prefetchTasks[indexPath] == nil {
+                prefetchTasks[indexPath] = Task { [weak self] in
+                    await MosaicChatImageCache.shared.prepare(mosaic)
+                    self?.prefetchTasks[indexPath] = nil
+                }
+            }
+        }
+    }
+
+    /// Строки ушли с экрана раньше, чем дошла очередь: работу над ними
+    /// больше не ждёт никто.
+    func tableView(_ tableView: UITableView, cancelPrefetchingForRowsAt indexPaths: [IndexPath]) {
+        for indexPath in indexPaths {
+            prefetchTasks[indexPath]?.cancel()
+            prefetchTasks[indexPath] = nil
+        }
     }
 }
 

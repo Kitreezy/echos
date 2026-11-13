@@ -59,6 +59,33 @@ final class ProfilingScenarioTests: XCTestCase {
         sleep(warmup)
     }
 
+    /// Длинная переписка для Hitch Time Profiler: 5000 сообщений, каждое
+    /// десятое — мозаика. Прокручиваем весь чат туда и обратно, чтобы в
+    /// запись попали и dequeue, и prefetch, и кэш.
+    func test_longConversationScroll() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITests", "-echos_user_name", "Тест", "-echos_seed_messages", "5000"]
+        app.launch()
+
+        let bob = app.cells.matching(NSPredicate(format: "label BEGINSWITH 'Боб'")).firstMatch
+        try tap(bob)
+        XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 10), "Чат не открылся")
+        sleep(warmup)
+
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+
+        for _ in 0..<80 {
+            table.swipeUp()
+        }
+        for _ in 0..<80 {
+            table.swipeDown()
+        }
+
+        // Даём Hitch Time Profiler записать хвост после последнего кадра.
+        sleep(warmup)
+    }
+
     // MARK: - Private
 
     private var warmup: UInt32 {
