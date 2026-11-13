@@ -3,6 +3,14 @@
 ## Структура
 
 ```
+Packages/EchosCrypto/    # Локальный пакет чистого шифрования, без UI и Keychain.
+    Sources/EchosCrypto/
+        DeviceIdentity.swift        # пара ключей личности
+        PeerIdentity.swift          # KeyBundle → проверенный PeerIdentity
+        SessionKey.swift            # эфемерный ключ сессии
+        ConversationCipher.swift    # X25519 + HKDF + AES-GCM
+    Tests/EchosCryptoTests/         # 35 тестов пакета, включая вектор совместимости с Go
+
 echosTests/               # Unit — чистая логика, без I/O. Миллисекунды.
     Support/
         LoopbackTransport.swift   # подставной PeerTransport
@@ -63,6 +71,13 @@ Xcode → Report navigator → Coverage после прогона этого п�
 
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fast -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Криптопакет гоняется и отдельно от Xcode-проекта — так его тесты проходят
+быстрее и не требуют симулятор:
+
+```bash
+swift test --package-path Packages/EchosCrypto
 ```
 
 Полный — тот же вызов без `-testPlan` или с `-testPlan echos`. Симуляторов с

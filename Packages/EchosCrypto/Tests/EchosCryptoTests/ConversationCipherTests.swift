@@ -10,10 +10,23 @@
 import CryptoKit
 import Foundation
 import Testing
-@testable import echos
+@testable import EchosCrypto
 
-@Suite(.tags(.crypto))
 struct ConversationCipherTests {
+
+    /// Локальная модель сообщения: пакет не знает моделей приложения, но
+    /// формат совместимости с релеем проверять обязан.
+    private struct Payload: Codable, Equatable {
+        let id: String
+        let text: String
+        let senderName: String
+    }
+
+    /// Локальный тип для конвертов другого рода — проверяется только, что
+    /// род входит в проверяемые данные.
+    private struct Mark: Codable, Equatable {
+        let author: String
+    }
 
     private let alice = DeviceIdentity()
     private let bob = DeviceIdentity()
@@ -36,16 +49,16 @@ struct ConversationCipherTests {
                        bobSide: try ConversationCipher(identity: second, session: secondSession, peer: firstAsPeer))
     }
 
-    private func payload(_ text: String) -> MessagePayload {
-        MessagePayload(from: Message(text: text, isFromMe: true), senderName: "Alice")
+    private func payload(_ text: String) -> Payload {
+        Payload(id: "00000000-0000-0000-0000-000000000001", text: text, senderName: "Alice")
     }
 
     private func sealed(_ text: String, by cipher: ConversationCipher) throws -> SealedPayload {
         try cipher.seal(payload(text), kind: .message, from: alice.fingerprint, to: bob.fingerprint)
     }
 
-    private func open(_ sealed: SealedPayload, with cipher: ConversationCipher) throws -> MessagePayload {
-        try cipher.open(sealed, as: MessagePayload.self, kind: .message, from: alice.fingerprint, to: bob.fingerprint)
+    private func open(_ sealed: SealedPayload, with cipher: ConversationCipher) throws -> Payload {
+        try cipher.open(sealed, as: Payload.self, kind: .message, from: alice.fingerprint, to: bob.fingerprint)
     }
 
     // MARK: - Честная пара
@@ -80,7 +93,7 @@ struct ConversationCipherTests {
         let pair = try session(alice, bob)
 
         let fromBob = try pair.bobSide.seal(payload("ответ"), kind: .message, from: bob.fingerprint, to: alice.fingerprint)
-        let opened = try pair.aliceSide.open(fromBob, as: MessagePayload.self, kind: .message,
+        let opened = try pair.aliceSide.open(fromBob, as: Payload.self, kind: .message,
                                           from: bob.fingerprint, to: alice.fingerprint)
 
         #expect(opened.text == "ответ")
@@ -140,7 +153,7 @@ struct ConversationCipherTests {
         let impostorSide = try ConversationCipher(identity: impostor, session: impostorSession, peer: bobAsPeer)
 
         let forged = try impostorSide.seal(payload("я Алиса"), kind: .message, from: realAlice.fingerprint, to: bob.fingerprint)
-        #expect(throws: (any Error).self) { try honestBob.open(forged, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try honestBob.open(forged, as: Payload.self, kind: .message,
                                                 from: realAlice.fingerprint, to: bob.fingerprint) }
     }
 
@@ -182,7 +195,7 @@ struct ConversationCipherTests {
         let pair = try session(alice, bob)
         let box = try sealed("моё", by: pair.aliceSide)
 
-        #expect(throws: (any Error).self) { try pair.aliceSide.open(box, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try pair.aliceSide.open(box, as: Payload.self, kind: .message,
                                                   from: bob.fingerprint, to: alice.fingerprint) }
     }
 
@@ -190,7 +203,7 @@ struct ConversationCipherTests {
         let pair = try session(alice, bob)
         let box = try sealed("от Алисы", by: pair.aliceSide)
 
-        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: Payload.self, kind: .message,
                                                 from: mallory.fingerprint, to: bob.fingerprint) }
     }
 
@@ -200,25 +213,25 @@ struct ConversationCipherTests {
     /// род входит в проверяемые данные — не откроется.
     @Test func strokeSealedAsStroke_doesNotOpenAsMessage() throws {
         let pair = try session(alice, bob)
-        let stroke = Stroke(author: alice.fingerprint, points: [])
+        let stroke = Mark(author: alice.fingerprint)
 
         let box = try pair.aliceSide.seal(stroke, kind: .stroke, from: alice.fingerprint, to: bob.fingerprint)
 
-        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: MessagePayload.self, kind: .message,
+        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: Payload.self, kind: .message,
                                                 from: alice.fingerprint, to: bob.fingerprint) }
-        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: Stroke.self, kind: .wall,
+        #expect(throws: (any Error).self) { try pair.bobSide.open(box, as: Mark.self, kind: .wall,
                                                 from: alice.fingerprint, to: bob.fingerprint) }
-        #expect(throws: Never.self) { try pair.bobSide.open(box, as: Stroke.self, kind: .stroke,
+        #expect(throws: Never.self) { try pair.bobSide.open(box, as: Mark.self, kind: .stroke,
                                             from: alice.fingerprint, to: bob.fingerprint) }
     }
 
     @Test func wholeWall_sealsAndOpens() throws {
         let pair = try session(alice, bob)
-        let wall = [Stroke(author: bob.fingerprint, points: []),
-                    Stroke(author: alice.fingerprint, points: [])]
+        let wall = [Mark(author: bob.fingerprint),
+                    Mark(author: alice.fingerprint)]
 
         let box = try pair.aliceSide.seal(wall, kind: .wall, from: alice.fingerprint, to: bob.fingerprint)
-        let opened = try pair.bobSide.open(box, as: [Stroke].self, kind: .wall,
+        let opened = try pair.bobSide.open(box, as: [Mark].self, kind: .wall,
                                         from: alice.fingerprint, to: bob.fingerprint)
 
         #expect(opened.map(\.author) == wall.map(\.author))
@@ -285,7 +298,7 @@ struct ConversationCipherTests {
         let bobSide = try ConversationCipher(identity: goBob, session: bobSession, peer: aliceAsPeer)
         let sealed = SealedPayload(version: 2, box: key("GSjvIvQZMEdbFklrA3GRewU8IgjrS1qzQILeuzn2NgNi8BYSlG6HFOVymfzyXzdWCzrL/6TrJn8B7DomEnKYhAwJpQWzt9ocO49i9sPnZJlGjxGM0GkjhKrF+6G5Hua98r+vaKk2gGuwbCvQh+0U7ERnQQi8EUnq2otoDZHO/dO/HYau+4EH9icDHjbZdgg="))
 
-        let opened = try bobSide.open(sealed, as: MessagePayload.self, kind: .message,
+        let opened = try bobSide.open(sealed, as: Payload.self, kind: .message,
                                       from: goAlice.fingerprint, to: goBob.fingerprint)
 
         #expect(opened.text == "из Go в Swift")

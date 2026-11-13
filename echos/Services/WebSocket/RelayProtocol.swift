@@ -9,6 +9,7 @@
 //  а модели (`MessagePayload`, `TypingEvent`) переиспользуются как есть.
 //
 
+import EchosCrypto
 import Foundation
 
 enum RelayEnvelopeKind: String, Codable, Sendable {

@@ -5,6 +5,7 @@
 //  Unit: сериализация пакетов. Без I/O, без Core Data — микросекунды.
 //
 
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

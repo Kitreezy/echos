@@ -10,6 +10,7 @@
 //  клиент должен сам, по таймаутам.
 //
 
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

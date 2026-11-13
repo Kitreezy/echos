@@ -22,31 +22,36 @@ import CryptoKit
 import Foundation
 
 /// Что уходит по сети вместо открытого сообщения.
-struct SealedPayload: Codable, Sendable, Equatable {
+public struct SealedPayload: Codable, Sendable, Equatable {
     /// Версия схемы. Чтобы завтрашний формат не открывали вчерашним ключом.
-    let version: Int
+    public let version: Int
     /// nonce + шифртекст + тег, как их отдаёт `AES.GCM.SealedBox.combined`.
-    let box: Data
+    public let box: Data
+
+    public init(version: Int, box: Data) {
+        self.version = version
+        self.box = box
+    }
 
     /// 2 — ключ с сессионной частью. Первую версию, без неё, не открываем:
     /// собеседник без сессионного ключа в список и так не попадает.
-    static let currentVersion = 2
+    public static let currentVersion = 2
 }
 
 /// Что лежит в конверте. Входит в проверяемые данные, чтобы конверт одного
 /// рода нельзя было подсунуть вместо другого.
-enum SealedKind: String, Sendable {
+public enum SealedKind: String, Sendable {
     case message
     case stroke
     case wall
 }
 
-enum ConversationCipherError: Error, Equatable {
+public enum ConversationCipherError: Error, Equatable {
     case unsupportedVersion(Int)
     case sealedBoxMalformed
 }
 
-struct ConversationCipher: Sendable {
+public struct ConversationCipher: Sendable {
 
     private let key: SymmetricKey
 
@@ -56,7 +61,7 @@ struct ConversationCipher: Sendable {
     /// любой стороны, — поэтому и их порядок фиксирован: сессионный, потом
     /// статический. Адреса входят в отсортированном порядке, чтобы обе
     /// стороны вывели один ключ.
-    init(identity: DeviceIdentity, session: SessionKey, peer: PeerIdentity) throws {
+    public init(identity: DeviceIdentity, session: SessionKey, peer: PeerIdentity) throws {
         let ephemeral = try session.sharedSecret(with: peer)
         let longTerm = try identity.sharedSecret(with: peer)
         let pair = [identity.fingerprint, peer.fingerprint].sorted().joined(separator: "|")
@@ -77,7 +82,7 @@ struct ConversationCipher: Sendable {
     }
 
     /// Запечатать что угодно кодируемое: сообщение, росчерк, стену целиком.
-    func seal<T: Encodable>(_ value: T,
+    public func seal<T: Encodable>(_ value: T,
                             kind: SealedKind,
                             from sender: String,
                             to recipient: String) throws -> SealedPayload {
@@ -93,7 +98,7 @@ struct ConversationCipher: Sendable {
         return SealedPayload(version: SealedPayload.currentVersion, box: combined)
     }
 
-    func open<T: Decodable>(_ sealed: SealedPayload,
+    public func open<T: Decodable>(_ sealed: SealedPayload,
                             as type: T.Type,
                             kind: SealedKind,
                             from sender: String,
