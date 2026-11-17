@@ -104,6 +104,7 @@ final class LoopbackTransport: PeerTransport {
     private(set) var sentTypingEvents: [(event: TypingEvent, recipient: String)] = []
     private(set) var sentStrokes: [(stroke: Stroke, recipient: String)] = []
     private(set) var isDiscovering = false
+    private(set) var reconnectCount = 0
 
     var sentTypingTypes: [TypingEventType] {
         sentTypingEvents.map(\.event.type)
@@ -150,6 +151,10 @@ final class LoopbackTransport: PeerTransport {
 
     func stopDeviceDiscovery() {
         isDiscovering = false
+    }
+
+    func reconnect() {
+        reconnectCount += 1
     }
 
     func connectToPeer(address: String) async throws {}

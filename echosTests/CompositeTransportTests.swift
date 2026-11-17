@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Network
 import Testing
 @testable import echos
 
@@ -15,6 +16,7 @@ final class CompositeTransportTests {
 
     private let nearby = LoopbackTransport()
     private let relay = LoopbackTransport()
+    private let monitor = FakeNetworkMonitor()
     private let transport: CompositeTransport
 
     /// Последний слитый список. Пишет его фоновая задача — поэтому набор
@@ -23,7 +25,9 @@ final class CompositeTransportTests {
     private var peersTask: Task<Void, Never>?
 
     init() {
-        transport = CompositeTransport(nearby: nearby, relay: relay)
+        transport = CompositeTransport(nearby: nearby,
+                                       relay: relay,
+                                       networkMonitor: monitor)
 
         let stream = transport.peerStream
         peersTask = Task { [weak self] in
@@ -176,12 +180,114 @@ final class CompositeTransportTests {
         #expect(online)
     }
 
+    // MARK: - Сетевой путь
+
+    @Test func networkLoss_withoutNearby_waitsForNetwork() async {
+        var states: [TransportConnectionState] = []
+        let stream = transport.connectionStateUpdates
+        let task = Task {
+            for await state in stream {
+                states.append(state)
+            }
+        }
+        defer { task.cancel() }
+
+        _ = await waitUntil { self.monitor.subscriberCount > 0 }
+        transport.startDeviceDiscovery()
+        monitor.goOffline()
+
+        let waiting = await waitUntil { states.last == .waitingForNetwork }
+        #expect(waiting)
+        #expect(relay.reconnectCount == 0)
+    }
+
+    @Test func networkRestored_afterOffline_movesRelayToConnecting() async {
+        var states: [TransportConnectionState] = []
+        let stream = transport.connectionStateUpdates
+        let task = Task {
+            for await state in stream {
+                states.append(state)
+            }
+        }
+        defer { task.cancel() }
+
+        _ = await waitUntil { self.monitor.subscriberCount > 0 }
+        transport.startDeviceDiscovery()
+        monitor.goOffline()
+        _ = await waitUntil { states.last == .waitingForNetwork }
+
+        monitor.goOnline(interface: .wifi)
+
+        let connecting = await waitUntil { states.last == .connecting }
+        #expect(connecting)
+        #expect(relay.reconnectCount == 0, "Возврат той же сети — не смена интерфейса")
+    }
+
+    /// Wi-Fi ↔ LTE меняет локальный адрес. Старое TCP мертво, хотя сокет
+    /// об этом не сообщил: релей надо пересоздать немедленно, без heartbeat.
+    @Test func interfaceChange_requestsRelayReconnect() async {
+        var states: [TransportConnectionState] = []
+        let stream = transport.connectionStateUpdates
+        let task = Task {
+            for await state in stream {
+                states.append(state)
+            }
+        }
+        defer { task.cancel() }
+
+        _ = await waitUntil { self.monitor.subscriberCount > 0 }
+        transport.startDeviceDiscovery()
+        monitor.goOffline()
+        _ = await waitUntil { states.last == .waitingForNetwork }
+        monitor.goOnline(interface: .wifi)
+        _ = await waitUntil { states.last == .connecting }
+
+        monitor.goOnline(interface: .cellular)
+
+        let reconnected = await waitUntil { self.relay.reconnectCount == 1 }
+        #expect(reconnected)
+    }
+
+    @Test func samePathReportedTwice_doesNotReconnectRelay() async throws {
+        var states: [TransportConnectionState] = []
+        let stream = transport.connectionStateUpdates
+        let task = Task {
+            for await state in stream {
+                states.append(state)
+            }
+        }
+        defer { task.cancel() }
+
+        _ = await waitUntil { self.monitor.subscriberCount > 0 }
+        transport.startDeviceDiscovery()
+        monitor.goOffline()
+        _ = await waitUntil { states.last == .waitingForNetwork }
+        monitor.goOnline(interface: .wifi)
+        _ = await waitUntil { states.last == .connecting }
+
+        monitor.goOnline(interface: .wifi)
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(relay.reconnectCount == 0, "Тот же путь — не повод рвать живую попытку")
+    }
+
+    @Test func interfaceChangeWhileDiscoveryStopped_doesNotStartRelay() async throws {
+        _ = await waitUntil { self.monitor.subscriberCount > 0 }
+
+        monitor.goOnline(interface: .cellular)
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(!relay.isDiscovering)
+        #expect(relay.reconnectCount == 0)
+    }
+
     // MARK: - Обнаружение
 
-    @Test func discovery_startsBothChannels() {
+    @Test func discovery_startsBothChannelsAndMonitor() {
         transport.startDeviceDiscovery()
 
         #expect(nearby.isDiscovering)
         #expect(relay.isDiscovering)
+        #expect(monitor.isRunning)
     }
 }

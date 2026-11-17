@@ -22,6 +22,13 @@ final class FakeNetworkMonitor: NetworkMonitoring {
     private let broadcast = AsyncBroadcast<NetworkPathSnapshot>(replaysLatest: true)
     var pathUpdates: AsyncStream<NetworkPathSnapshot> { broadcast.stream }
 
+    /// Сколько потребителей сейчас читают поток. Тест ждёт подписку
+    /// CompositeTransport, иначе событие, отправленное раньше неё, потерялось
+    /// бы и проверка начала бы плавать.
+    var subscriberCount: Int {
+        broadcast.subscriberCount
+    }
+
     /// Стартовое состояние. По умолчанию сеть есть — так ведёт себя монитор
     /// на нормальном устройстве.
     init(initial: NetworkPathSnapshot? = NetworkPathSnapshot(isReachable: true, interface: .wifi)) {

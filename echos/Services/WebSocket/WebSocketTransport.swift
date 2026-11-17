@@ -284,6 +284,10 @@ final class WebSocketTransport: NSObject {
         clearPeers()
     }
 
+    func reconnect() {
+        client.reconnect()
+    }
+
     // MARK: - Messaging
 
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
