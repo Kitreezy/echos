@@ -15,6 +15,7 @@ echos/
     CompositeTransport.swift оба канала разом
     Identity/                хранение личности и рукопожатия
     Network/                 есть ли сеть
+    Networking/              фоновые загрузки и докачка после сворачивания
   Persistence/     Core Data: два хранилища, см. ADR 002
   Utilities/       AsyncBroadcast, настройки, отсрочка в фоне
 Packages/
