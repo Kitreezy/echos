@@ -39,6 +39,7 @@ echosTests/               # Unit — чистая логика, без I/O. Ми
     WebSocketTransportTests.swift   # два «устройства» через один релей
     NetworkAwarenessTests.swift     # пропажа и возврат сети
     CompositeTransportTests.swift   # слияние каналов и reconnect при смене пути
+    BackgroundDownloadServiceTests.swift  # фоновые загрузки и resume-data
     BadNetworkTests.swift           # сеть есть, но плохая
     DuplicateDeliveryTests.swift    # повторно пришедшее сообщение
     TransportLifecycleTests.swift   # уход в фон и возврат
