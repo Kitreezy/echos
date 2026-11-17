@@ -14,6 +14,7 @@
 //
 
 import Foundation
+import Network
 
 enum CompositeTransportError: Error, Equatable {
     /// Адрес не виден ни по одному каналу.
@@ -31,6 +32,16 @@ final class CompositeTransport: PeerTransport {
 
     private let nearby: any PeerTransport
     private let relay: any PeerTransport
+    private let networkMonitor: any NetworkMonitoring
+
+    /// Поиск включён человеком и не выключен. Отличается от «сейчас есть
+    /// подключение»: в фоне или без сети соединений нет, но возобновлять
+    /// их при возврате надо.
+    private var isDiscoveryActive = false
+
+    /// Интерфейс последнего известного пути. Переход Wi-Fi ↔ LTE меняет
+    /// локальный адрес, и старое TCP-соединение релей умирает молча.
+    private var currentInterface: NWInterface.InterfaceType?
 
     // MARK: - Identity
 
@@ -75,11 +86,59 @@ final class CompositeTransport: PeerTransport {
     private var relayState: TransportConnectionState = .offline
 
     private var forwardingTasks: [Task<Void, Never>] = []
+    private var networkTask: Task<Void, Never>?
 
-    init(nearby: any PeerTransport, relay: any PeerTransport) {
+    init(nearby: any PeerTransport,
+         relay: any PeerTransport,
+         networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
         self.nearby = nearby
         self.relay = relay
+        self.networkMonitor = networkMonitor
         forward()
+        observeNetwork()
+    }
+
+    // MARK: - Network awareness
+
+    /// Релей сам умеет ждать сеть и ретраить, но составной транспорт тоже
+    /// обязан видеть путь: статус показывается по совокупности каналов, а при
+    /// смене интерфейса релей надо пересоздать сразу, не дожидаясь heartbeat.
+    private func observeNetwork() {
+        let updates = networkMonitor.pathUpdates
+        networkTask = Task { [weak self] in
+            for await path in updates {
+                self?.handle(path: path)
+            }
+        }
+    }
+
+    private func handle(path: NetworkPathSnapshot) {
+        guard path.isReachable else {
+            currentInterface = nil
+            guard isDiscoveryActive else {
+                return
+            }
+
+            relayState = .waitingForNetwork
+            updateConnectionState()
+            return
+        }
+
+        let interfaceChanged = currentInterface != nil && currentInterface != path.interface
+        currentInterface = path.interface
+
+        guard isDiscoveryActive else {
+            return
+        }
+
+        if relayState == .waitingForNetwork {
+            relayState = .connecting
+            updateConnectionState()
+        }
+
+        if interfaceChanged {
+            relay.reconnect()
+        }
     }
 
     // MARK: - Routing
@@ -216,13 +275,26 @@ final class CompositeTransport: PeerTransport {
     // MARK: - Discovery
 
     func startDeviceDiscovery() {
+        isDiscoveryActive = true
+        networkMonitor.start()
         nearby.startDeviceDiscovery()
         relay.startDeviceDiscovery()
+
+        if let path = networkMonitor.currentPath {
+            handle(path: path)
+        }
     }
 
     func stopDeviceDiscovery() {
+        isDiscoveryActive = false
+        currentInterface = nil
         nearby.stopDeviceDiscovery()
         relay.stopDeviceDiscovery()
+
+        // Монитор не останавливаем: объект может быть общим с релеем, и тогда
+        // остановка здесь ослепила бы его собственный reconnect.
+        relayState = .offline
+        updateConnectionState()
     }
 
     func connectToPeer(address: String) async throws {
@@ -241,6 +313,15 @@ final class CompositeTransport: PeerTransport {
     func disconnectAll() {
         nearby.disconnectAll()
         relay.disconnectAll()
+    }
+
+    /// Внешняя просьба пересоздать единое соединение касается релея. Рядом
+    /// сессий много и пересоздавать их целиком извне незачем.
+    func reconnect() {
+        guard isDiscoveryActive else {
+            return
+        }
+        relay.reconnect()
     }
 
     // MARK: - Messaging
