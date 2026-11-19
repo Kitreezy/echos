@@ -113,11 +113,40 @@ final class ChatViewModel {
     var messageStore: (any MessageStoring)?
 
     /// Своя стена. Живёт здесь, а не на экране: росчерки приходят и тогда,
-    /// когда стена закрыта.
-    var strokeStore: any StrokeStoring = StrokeStore()
+    /// когда стена закрыта. Создание ленивое: дефолтный `StrokeStore` тянет
+    /// за собой Core Data, а до первого кадра стена не нужна. `@Observable`
+    /// не позволяет `lazy`, поэтому хранилище прячется за computed-доступом.
+    private var strokeStoreValue: (any StrokeStoring)?
+    var strokeStore: any StrokeStoring {
+        get {
+            if let strokeStoreValue {
+                return strokeStoreValue
+            }
+            let store = StrokeStore()
+            strokeStoreValue = store
+            return store
+        }
+        set {
+            strokeStoreValue = newValue
+        }
+    }
 
-    /// Кого мы уже знаем.
-    var knownPeerStore: any KnownPeerStoring = KnownPeerStore()
+    /// Кого мы уже знаем. Тоже лениво: список читается при старте поиска,
+    /// а не при создании ViewModel на холодном пути.
+    private var knownPeerStoreValue: (any KnownPeerStoring)?
+    var knownPeerStore: any KnownPeerStoring {
+        get {
+            if let knownPeerStoreValue {
+                return knownPeerStoreValue
+            }
+            let store = KnownPeerStore()
+            knownPeerStoreValue = store
+            return store
+        }
+        set {
+            knownPeerStoreValue = newValue
+        }
+    }
 
     /// Системный поиск. Подключается только в приложении: тесты передают
     /// свои хранилища и в Spotlight симулятора не пишут.

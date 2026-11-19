@@ -171,6 +171,13 @@ final class BackgroundDownloadService: NSObject {
         return id
     }
 
+    /// Есть ли что восстанавливать. Холодный запуск без фоновых загрузок не
+    /// должен платить за обращение к сессии: `getTasksWithCompletionHandler`
+    /// остаётся только для реально прерванной очереди.
+    func hasPendingDownloads() -> Bool {
+        (try? store.load())?.isEmpty == false
+    }
+
     /// Восстановить очередь после запуска. Живые задачи сессии не трогаем,
     /// а записи без задачи создаём заново — с resume-data, если она есть.
     func restorePendingDownloads() {

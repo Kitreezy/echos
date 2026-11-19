@@ -279,6 +279,27 @@ accessibility-размерах слабее остальных, и аудит с
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Accessibility -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
+## Бюджет холодного запуска
+
+Цель: холодный запуск до первого отвечающего кадра быстрее одной секунды на
+устройстве. Разметка в Points of Interest:
+
+- `Pre-main tail` — от загрузки классов до `UIApplicationDidFinishLaunching`;
+- `Scene creation` — синхронное создание окна и корневого экрана;
+- `Launch main phase` — от `didFinishLaunching` до `sceneDidBecomeActive`.
+
+Полный pre-main включает dyld и ObjC runtime; его честно показывает шаблон
+App Launch в Instruments на устройстве или `DYLD_PRINT_STATISTICS=YES` в схеме.
+Число для сравнения «до/после» на симуляторе даёт:
+
+```bash
+scripts/launch_time.sh
+```
+
+Сравнивать можно только одинаковое устройство, схему и сборку. Осознанно
+вынесено из холодного пути: Core Data для стены и знакомых создаётся лениво,
+а фоновая сессия загрузок открывается только если есть прерванная очередь.
+
 ## Live Activities
 
 Live Activity проверяется на устройстве руками: автотесты могут увидеть
