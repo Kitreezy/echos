@@ -11,8 +11,14 @@ import UIKit
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        LaunchTrace.applicationDidFinishLaunching()
         MetricsCollector.shared.start()
-        BackgroundDownloadService.shared.restorePendingDownloads()
+
+        // Фоновая сессия сама знает о живых задачах. Запуск без прерванной
+        // очереди не должен платить за getTasks на каждом холодном старте.
+        if BackgroundDownloadService.shared.hasPendingDownloads() {
+            BackgroundDownloadService.shared.restorePendingDownloads()
+        }
         return true
     }
 

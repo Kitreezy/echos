@@ -516,8 +516,12 @@ App Launch на симуляторе не работает — приложен�
 пять запусков):
 
 ```bash
-xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Profiling -only-testing:echosUITests/LaunchPerformanceTests -destination 'platform=iOS Simulator,name=iPhone 17'
+scripts/launch_time.sh
 ```
+
+В Instruments на устройстве тот же запуск размечен Points of Interest:
+`Pre-main tail`, `Scene creation` и `Launch main phase`; полный pre-main dyld
+показывает шаблон App Launch или `DYLD_PRINT_STATISTICS`.
 
 Трасса Leaks весит гигабайты, `build/profile` стоит чистить.
 
