@@ -13,7 +13,7 @@ echos/
     MultipeerService.swift   рядом: MultipeerConnectivity
     WebSocket/               через сервер: свой WebSocket-клиент и релей
     CompositeTransport.swift оба канала разом
-    Identity/                хранение личности и рукопожатия
+    Identity/                личность, рукопожатия, ключи Secure Enclave
     Network/                 есть ли сеть
     Networking/              фоновые загрузки и докачка после сворачивания
   Persistence/     Core Data: два хранилища, см. ADR 002
