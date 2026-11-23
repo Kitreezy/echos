@@ -64,6 +64,10 @@ final class AppCoordinator {
 
     private let root: DiscoveryViewController
 
+    /// Кэш отрисованных мозаик общий с чатом: prefetch и ячейки готовят и
+    /// берут одни и те же картинки.
+    let mosaicCache: MosaicChatImageCache
+
     /// Маршрут, пришедший раньше готовности: хранилища подключаются в
     /// `startDiscovery()`, а ссылка или нажатие в поиске может прийти раньше.
     /// Ждёт здесь, а не в экране, — экран про pending больше не знает.
@@ -77,8 +81,9 @@ final class AppCoordinator {
     /// два чата поверх друг друга.
     private var openConversationTask: Task<Void, Never>?
 
-    init() {
-        viewModel = ChatViewModel()
+    init(viewModel: ChatViewModel, mosaicCache: MosaicChatImageCache) {
+        self.viewModel = viewModel
+        self.mosaicCache = mosaicCache
         root = DiscoveryViewController(viewModel: viewModel)
         root.coordinator = self
     }
@@ -138,7 +143,7 @@ final class AppCoordinator {
                 return
             }
 
-            let chat = ChatViewController(viewModel: viewModel)
+            let chat = ChatViewController(viewModel: viewModel, cache: mosaicCache)
             chat.focusedMessageID = messageID
             navigationController.pushViewController(chat, animated: true)
             openConversationTask = nil

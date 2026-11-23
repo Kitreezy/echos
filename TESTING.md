@@ -342,6 +342,16 @@ Spotlight в маршрут, очередь до `markReady()`, отмена п�
 режим в тестах не имитируется: `ProcessInfo.thermalState` read-only,
 поэтому сервису передаётся режим напрямую через `applyThermalState`.
 
+## Корень композиции
+
+DI без фреймворка: `CompositionRoot` собирает граф явно, решение об
+окружении (`AppEnvironment`) принимает он, а не фабрика в глубине VM.
+`CompositionRootTests` проверяют: uiTests-граф получает `DemoTransport`,
+продовый — нет, координатор делит с графом модель и кэш.
+`MosaicCacheInjectionTests` — даблики без синглтонов: prefetch чата и
+`MessageCell` кладут отрисованные мозаики в инъектированный экземпляр, а
+`shared` остаётся чистым.
+
 ## Что дальше
 
 - **Phase 3** — связка двух `ChatViewModel`. Два «устройства» в одном процессе

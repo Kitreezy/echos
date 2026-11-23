@@ -60,7 +60,9 @@ final class MosaicChatImageCache {
 
     private let images = NSCache<NSString, UIImage>()
 
-    private init() {
+    /// Создаёт любой владелец графа: корень композиции, тест со своим
+    /// экземпляром. `shared` остаётся только как дефолт для ячеек вне чата.
+    init() {
         images.countLimit = 300
     }
 

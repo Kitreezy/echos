@@ -208,6 +208,10 @@ final class ChatViewController: UIViewController {
     private var typingDots = 0
     private var currentTypingPeer: String?
 
+    /// Кэш отрисованных мозаик. Получаем извне: координатор передаёт общий
+    /// на граф экземпляр, тест — свой, без прикосновения к синглтону.
+    private let mosaicCache: MosaicChatImageCache
+
     // MARK: - Мозаика
 
     /// Черновик живёт, пока его не отправили или не очистили: закрыть
@@ -243,8 +247,9 @@ final class ChatViewController: UIViewController {
     /// Сообщение, которое показать при открытии, — найденное поиском.
     var focusedMessageID: UUID?
 
-    init(viewModel: ChatViewModel) {
+    init(viewModel: ChatViewModel, cache: MosaicChatImageCache = .shared) {
         self.sharedViewModel = viewModel
+        self.mosaicCache = cache
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -1358,6 +1363,7 @@ extension ChatViewController: UITableViewDataSource {
             return UITableViewCell()
         }
         let message = viewModel.messages[indexPath.row]
+        cell.mosaicCache = mosaicCache
         cell.configure(with: message, quote: viewModel.quote(for: message))
         if let id = message.replyTo?.id {
             cell.onQuoteTap = { [weak self] in
@@ -1387,10 +1393,10 @@ extension ChatViewController: UITableViewDataSourcePrefetching {
             }
 
             if let mosaic = viewModel.messages[indexPath.row].mosaic,
-               MosaicChatImageCache.shared.image(for: mosaic) == nil,
+               mosaicCache.image(for: mosaic) == nil,
                prefetchTasks[indexPath] == nil {
                 prefetchTasks[indexPath] = Task { [weak self] in
-                    await MosaicChatImageCache.shared.prepare(mosaic)
+                    await self?.mosaicCache.prepare(mosaic)
                     self?.prefetchTasks[indexPath] = nil
                 }
             }

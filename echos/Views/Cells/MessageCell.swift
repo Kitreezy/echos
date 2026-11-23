@@ -81,6 +81,11 @@ final class MessageCell: UITableViewCell {
         return view
     }()
 
+    /// Откуда брать отрисованные мозаики. Контроллер чата присваивает общий
+    /// на граф экземпляр; дефолт — синглтон, чтобы ячейка не падала вне
+    /// чата (превью, будущие экраны).
+    var mosaicCache: MosaicChatImageCache = .shared
+
     /// Текст или мозаика — что-то одно; скрытое в стеке не занимает места.
     private let body: UIStackView = {
         let stack = UIStackView()
@@ -201,11 +206,11 @@ final class MessageCell: UITableViewCell {
             // Prefetch обычно успевает первым. Если нет — рисуем один раз
             // синхронно, и следующая показанная копия возьмёт картинку из
             // кэша.
-            if let cached = MosaicChatImageCache.shared.image(for: mosaic) {
+            if let cached = mosaicCache.image(for: mosaic) {
                 mosaicImageView.image = cached
             } else {
                 let rendered = MosaicChatImageRenderer.render(mosaic)
-                MosaicChatImageCache.shared.insert(rendered, for: mosaic)
+                mosaicCache.insert(rendered, for: mosaic)
                 mosaicImageView.image = rendered
             }
             // VoiceOver видит мозаику одним элементом, а не набором клеток:
