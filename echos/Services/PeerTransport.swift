@@ -98,6 +98,11 @@ protocol PeerTransport: AnyObject {
     func disconnect(from address: String)
     func disconnectAll()
 
+    /// Пересоздать единое соединение немедленно. Нужно внешнему наблюдателю
+    /// сети: при смене Wi-Fi ↔ LTE старое TCP уже мертво, хотя сокет об этом
+    /// ещё не сообщил. У транспортов без единого соединения — пустышка.
+    func reconnect()
+
     // MARK: - Messaging
 
     /// Всё адресное: переписка один на один и есть один на один, а не
@@ -129,6 +134,10 @@ extension PeerTransport {
     var connectionStateUpdates: AsyncStream<TransportConnectionState> {
         AsyncStream { $0.finish() }
     }
+
+    /// MultipeerConnectivity держит сессии с устройствами отдельно и сам
+    /// справляется со сменой радиоканала — внешний reconnect ему не нужен.
+    func reconnect() {}
 }
 
 extension MultipeerService: PeerTransport {}
@@ -164,12 +173,9 @@ enum PeerTransportFactory {
 
     @MainActor
     static func make() -> any PeerTransport {
-        #if DEBUG
-        // UI-тесты: собеседники и переписка — декорация, см. UITestMode.
-        if UITestMode.isActive {
-            return DemoTransport()
-        }
-        #endif
+        // Решение об окружении (UI-тесты → DemoTransport) принимает корень
+        // композиции, подменяя ChatViewModel.makeTransport; здесь — только
+        // продовый выбор по настройкам.
         switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
         case .relay(let url):
             Logger.network.notice("Transport: nearby + relay \(url, privacy: .public)")

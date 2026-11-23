@@ -10,6 +10,7 @@
 //  `WebSocketTransport`: дождаться вызова, подписать, отправить.
 //
 
+import EchosCrypto
 import Foundation
 @testable import echos
 

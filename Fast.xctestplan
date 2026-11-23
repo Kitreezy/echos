@@ -6,7 +6,10 @@
       "options": {}
     }
   ],
-  "defaultOptions": {},
+  "defaultOptions": {
+    "language": "ru",
+    "region": "RU"
+  },
   "testTargets": [
     {
       "target": {
@@ -16,7 +19,8 @@
       },
       "skippedTags": {
         "tags": [
-          "network"
+          "network",
+          "fuzz"
         ]
       }
     },
@@ -28,7 +32,8 @@
       },
       "skippedTags": {
         "tags": [
-          "network"
+          "network",
+          "fuzz"
         ]
       }
     }

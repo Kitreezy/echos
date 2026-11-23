@@ -80,7 +80,20 @@ final class LoopbackTransport: PeerTransport {
         strokeBroadcast.subscriberCount
     }
 
-    /// Один вызов `consumeTransportEvents()` подписывается на четыре потока.
+    /// Сколько живых подписок на все потоки сейчас. Отменённые задачи
+    /// снимают подписки; утечка оставила бы их висеть после смерти
+    /// подписчика — на этом и строятся тесты на отмену.
+    var liveSubscriptions: Int {
+        peerBroadcast.subscriberCount
+            + messageBroadcast.subscriberCount
+            + typingBroadcast.subscriberCount
+            + strokeBroadcast.subscriberCount
+            + wallRequestBroadcast.subscriberCount
+            + wallStateBroadcast.subscriberCount
+            + connectionStateBroadcast.subscriberCount
+    }
+
+    /// Один конвейер ViewModel подписывается на четыре потока.
     var pipelinesConnected: Int {
         subscriptionsCreated / 4
     }
@@ -91,6 +104,7 @@ final class LoopbackTransport: PeerTransport {
     private(set) var sentTypingEvents: [(event: TypingEvent, recipient: String)] = []
     private(set) var sentStrokes: [(stroke: Stroke, recipient: String)] = []
     private(set) var isDiscovering = false
+    private(set) var reconnectCount = 0
 
     var sentTypingTypes: [TypingEventType] {
         sentTypingEvents.map(\.event.type)
@@ -137,6 +151,10 @@ final class LoopbackTransport: PeerTransport {
 
     func stopDeviceDiscovery() {
         isDiscovering = false
+    }
+
+    func reconnect() {
+        reconnectCount += 1
     }
 
     func connectToPeer(address: String) async throws {}

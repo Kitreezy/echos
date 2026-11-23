@@ -113,11 +113,11 @@ final class OnDeviceDigester: Digesting {
         case .unavailable(.deviceNotEligible):
             return .never
         case .unavailable(.appleIntelligenceNotEnabled):
-            return .notNow("Пересказ делает Apple Intelligence прямо на телефоне. Включите его в Настройках → Apple Intelligence и Siri.")
+            return .notNow(String(localized: "Пересказ делает Apple Intelligence прямо на телефоне. Включите его в Настройках → Apple Intelligence и Siri."))
         case .unavailable(.modelNotReady):
-            return .notNow("Модель ещё загружается на телефон. Попробуйте чуть позже.")
+            return .notNow(String(localized: "Модель ещё загружается на телефон. Попробуйте чуть позже."))
         case .unavailable:
-            return .notNow("Модель на устройстве сейчас недоступна.")
+            return .notNow(String(localized: "Модель на устройстве сейчас недоступна."))
         }
     }
 
@@ -144,8 +144,10 @@ final class OnDeviceDigester: Digesting {
         case (.supported, .supported), (.supported, .installed), (.installed, .supported):
             return .download(from: language, via: pivot)
         default:
-            return .impossible("Модель на устройстве не знает языка этой переписки (\(language.displayName)), "
-                + "и перевести его на телефоне нельзя. Список языков задаёт Apple.")
+            return .impossible(String(localized: """
+                Модель на устройстве не знает языка этой переписки (\(language.displayName)), \
+                и перевести его на телефоне нельзя. Список языков задаёт Apple.
+                """))
         }
     }
 
@@ -181,7 +183,7 @@ final class OnDeviceDigester: Digesting {
                     // службы модели долетает сырым NSError. «Доступна» в
                     // `availability` ещё не значит «ответит».
                     Logger.digest.error("Model failed: \(error)")
-                    continuation.finish(throwing: DigestFailure(message: "Модель на устройстве не ответила. Попробуйте позже."))
+                    continuation.finish(throwing: DigestFailure(message: String(localized: "Модель на устройстве не ответила. Попробуйте позже.")))
                 }
             }
             // Закрыли экран — модель останавливается, а не дописывает
@@ -295,21 +297,21 @@ final class OnDeviceDigester: Digesting {
     static func explain(_ error: LanguageModelSession.GenerationError) -> String {
         switch error {
         case .unsupportedLanguageOrLocale:
-            return "Модель на устройстве не работает с языком этой переписки: список языков задаёт Apple."
+            return String(localized: "Модель на устройстве не работает с языком этой переписки: список языков задаёт Apple.")
         case .guardrailViolation, .refusal:
-            return "Модель отказалась пересказывать эту переписку: встроенный фильтр Apple счёл её содержание чувствительным."
+            return String(localized: "Модель отказалась пересказывать эту переписку: встроенный фильтр Apple счёл её содержание чувствительным.")
         case .exceededContextWindowSize:
-            return "Переписка не поместилась в память модели."
+            return String(localized: "Переписка не поместилась в память модели.")
         case .assetsUnavailable:
-            return "Модель сейчас недоступна — возможно, ещё загружается. Попробуйте позже."
+            return String(localized: "Модель сейчас недоступна — возможно, ещё загружается. Попробуйте позже.")
         case .rateLimited:
-            return "Система притормозила модель. Попробуйте ещё раз."
+            return String(localized: "Система притормозила модель. Попробуйте ещё раз.")
         case .concurrentRequests:
-            return "Модель занята предыдущим пересказом."
+            return String(localized: "Модель занята предыдущим пересказом.")
         case .decodingFailure, .unsupportedGuide:
-            return "Модель ответила не по форме. Попробуйте ещё раз."
+            return String(localized: "Модель ответила не по форме. Попробуйте ещё раз.")
         @unknown default:
-            return "Пересказ не получился: \(error.localizedDescription)"
+            return String(localized: "Пересказ не получился: \(error.localizedDescription)")
         }
     }
 }

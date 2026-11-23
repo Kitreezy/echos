@@ -156,6 +156,11 @@ final class PersistenceController {
                                          in directory: URL) -> NSPersistentStoreDescription {
         let description = NSPersistentStoreDescription(url: directory.appending(path: file))
         description.configuration = configuration
+        // Аддитивные изменения схемы (новое опциональное поле) Core Data
+        // переносит lightweight-миграцией. Без этих флагов файл первой
+        // версии просто не откроется: об ошибке узнаем в fatalError ниже.
+        description.setOption(true as NSNumber, forKey: NSMigratePersistentStoresAutomaticallyOption)
+        description.setOption(true as NSNumber, forKey: NSInferMappingModelAutomaticallyOption)
         description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         return description

@@ -6,8 +6,9 @@
 //
 //  Именно ради этого мозаика и ходит сеткой, а не текстом: клетки здесь
 //  одного размера у обоих собеседников, и рисунок не разъезжается.
-//  Одна и та же вью показывает готовую мозаику в чате и рисуемую — в
-//  наборе; в наборе ещё и принимает нажатия по клеткам.
+//  Здесь мозаика собирается из клеток, когда с ней работают: в наборе и
+//  черновике. В ленте чата готовая мозаика рисуется заранее в картинку —
+//  см. `MosaicChatImageCache`.
 //
 
 import UIKit
@@ -73,8 +74,8 @@ final class MosaicView: UIView, UIGestureRecognizerDelegate {
         // клеток». Клетки по отдельности — это эмодзи за эмодзи, и рисунок из
         // них на слух не сложить.
         isAccessibilityElement = true
-        accessibilityLabel = "мозаика \(mosaic.columns) на \(mosaic.rows)"
-        accessibilityValue = "закрашено клеток: \(mosaic.cells.filter { !$0.isEmpty }.count)"
+        accessibilityLabel = String(localized: "мозаика \(mosaic.columns) на \(mosaic.rows)")
+        accessibilityValue = String(localized: "закрашено клеток: \(mosaic.cells.filter { !$0.isEmpty }.count)")
 
         // Та же форма — только перекрасить клетки: в наборе это каждое
         // нажатие, и пересобирать сетку ради одного знака незачем.

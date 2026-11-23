@@ -1,0 +1,1953 @@
+{
+  "sourceLanguage": "ru",
+  "strings": {
+    "%@ · не отправлено · повторить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · not sent · retry"
+          }
+        }
+      }
+    },
+    "%@ · отправляется": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · sending"
+          }
+        }
+      }
+    },
+    "%@ печатает": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is typing"
+          }
+        }
+      }
+    },
+    "%@ хочет подключиться к вам. Разрешить?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wants to connect to you. Allow?"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "shouldTranslate": false
+    },
+    "%lld непрочитанных": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld unread"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld unread"
+                }
+              }
+            }
+          }
+        },
+        "ru": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld непрочитанных"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld непрочитанных"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld непрочитанное"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld непрочитанного"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Keychain вернул ошибку %d": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keychain returned error %d"
+          }
+        }
+      }
+    },
+    "Keychain недоступен до первой разблокировки": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keychain is unavailable until the first unlock"
+          }
+        }
+      }
+    },
+    "MCSession не создана": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCSession was not created"
+          }
+        }
+      }
+    },
+    "echos нужен доступ к фото, чтобы сохранить картинку. Его можно дать в настройках телефона.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "echos needs access to Photos to save the picture. You can allow it in the phone's Settings."
+          }
+        }
+      }
+    },
+    "Без имени": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No name"
+          }
+        }
+      }
+    },
+    "В конверте нет полезной нагрузки": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The envelope has no payload"
+          }
+        }
+      }
+    },
+    "Все сообщения со всеми устройствами будут удалены.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All messages with all devices will be deleted."
+          }
+        }
+      }
+    },
+    "Все чаты": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All chats"
+          }
+        }
+      }
+    },
+    "Вы": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You"
+          }
+        }
+      }
+    },
+    "Вы будете отключены от '%@'. История сохранится.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You will be disconnected from '%@'. The history will be kept."
+          }
+        }
+      }
+    },
+    "Вы действительно хотите очистить весь чат с %@?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Do you really want to clear the whole chat with %@?"
+          }
+        }
+      }
+    },
+    "Вы → %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You → %@"
+          }
+        }
+      }
+    },
+    "Главное": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key points"
+          }
+        }
+      }
+    },
+    "Готово": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "Договорились": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agreed"
+          }
+        }
+      }
+    },
+    "Ждут ответа": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Awaiting reply"
+          }
+        }
+      }
+    },
+    "Загрузка идёт в системе и продолжится, даже если закрыть этот экран. Если она стоит на месте — проверьте её в Настройки → Приложения → Перевод → Языки: там видно, качается ли она вообще.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The download runs in the system and continues even if you close this screen. If it seems stuck, check Settings → Apps → Translate → Languages: it shows whether anything is downloading at all."
+          }
+        }
+      }
+    },
+    "Загрузка чатов...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading chats..."
+          }
+        }
+      }
+    },
+    "Здесь пусто. Сюда рисуют другие": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empty for now. Others draw here"
+          }
+        }
+      }
+    },
+    "Имя": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "Имя увидят те, кто окажется рядом.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "People nearby will see this name."
+          }
+        }
+      }
+    },
+    "Искать заново": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search again"
+          }
+        }
+      }
+    },
+    "Ищем устройства...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking for devices..."
+          }
+        }
+      }
+    },
+    "Как вас зовут?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What's your name?"
+          }
+        }
+      }
+    },
+    "Как держать связь": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How to stay in touch"
+          }
+        }
+      }
+    },
+    "Кто рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Who's nearby"
+          }
+        }
+      }
+    },
+    "Ладно": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "Меню": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu"
+          }
+        }
+      }
+    },
+    "Модель ещё загружается на телефон. Попробуйте чуть позже.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model is still downloading to the phone. Try again a little later."
+          }
+        }
+      }
+    },
+    "Модель занята предыдущим пересказом.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model is busy with the previous summary."
+          }
+        }
+      }
+    },
+    "Модель может ошибаться — сверяйтесь с сообщениями.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model can make mistakes — check against the messages."
+          }
+        }
+      }
+    },
+    "Модель на устройстве не знает языка переписки (%@). Пересказ получится через перевод на телефоне, но для него нужны языковые файлы.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The on-device model doesn't know the language of this chat (%@). A summary is possible via on-device translation, but it needs language files."
+          }
+        }
+      }
+    },
+    "Модель на устройстве не знает языка этой переписки (%@), и перевести его на телефоне нельзя. Список языков задаёт Apple.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The on-device model doesn't know the language of this chat (%@), and it can't be translated on the phone. Apple sets the list of languages."
+          }
+        }
+      }
+    },
+    "Модель на устройстве не ответила. Попробуйте позже.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The on-device model didn't respond. Try again later."
+          }
+        }
+      }
+    },
+    "Модель на устройстве не работает с языком этой переписки: список языков задаёт Apple.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The on-device model doesn't work with the language of this chat: Apple sets the list of languages."
+          }
+        }
+      }
+    },
+    "Модель на устройстве сейчас недоступна.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The on-device model is unavailable right now."
+          }
+        }
+      }
+    },
+    "Модель не знает языка переписки, поэтому она переведена на %@ язык, а пересказ — обратно; перевод тоже сделан на телефоне.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model doesn't know the language of this chat, so it was translated into %@ and the summary back; the translation was also done on the phone."
+          }
+        }
+      }
+    },
+    "Модель не нашла в пропущенном, что пересказать.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model found nothing to summarize in what you missed."
+          }
+        }
+      }
+    },
+    "Модель ответила не по форме. Попробуйте ещё раз.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model answered in the wrong format. Try again."
+          }
+        }
+      }
+    },
+    "Модель отказалась пересказывать эту переписку: встроенный фильтр Apple счёл её содержание чувствительным.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model declined to summarize this chat: Apple's built-in filter considered its content sensitive."
+          }
+        }
+      }
+    },
+    "Модель сейчас недоступна — возможно, ещё загружается. Попробуйте позже.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model is unavailable right now — it may still be downloading. Try again later."
+          }
+        }
+      }
+    },
+    "Мозаика": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosaic"
+          }
+        }
+      }
+    },
+    "Моя стена": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My wall"
+          }
+        }
+      }
+    },
+    "На связи %lld — посмотреть": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online %lld — view"
+          }
+        }
+      }
+    },
+    "На этом устройстве перевод недоступен.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translation is unavailable on this device."
+          }
+        }
+      }
+    },
+    "На этом устройстве пересказ недоступен.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summaries are unavailable on this device."
+          }
+        }
+      }
+    },
+    "Назад": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        }
+      }
+    },
+    "Нарисуйте что-нибудь": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Draw something"
+          }
+        }
+      }
+    },
+    "Настройки": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "Не отвечать": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't reply"
+          }
+        }
+      }
+    },
+    "Не подключён": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected"
+          }
+        }
+      }
+    },
+    "Не сохранилось": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not saved"
+          }
+        }
+      }
+    },
+    "Не удалось отправить сообщение": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't send the message"
+          }
+        }
+      }
+    },
+    "Не удалось очистить историю": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't clear the history"
+          }
+        }
+      }
+    },
+    "Недоступен": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable"
+          }
+        }
+      }
+    },
+    "Некорректный адрес релея": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid relay address"
+          }
+        }
+      }
+    },
+    "Нет ключа переписки с %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No chat key for %@"
+          }
+        }
+      }
+    },
+    "Нет ключа переписки с этим устройством": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No chat key for this device"
+          }
+        }
+      }
+    },
+    "Нет ответа за %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No response within %@"
+          }
+        }
+      }
+    },
+    "Нет подключённых устройств": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connected devices"
+          }
+        }
+      }
+    },
+    "Нет сети": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No network"
+          }
+        }
+      }
+    },
+    "Нет соединения с релеем": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No connection to the relay"
+          }
+        }
+      }
+    },
+    "Нет сообщений\nНачни общаться!": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No messages\nStart talking!"
+          }
+        }
+      }
+    },
+    "Нет чатов": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No chats"
+          }
+        }
+      }
+    },
+    "Новое подключение": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New connection"
+          }
+        }
+      }
+    },
+    "Ответить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply"
+          }
+        }
+      }
+    },
+    "Отклонить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decline"
+          }
+        }
+      }
+    },
+    "Отключиться": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        }
+      }
+    },
+    "Отключиться?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect?"
+          }
+        }
+      }
+    },
+    "Отмена": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "Отправить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send"
+          }
+        }
+      }
+    },
+    "Отправить снова": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send again"
+          }
+        }
+      }
+    },
+    "Очистить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        }
+      }
+    },
+    "Очистить всю историю": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear all history"
+          }
+        }
+      }
+    },
+    "Очистить всю историю?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear all history?"
+          }
+        }
+      }
+    },
+    "Очистить историю": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear history"
+          }
+        }
+      }
+    },
+    "Очистить чат?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear chat?"
+          }
+        }
+      }
+    },
+    "Ошибка": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        }
+      }
+    },
+    "Перевод на устройстве не получился.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-device translation failed."
+          }
+        }
+      }
+    },
+    "Перевожу переписку для модели…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translating the chat for the model…"
+          }
+        }
+      }
+    },
+    "Перевожу пересказ обратно…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translating the summary back…"
+          }
+        }
+      }
+    },
+    "Переписка в поиске iPhone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats in iPhone Search"
+          }
+        }
+      }
+    },
+    "Переписка длинная, читаю частями: %lld из %lld…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Long chat, reading in parts: %lld of %lld…"
+          }
+        }
+      }
+    },
+    "Переписка зашифрована между вашими устройствами: сервер её переносит, но прочитать не может.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The chat is encrypted between your devices: the server carries it but can't read it."
+          }
+        }
+      }
+    },
+    "Переписка не поместилась в память модели.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The chat didn't fit into the model's memory."
+          }
+        }
+      }
+    },
+    "Переподключаемся...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting..."
+          }
+        }
+      }
+    },
+    "Пересказ делает Apple Intelligence прямо на телефоне. Включите его в Настройках → Apple Intelligence и Siri.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summaries are made by Apple Intelligence right on the phone. Turn it on in Settings → Apple Intelligence & Siri."
+          }
+        }
+      }
+    },
+    "Пересказ не получился.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The summary failed."
+          }
+        }
+      }
+    },
+    "Пересказ не получился: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The summary failed: %@"
+          }
+        }
+      }
+    },
+    "Пересказ составлен на этом телефоне. Переписка никуда не отправлялась.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The summary was made on this phone. The chat wasn't sent anywhere."
+          }
+        }
+      }
+    },
+    "Пишу пересказ…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Writing the summary…"
+          }
+        }
+      }
+    },
+    "Пишу…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Writing…"
+          }
+        }
+      }
+    },
+    "Поделиться диагностикой": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share diagnostics"
+          }
+        }
+      }
+    },
+    "Поделиться картинкой": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share picture"
+          }
+        }
+      }
+    },
+    "Подключение...": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting..."
+          }
+        }
+      }
+    },
+    "Подключитесь к устройствам, чтобы начать общение.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to devices to start talking."
+          }
+        }
+      }
+    },
+    "Подключён": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        }
+      }
+    },
+    "Поиск остановлен": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search stopped"
+          }
+        }
+      }
+    },
+    "Пока ни слова": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No words yet"
+          }
+        }
+      }
+    },
+    "Пока никого на связи": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No one online yet"
+          }
+        }
+      }
+    },
+    "Пока никого рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No one nearby yet"
+          }
+        }
+      }
+    },
+    "Пока никого.\nЭкран сам оживёт, когда кто-нибудь появится.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No one yet.\nThe screen will come alive when someone shows up."
+          }
+        }
+      }
+    },
+    "Понятно": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Got it"
+          }
+        }
+      }
+    },
+    "Принять": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accept"
+          }
+        }
+      }
+    },
+    "Пропущенное": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missed"
+          }
+        }
+      }
+    },
+    "Разговоров пока нет.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No conversations yet."
+          }
+        }
+      }
+    },
+    "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто на связи.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No conversations yet.\nTap the circle to see who's online."
+          }
+        }
+      }
+    },
+    "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто рядом.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No conversations yet.\nTap the circle to see who's nearby."
+          }
+        }
+      }
+    },
+    "Рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby"
+          }
+        }
+      }
+    },
+    "Рядом %lld — посмотреть": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby %lld — view"
+          }
+        }
+      }
+    },
+    "Рядом и через сервер": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby and via server"
+          }
+        }
+      }
+    },
+    "Рядом — напрямую между устройствами, без интернета, метров на сто. Через сервер — с кем угодно, где есть сеть; кто рядом, останется рядом.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby — directly between devices, no internet, within about a hundred meters. Via server — with anyone who has a network; people nearby stay nearby."
+          }
+        }
+      }
+    },
+    "Рядом: %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby: %lld"
+          }
+        }
+      }
+    },
+    "Связи": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connections"
+          }
+        }
+      }
+    },
+    "Система притормозила модель. Попробуйте ещё раз.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system throttled the model. Try again."
+          }
+        }
+      }
+    },
+    "Система скачивает языки для перевода (%@ и язык модели). Пересказ начнётся сам, как только они будут готовы.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system is downloading translation languages (%@ and the model's language). The summary will start on its own once they're ready."
+          }
+        }
+      }
+    },
+    "Скачать языки": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download languages"
+          }
+        }
+      }
+    },
+    "Скопировать": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        }
+      }
+    },
+    "Скопировать как текст": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy as text"
+          }
+        }
+      }
+    },
+    "Собеседник": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact"
+          }
+        }
+      }
+    },
+    "Сообщение": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        }
+      }
+    },
+    "Сохранить картинку": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save picture"
+          }
+        }
+      }
+    },
+    "Сохранить мозаику": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save mosaic"
+          }
+        }
+      }
+    },
+    "Стена '%@'": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@'s wall"
+          }
+        }
+      }
+    },
+    "Стена собеседника": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact's wall"
+          }
+        }
+      }
+    },
+    "Стереть": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erase"
+          }
+        }
+      }
+    },
+    "Только рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearby only"
+          }
+        }
+      }
+    },
+    "У собеседника на главном экране свой адрес. Сверьте: он должен совпасть с тем, что показывает ваш телефон в его чате. Разные адреса — значит, между вами кто-то есть.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your contact sees their own address on their home screen. Compare: it must match what your phone shows in their chat. Different addresses mean someone is between you."
+          }
+        }
+      }
+    },
+    "Убрать": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        }
+      }
+    },
+    "Удалить всё": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete all"
+          }
+        }
+      }
+    },
+    "Устройства поблизости": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Devices nearby"
+          }
+        }
+      }
+    },
+    "Устройство не найдено": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device not found"
+          }
+        }
+      }
+    },
+    "Чат в echos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat in echos"
+          }
+        }
+      }
+    },
+    "Чат с '%@'": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat with '%@'"
+          }
+        }
+      }
+    },
+    "Читаю %lld сообщений от %@…": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Reading %lld message from %@…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Reading %lld messages from %@…"
+                }
+              }
+            }
+          }
+        },
+        "ru": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Читаю %lld сообщения от %@…"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Читаю %lld сообщений от %@…"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Читаю %lld сообщение от %@…"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Читаю %lld сообщения от %@…"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Что я пропустил": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What did I miss"
+          }
+        }
+      }
+    },
+    "Это имя увидят те, кто окажется рядом.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "People nearby will see this name."
+          }
+        }
+      }
+    },
+    "Языки для перевода не скачались. Их можно скачать и вручную: Настройки → Приложения → Перевод → Языки.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translation languages didn't download. You can download them manually: Settings → Apps → Translate → Languages."
+          }
+        }
+      }
+    },
+    "адрес · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "address · %@"
+          }
+        }
+      }
+    },
+    "адрес скопирован": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "address copied"
+          }
+        }
+      }
+    },
+    "вещи": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "objects"
+          }
+        }
+      }
+    },
+    "впервые": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "first time"
+          }
+        }
+      }
+    },
+    "дорога": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "travel"
+          }
+        }
+      }
+    },
+    "еда": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "food"
+          }
+        }
+      }
+    },
+    "есть черновик": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "draft saved"
+          }
+        }
+      }
+    },
+    "ещё": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "more"
+          }
+        }
+      }
+    },
+    "жесты": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gestures"
+          }
+        }
+      }
+    },
+    "закрашено клеток: %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cells filled: %lld"
+          }
+        }
+      }
+    },
+    "залить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fill"
+          }
+        }
+      }
+    },
+    "зашифровано · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "encrypted · %@"
+          }
+        }
+      }
+    },
+    "звери": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "animals"
+          }
+        }
+      }
+    },
+    "звёзды": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stars"
+          }
+        }
+      }
+    },
+    "имя знакомое, человек другой": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "familiar name, different person"
+          }
+        }
+      }
+    },
+    "квадраты": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "squares"
+          }
+        }
+      }
+    },
+    "круги": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "circles"
+          }
+        }
+      }
+    },
+    "кто на связи": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "who's online"
+          }
+        }
+      }
+    },
+    "кто рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "who's nearby"
+          }
+        }
+      }
+    },
+    "ластик": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "eraser"
+          }
+        }
+      }
+    },
+    "лица": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "faces"
+          }
+        }
+      }
+    },
+    "мозаика": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosaic"
+          }
+        }
+      }
+    },
+    "мозаика %lld на %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosaic %lld by %lld"
+          }
+        }
+      }
+    },
+    "мозаики": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mosaics"
+          }
+        }
+      }
+    },
+    "моя стена": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "my wall"
+          }
+        }
+      }
+    },
+    "на связи": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "online"
+          }
+        }
+      }
+    },
+    "не на связи": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "offline"
+          }
+        }
+      }
+    },
+    "недавние": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "recent"
+          }
+        }
+      }
+    },
+    "очистить": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "clear"
+          }
+        }
+      }
+    },
+    "палитра открыта": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "palette open"
+          }
+        }
+      }
+    },
+    "потеряны": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lost"
+          }
+        }
+      }
+    },
+    "природа": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nature"
+          }
+        }
+      }
+    },
+    "раньше — %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "formerly %@"
+          }
+        }
+      }
+    },
+    "рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nearby"
+          }
+        }
+      }
+    },
+    "свой": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "custom"
+          }
+        }
+      }
+    },
+    "связь · рядом": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "link · nearby"
+          }
+        }
+      }
+    },
+    "связь · через сервер": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "link · via server"
+          }
+        }
+      }
+    },
+    "сердца": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hearts"
+          }
+        }
+      }
+    },
+    "символы": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "symbols"
+          }
+        }
+      }
+    },
+    "собеседник": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "contact"
+          }
+        }
+      }
+    },
+    "стрелка отправит мозаику": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "the arrow will send the mosaic"
+          }
+        }
+      }
+    },
+    "черновик": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "draft"
+          }
+        }
+      }
+    },
+    "черновик · %lld из %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "draft · %lld of %lld"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

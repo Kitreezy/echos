@@ -82,7 +82,7 @@ struct PeersNetworkView: View {
     }
 
     @ViewBuilder
-    private func group(_ title: String, peers: [Peer]) -> some View {
+    private func group(_ title: LocalizedStringKey, peers: [Peer]) -> some View {
         if !peers.isEmpty {
             Text(title)
                 .font(Typography.microText)

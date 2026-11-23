@@ -36,11 +36,23 @@ final class DemoTransport: PeerTransport {
     static let bob = Peer(address: "demo-bob", displayName: "Боб", status: .connected, rssi: -50, distance: 8)
     static let anna = Peer(address: "demo-anna", displayName: "Аня", status: .connected, rssi: -64, distance: 20)
 
+    /// Для Instruments и проверки на устройстве: `-echos_seed_messages 5000`
+    /// наполняет чат Боба длинной историей, часть сообщений — мозаиками.
+    static var requestedMessageCount: Int? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-echos_seed_messages"),
+              arguments.count > index + 1,
+              let count = Int(arguments[index + 1]) else {
+            return nil
+        }
+        return count
+    }
+
     private var seeded = false
 
     func startDeviceDiscovery() {
         peerBroadcast.yield([Self.bob, Self.anna])
-        guard !seeded else {
+        guard !seeded, Self.requestedMessageCount == nil else {
             return
         }
         seeded = true
@@ -53,18 +65,79 @@ final class DemoTransport: PeerTransport {
     }
 
     private func seedConversation() {
-        let heart = Mosaic(columns: 3, rows: 3,
-                           cells: ["", "❤️", "", "❤️", "❤️", "❤️", "", "❤️", ""])!
-        let incoming: [(Peer, Message)] = [
-            (Self.bob, Message(text: "Привет! Ты завтра на фестивале?", isFromMe: false)),
-            (Self.bob, Message(text: "Встречаемся у главной сцены в семь", isFromMe: false)),
-            (Self.bob, Message(text: heart.text, mosaic: heart, isFromMe: false)),
-            (Self.anna, Message(text: "Скинула фото со вчерашнего концерта", isFromMe: false))
-        ]
-        for (peer, message) in incoming {
-            messageBroadcast.yield(Addressed(sender: peer.address,
+        for message in Self.demoMessages() {
+            guard let peerAddress = message.peerAddress,
+                  let peer = [Self.bob, Self.anna].first(where: { $0.address == peerAddress }) else {
+                continue
+            }
+            messageBroadcast.yield(Addressed(sender: peerAddress,
                                              value: MessagePayload(from: message, senderName: peer.displayName)))
         }
+    }
+
+    /// Короткая демонстрационная переписка и начало длинной. Адрес стоит в
+    /// самих сообщениях: пакетный сценарий пишет их прямо в хранилище, минуя
+    /// транспорт, и восстанавливать адрес будет некому.
+    static func demoMessages() -> [Message] {
+        let heart = Mosaic(columns: 3, rows: 3,
+                           cells: ["", "❤️", "", "❤️", "❤️", "❤️", "", "❤️", ""])!
+        return [
+            Message(text: "Привет! Ты завтра на фестивале?",
+                    senderName: bob.displayName,
+                    peerAddress: bob.address,
+                    isFromMe: false,
+                    status: .sent),
+            Message(text: "Встречаемся у главной сцены в семь",
+                    senderName: bob.displayName,
+                    peerAddress: bob.address,
+                    isFromMe: false,
+                    status: .sent),
+            Message(text: heart.text,
+                    mosaic: heart,
+                    senderName: bob.displayName,
+                    peerAddress: bob.address,
+                    isFromMe: false,
+                    status: .sent),
+            Message(text: "Скинула фото со вчерашнего концерта",
+                    senderName: anna.displayName,
+                    peerAddress: anna.address,
+                    isFromMe: false,
+                    status: .sent),
+        ]
+    }
+
+    /// Длинная переписка для Instruments. Разные заполненные сетки: одинаковая
+    /// мозаика дала бы кэшу слишком лёгкий сценарий.
+    static func longConversationMessages(count: Int) -> [Message] {
+        let base = demoMessages()
+        let generated = max(0, count - base.count)
+        let start = Date().addingTimeInterval(-Double(generated) * 60)
+        let brushes = ["❤️", "🟦", "🟨", "🟩", "⭐"]
+
+        let extra = (0..<generated).map { index in
+            let timestamp = start.addingTimeInterval(Double(index) * 60)
+            if index.isMultiple(of: 10) {
+                let cells = (0..<9).map { cell in
+                    (cell + index).isMultiple(of: 3) ? brushes[index % brushes.count] : ""
+                }
+                let mosaic = Mosaic(columns: 3, rows: 3, cells: cells)!
+                return Message(text: mosaic.text,
+                               mosaic: mosaic,
+                               senderName: bob.displayName,
+                               peerAddress: bob.address,
+                               isFromMe: index.isMultiple(of: 20),
+                               timestamp: timestamp,
+                               status: .sent)
+            }
+
+            return Message(text: "Сообщение \(index + 1) из длинной переписки",
+                           senderName: bob.displayName,
+                           peerAddress: bob.address,
+                           isFromMe: index.isMultiple(of: 2),
+                           timestamp: timestamp,
+                           status: .sent)
+        }
+        return base + extra
     }
 
     func stopDeviceDiscovery() {}

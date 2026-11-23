@@ -33,3 +33,21 @@ protocol MessageStoring: AnyObject {
 }
 
 extension MessageStore: MessageStoring {}
+
+/// Пакетная загрузка демо-переписки для Instruments. Отдельным протоколом,
+/// чтобы тестовые шпионы сообщений не обязаны были уметь сидировать базу.
+@MainActor
+protocol MessageSeeding: AnyObject {
+    func seedMessages(_ messages: [Message]) async throws
+}
+
+extension MessageStore: MessageSeeding {}
+
+extension SearchIndexedMessageStore: MessageSeeding {
+    func seedMessages(_ messages: [Message]) async throws {
+        guard let store = store as? any MessageSeeding else {
+            return
+        }
+        try await store.seedMessages(messages)
+    }
+}

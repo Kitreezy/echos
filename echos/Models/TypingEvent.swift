@@ -5,6 +5,7 @@
 //  Created by Artem Rodionov on 21.02.2026.
 //
 
+import EchosCrypto
 import Foundation
 
 enum TypingEventType: String, Codable {

@@ -57,6 +57,33 @@ final class MessageStore {
         }
     }
 
+    /// Пакетная загрузка демо-переписки. Один save на всю пачку: 5000
+    /// отдельных сохранений дали бы Instruments сценарий построения данных,
+    /// а не прокрутки.
+    func seedMessages(_ messages: [Message]) async throws {
+        let request: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
+        let existing = Set(try viewContext.fetch(request).compactMap(\.id))
+
+        for message in messages where !existing.contains(message.id) {
+            let entity = MessageEntity(context: viewContext)
+            entity.id = message.id
+            entity.text = message.text
+            entity.mosaic = try message.mosaic.map { try JSONEncoder().encode($0) }
+            entity.reply = try message.replyTo.map { try JSONEncoder().encode($0) }
+            entity.senderName = message.senderName
+            entity.peerAddress = message.peerAddress
+            entity.isFromMe = message.isFromMe
+            entity.isRead = message.isRead
+            entity.myReaction = message.myReaction
+            entity.peerReaction = message.peerReaction
+            entity.timestamp = message.timestamp
+            entity.status = Int16(message.status.rawValue)
+        }
+
+        try viewContext.save()
+        Logger.persistence.notice("Seeded \(messages.count) messages")
+    }
+
     func containsMessage(id: UUID) async throws -> Bool {
         let fetchRequest: NSFetchRequest<MessageEntity> = MessageEntity.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)

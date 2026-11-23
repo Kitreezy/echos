@@ -9,6 +9,7 @@
 //  соединение одно — с сервером; все, кто на нём сейчас есть, доступны сразу.
 //
 
+import EchosCrypto
 import Foundation
 import UIKit
 import OSLog
@@ -283,6 +284,10 @@ final class WebSocketTransport: NSObject {
         clearPeers()
     }
 
+    func reconnect() {
+        client.reconnect()
+    }
+
     // MARK: - Messaging
 
     func sendMessage(_ payload: MessagePayload, to address: String) async throws {
@@ -370,14 +375,22 @@ final class WebSocketTransport: NSObject {
             return challenge
         }
 
-        return await withCheckedContinuation { continuation in
-            challengeWaiter = continuation
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                challengeWaiter = continuation
 
-            // Страховка от вечного ожидания: если вызов не пришёл, соединение
-            // всё равно закроется по таймауту на сервере, и клиент попробует
-            // снова. Ждать здесь дольше смысла нет.
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(5))
+                // Страховка от вечного ожидания: если вызов не пришёл, соединение
+                // всё равно закроется по таймауту на сервере, и клиент попробует
+                // снова. Ждать здесь дольше смысла нет.
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(5))
+                    self?.resumeChallengeWaiter(with: nil)
+                }
+            }
+        } onCancel: {
+            // Ожидание отменили (разрыв соединения, остановка поиска) —
+            // отвечаем сразу, а не досиживаем пятисекундную страховку.
+            Task { @MainActor [weak self] in
                 self?.resumeChallengeWaiter(with: nil)
             }
         }

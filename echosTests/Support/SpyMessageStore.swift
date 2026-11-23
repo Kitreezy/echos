@@ -47,7 +47,10 @@ final class SpyMessageStore: MessageStoring {
         }
     }
 
-    func deleteOldMessages(olderThan days: Int) async throws {}
+    func deleteOldMessages(olderThan days: Int) async throws {
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+        saved.removeAll { $0.timestamp < cutoff }
+    }
 
     func deleteConverstaion(with peerName: String) async throws {
         saved.removeAll { $0.senderName == peerName }

@@ -3,6 +3,21 @@
 ## Структура
 
 ```
+Packages/EchosCrypto/    # Локальный пакет чистого шифрования, без UI и Keychain.
+    Sources/EchosCrypto/
+        DeviceIdentity.swift        # пара ключей личности
+        PeerIdentity.swift          # KeyBundle → проверенный PeerIdentity
+        SessionKey.swift            # эфемерный ключ сессии
+        ConversationCipher.swift    # X25519 + HKDF + AES-GCM
+    Tests/EchosCryptoTests/         # 35 тестов пакета, включая вектор совместимости с Go
+
+Packages/EchosLiveActivityKit/  # Общая модель Live Activity для приложения и виджета.
+    Sources/EchosLiveActivityKit/
+        EchosLiveActivityAttributes.swift  # атрибуты и изменяемое состояние
+
+echosLiveActivity/        # Widget Extension: экран блокировки и Dynamic Island.
+    EchosLiveActivityWidget.swift          # ActivityConfiguration на WidgetKit
+
 echosTests/               # Unit — чистая логика, без I/O. Миллисекунды.
     Support/
         LoopbackTransport.swift   # подставной PeerTransport
@@ -23,11 +38,16 @@ echosTests/               # Unit — чистая логика, без I/O. Ми
     WebSocketClientTests.swift      # клиент против живого сервера
     WebSocketTransportTests.swift   # два «устройства» через один релей
     NetworkAwarenessTests.swift     # пропажа и возврат сети
+    CompositeTransportTests.swift   # слияние каналов и reconnect при смене пути
+    BackgroundDownloadServiceTests.swift  # фоновые загрузки и resume-data
     BadNetworkTests.swift           # сеть есть, но плохая
     DuplicateDeliveryTests.swift    # повторно пришедшее сообщение
     TransportLifecycleTests.swift   # уход в фон и возврат
     Contract/
         WebSocketContractTests.swift  # общий контракт для любого транспорта
+    Fuzz/
+        Fuzzer.swift                # генератор входов с зерном
+        ParserFuzzTests.swift       # разбор на мусоре, план Fuzz
 
 echosIntegrationTests/    # Integration — настоящий Core Data стек в памяти.
     Support/
@@ -51,7 +71,8 @@ Fast идёт вдвое быстрее и годится на каждое со
 Третий план, `Accessibility`, — только UI-тесты, их в первые два не включали:
 они запускают приложение и идут минуты. Четвёртый, `Profiling`, — сценарий
 для Instruments и замер запуска; в остальных планах эти два теста
-пропускаются (подробнее — README, раздел «Профилирование»).
+пропускаются (подробнее — README, раздел «Профилирование»). Пятый, `Fuzz`, —
+разбор на сгенерированных входах, о нём ниже.
 
 План `echos` собирает покрытие таргета приложения, и CI проверяет его порогом
 (`scripts/coverage.py`, подробности — в README). Покрытие видно и локально:
@@ -59,6 +80,13 @@ Xcode → Report navigator → Coverage после прогона этого п�
 
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fast -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Криптопакет гоняется и отдельно от Xcode-проекта — так его тесты проходят
+быстрее и не требуют симулятор:
+
+```bash
+swift test --package-path Packages/EchosCrypto
 ```
 
 Полный — тот же вызов без `-testPlan` или с `-testPlan echos`. Симуляторов с
@@ -163,6 +191,39 @@ Swift Testing гоняет тесты параллельно в одном пр�
 дважды. Отсеивает повторы получатель, по `id` сообщения, —
 `DuplicateDeliveryTests`.
 
+## Разбор на мусоре
+
+Всё, что приходит снаружи, — кадр от релея, пакет от устройства рядом,
+шифрованный конверт, мозаика и росчерки внутри него — `Fuzz/ParserFuzzTests`
+прогоняет на тысячах сгенерированных входов. Тест падает, если разбор уронил
+процесс, задумался на одном входе дольше 200 мс или пропустил то, чего модель
+допускать не должна. Из случайных байтов получается мало: первая же проверка
+JSON их отсекает. Поэтому большая часть входов — испорченные настоящие данные,
+где одно поле подменено крайним значением, а для мозаики генератор строит
+сетки сам, с размерами у границ и опасными клетками. Так нашлась клетка из
+пяти тысяч кодовых точек: для `count` это один знак, и проверка её пропускала.
+
+Отдельно `garbageFromRelay_doesNotBreakReceiving` шлёт клиенту через тестовый
+релей тысячу испорченных кадров и проверяет, что после них настоящее
+сообщение доходит, а подделки нет.
+
+Эти тесты помечены тегом `fuzz` и идут своим планом. В общем прогоне они
+отнимали процессор и главный актор у тестов на таймерах, и те падали, не
+дождавшись своего часа.
+
+```bash
+xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fuzz -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Зерно генератора печатается в начале каждого теста (`[fuzz] … FUZZ_SEED=…`).
+Если процесс упал, тот же вход повторяет запуск с этим зерном, а число
+входов задаёт `FUZZ_ITERATIONS` (в плане `Fuzz` их 5000). Через `xcodebuild`
+переменные передаются тестам с приставкой `TEST_RUNNER_`:
+
+```bash
+TEST_RUNNER_FUZZ_SEED=123 TEST_RUNNER_FUZZ_ITERATIONS=20000 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Fuzz -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
 ## Общий контракт транспорта
 
 `WebSocketContractTests` — набор сценариев, не привязанный к конкретной
@@ -184,6 +245,16 @@ heartbeat, пауза без сети, мгновенный реконнект, 
 проходится дважды, с обычным шрифтом и с самым крупным
 (`-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL`):
 часть проблем видна только на нём.
+
+Те же экраны проходятся и под псевдолокализацией: с удвоенными строками
+(`-NSDoubleLocalizedStrings YES`) и с вёрсткой справа налево
+(`-AppleTextDirection YES`). Здесь аудит смотрит только обрезанный текст, а
+снимки экранов остаются в отчёте теста. Их стоит открыть глазами: подпись,
+уехавшую за край экрана, аудит не находит, а на снимке её видно сразу.
+
+Все тест-планы запускают приложение на русском (`language: ru`). Без этого
+на английском симуляторе тесты, которые сверяют подписи, получали бы
+английский перевод.
 
 UI-тесты остаются на XCTest — Swift Testing приложением управлять не умеет.
 Приложение запускается с аргументом `-UITests`. Тогда `PeerTransport.make()`
@@ -207,6 +278,79 @@ accessibility-размерах слабее остальных, и аудит с
 ```bash
 xcodebuild test -project echos.xcodeproj -scheme echos -testPlan Accessibility -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
+
+## Бюджет холодного запуска
+
+Цель: холодный запуск до первого отвечающего кадра быстрее одной секунды на
+устройстве. Разметка в Points of Interest:
+
+- `Pre-main tail` — от загрузки классов до `UIApplicationDidFinishLaunching`;
+- `Scene creation` — синхронное создание окна и корневого экрана;
+- `Launch main phase` — от `didFinishLaunching` до `sceneDidBecomeActive`.
+
+Полный pre-main включает dyld и ObjC runtime; его честно показывает шаблон
+App Launch в Instruments на устройстве или `DYLD_PRINT_STATISTICS=YES` в схеме.
+Число для сравнения «до/после» на симуляторе даёт:
+
+```bash
+scripts/launch_time.sh
+```
+
+Сравнивать можно только одинаковое устройство, схему и сборку. Осознанно
+вынесено из холодного пути: Core Data для стены и знакомых создаётся лениво,
+а фоновая сессия загрузок открывается только если есть прерванная очередь.
+
+## Live Activities
+
+Live Activity проверяется на устройстве руками: автотесты могут увидеть
+наличие виджета, но не то, как он выглядит на экране блокировки и в Dynamic
+Island. Сценарий: отправить сообщение, свернуть приложение, увидеть «отправляется»;
+дождаться отправки и увидеть исчезновение активности; выключить сеть во время
+отправки и убедиться, что статус связи изменился локально, без сервера и пушей.
+
+## Длинная переписка
+
+`DemoTransport` принимает `-echos_seed_messages 5000`: `ChatViewModel`
+одной пачкой засеивает хранилище, и чат Боба получает 5000 сообщений,
+каждое десятое — мозаика. Сценарий
+`ProfilingScenarioTests/test_longConversationScroll` открывает его и
+прокручивает ленту туда и обратно.
+
+Запись Hitch Time Profiler на одном сценарии:
+
+```bash
+TEST_NAME=test_longConversationScroll scripts/profile.sh "Hitch Time Profiler"
+```
+
+Для сравнения «до» и «после» снимают две трассы на одном устройстве, в одном
+плане Profiling и с одним сценарием. Сравнивают Hitch Time Ratio, число
+hitches и основной вклад в Time Profiler: до изменения им был
+`MosaicView.rebuild()` внутри `MessageCell.configure`, после —
+prefetch должен убирать его из кадра, а повторные мозаики — приходить из
+`MosaicChatImageCache`.
+
+## Навигация и энергия
+
+Координатор (`AppCoordinator`) покрыт юнит-тестами: разбор ссылки и
+Spotlight в маршрут, очередь до `markReady()`, отмена предыдущего перехода
+следующим (`CoordinatorTests`). Стек навигации в тестах настоящий, окна нет —
+для координатора этого достаточно.
+
+Энергоправила (`EnergyPolicy`) — табличные: интервал RSSI и разрешение
+анимаций под каждый тепловой режим, плюс то, что `MultipeerService` меняет
+интервал без перезапуска симуляции (`EnergyPolicyTests`). Сам тепловой
+режим в тестах не имитируется: `ProcessInfo.thermalState` read-only,
+поэтому сервису передаётся режим напрямую через `applyThermalState`.
+
+## Корень композиции
+
+DI без фреймворка: `CompositionRoot` собирает граф явно, решение об
+окружении (`AppEnvironment`) принимает он, а не фабрика в глубине VM.
+`CompositionRootTests` проверяют: uiTests-граф получает `DemoTransport`,
+продовый — нет, координатор делит с графом модель и кэш.
+`MosaicCacheInjectionTests` — даблики без синглтонов: prefetch чата и
+`MessageCell` кладут отрисованные мозаики в инъектированный экземпляр, а
+`shared` остаётся чистым.
 
 ## Что дальше
 

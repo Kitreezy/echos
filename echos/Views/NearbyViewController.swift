@@ -17,6 +17,7 @@ import OSLog
 final class NearbyViewController: UIViewController {
 
     private let viewModel: ChatViewModel
+    private weak var coordinator: AppCoordinator?
 
     // MARK: - UI
 
@@ -26,7 +27,7 @@ final class NearbyViewController: UIViewController {
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.setTracked(UserSettings.usesRelay ? "кто на связи" : "кто рядом",
+        label.setTracked(UserSettings.usesRelay ? String(localized: "кто на связи") : String(localized: "кто рядом"),
                          tracking: Typography.wide)
         return label
     }()
@@ -38,7 +39,7 @@ final class NearbyViewController: UIViewController {
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Пока никого.\nЭкран сам оживёт, когда кто-нибудь появится."
+        label.text = String(localized: "Пока никого.\nЭкран сам оживёт, когда кто-нибудь появится.")
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -48,15 +49,16 @@ final class NearbyViewController: UIViewController {
         table.backgroundColor = .clear
         table.separatorStyle = .none
         // Пока строк нет, аудит видит пустую таблицу без описания.
-        table.accessibilityLabel = "Кто рядом"
+        table.accessibilityLabel = String(localized: "Кто рядом")
         table.translatesAutoresizingMaskIntoConstraints = false
         return table
     }()
 
     // MARK: - Init
 
-    init(viewModel: ChatViewModel) {
+    init(viewModel: ChatViewModel, coordinator: AppCoordinator) {
         self.viewModel = viewModel
+        self.coordinator = coordinator
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -71,7 +73,7 @@ final class NearbyViewController: UIViewController {
         super.viewDidLoad()
 
         view.backgroundColor = .surface
-        navigationItem.backButtonTitle = "Назад"
+        navigationItem.backButtonTitle = String(localized: "Назад")
 
         setupLayout()
 
@@ -150,13 +152,9 @@ final class NearbyViewController: UIViewController {
     }
 
     private func openChat(with peer: Peer) {
-        Task {
-            await viewModel.switchToConversation(with: peer.address,
-                                                 named: peer.displayName)
-
-            let chat = ChatViewController(viewModel: viewModel)
-            navigationController?.pushViewController(chat, animated: true)
-        }
+        coordinator?.route(
+            .conversation(address: peer.address, name: peer.displayName, focus: nil)
+        )
     }
 }
 

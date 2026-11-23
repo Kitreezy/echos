@@ -191,7 +191,7 @@ final class ConversationCell: UITableViewCell {
 
         // Пустая переписка бывает: чат открыли и ничего не написали.
         lastMessageLabel.text = conversation.lastMessage.isEmpty
-            ? "Пока ни слова"
+            ? String(localized: "Пока ни слова")
             : conversation.lastMessage
 
         presenceDot.backgroundColor = conversation.isActive
@@ -217,27 +217,26 @@ final class ConversationCell: UITableViewCell {
         if conversation.unreadCount > 0 {
             parts.append(Self.unread(conversation.unreadCount))
         }
-        parts.append(conversation.lastMessageIsMosaic ? "мозаика" : (lastMessageLabel.text ?? ""))
+        parts.append(conversation.lastMessageIsMosaic ? String(localized: "мозаика") : (lastMessageLabel.text ?? ""))
         parts.append(timeLabel.text ?? "")
         accessibilityLabel = parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    /// «1 непрочитанное», «3 непрочитанных», «5 непрочитанных».
+    /// «1 непрочитанное», «3 непрочитанных», «5 непрочитанных». Формы —
+    /// в String Catalog: правило выбора у каждого языка своё, и считать их
+    /// в коде значит ошибиться на первом же новом языке.
     static func unread(_ count: Int) -> String {
-        let (tens, ones) = (count % 100, count % 10)
-        let word = ones == 1 && tens != 11 ? "непрочитанное" : "непрочитанных"
-        return "\(count) \(word)"
+        String(localized: "\(count) непрочитанных")
     }
 
-    /// Язык задан явно, а не берётся у системы.
+    /// Язык — тот, на котором сейчас показано приложение, а не системный.
     ///
-    /// Приложение целиком написано по-русски строками в коде, локализации в
-    /// нём нет. Без этой строки на телефоне с английским языком в русском
-    /// списке появлялось «3 sec ago».
+    /// Без этого на телефоне с языком, которого в echos нет, в русском
+    /// списке появлялось бы «3 sec ago».
     private static let formatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "ru")
         return formatter
     }()
 }

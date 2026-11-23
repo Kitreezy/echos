@@ -30,9 +30,7 @@ struct IncomingNotice: Equatable, Sendable {
     let mosaic: Mosaic?
 }
 
-// Долг: файл и тип выросли за лимиты .swiftlint.yml. Разрезать, а не
-// поднимать лимиты.
-// swiftlint:disable file_length
+// Долг: тип вырос за лимит .swiftlint.yml. Разрезать, а не поднимать лимиты.
 @Observable
 @MainActor
 // swiftlint:disable:next type_body_length
@@ -42,7 +40,12 @@ final class ChatViewModel {
 
     var messages: [Message] = []
     var peers: [Peer] = []
-    var connectionStatus: String = "Не подключён"
+    var connectionStatus: String = String(localized: "Не подключён")
+
+    /// Собеседник открытого чата на связи, значит, переписка с ним
+    /// зашифрована. Отдельным флагом, а не по тексту `connectionStatus`:
+    /// текст переводится.
+    private(set) var isConversationEncrypted = false
     var isDiscovering: Bool = false
     var typingPeerName: String?  // nil - никто не печатает
 
@@ -110,11 +113,44 @@ final class ChatViewModel {
     var messageStore: (any MessageStoring)?
 
     /// Своя стена. Живёт здесь, а не на экране: росчерки приходят и тогда,
-    /// когда стена закрыта.
-    var strokeStore: any StrokeStoring = StrokeStore()
+    /// когда стена закрыта. Создание ленивое: дефолтный `StrokeStore` тянет
+    /// за собой Core Data, а до первого кадра стена не нужна. `@Observable`
+    /// не позволяет `lazy`, поэтому хранилище прячется за computed-доступом.
+    private var strokeStoreValue: (any StrokeStoring)?
+    var strokeStore: any StrokeStoring {
+        get {
+            if let strokeStoreValue {
+                return strokeStoreValue
+            }
+            let store = StrokeStore()
+            strokeStoreValue = store
+            return store
+        }
+        set {
+            strokeStoreValue = newValue
+        }
+    }
 
-    /// Кого мы уже знаем.
-    var knownPeerStore: any KnownPeerStoring = KnownPeerStore()
+    /// Кого мы уже знаем. Тоже лениво: список читается при старте поиска,
+    /// а не при создании ViewModel на холодном пути.
+    private var knownPeerStoreValue: (any KnownPeerStoring)?
+    var knownPeerStore: any KnownPeerStoring {
+        get {
+            if let knownPeerStoreValue {
+                return knownPeerStoreValue
+            }
+            let store = KnownPeerStore()
+            knownPeerStoreValue = store
+            return store
+        }
+        set {
+            knownPeerStoreValue = newValue
+        }
+    }
+
+    /// Системный поиск. Подключается только в приложении: тесты передают
+    /// свои хранилища и в Spotlight симулятора не пишут.
+    private var searchIndex: SpotlightIndex?
 
     /// Сопоставление того, кого видим, с теми, с кем разговаривали.
     /// Пересобирается при каждом изменении списка знакомых.
@@ -131,7 +167,7 @@ final class ChatViewModel {
     private var isCurrentlyTyping = false
 
     /// Поток нажатий. `startTyping()` только кладёт сюда событие — всё
-    /// остальное делают операторы в `observeTyping()`.
+    /// остальное делают операторы в `typingTask` (см. `initialize`).
     private let keystrokes: AsyncStream<Void>
     private let keystrokeContinuation: AsyncStream<Void>.Continuation
 
@@ -156,6 +192,10 @@ final class ChatViewModel {
     private var receivedMessageIDs: Set<UUID> = []
     private var persistencePump: Task<Void, Never>?
 
+    /// Пересборка поискового индекса при запуске. Хранится, чтобы отменить
+    /// вместе с остальным конвейером, а не дожидаться её вечно.
+    private var searchReindexTask: Task<Void, Never>?
+
     /// Состояние связи транспорта. Для Multipeer остаётся `.offline` —
     /// у него нет единого соединения, и статус там формируют сами пиры.
     private(set) var transportState: TransportConnectionState = .offline
@@ -178,11 +218,27 @@ final class ChatViewModel {
         Logger.lifecycle.debug("ChatViewModel init")
     }
 
-    deinit {
+    isolated deinit {
+        // Подписки отменяются вместе с моделью: иначе циклы `for await`
+        // жили бы вечно — потоки транспорта принадлежат сервису, который
+        // переживает модель, и сами не завершаются. `isolated`, потому что
+        // обычный `deinit` до свойств `@Observable`-класса не дотягивается.
+        transportTask?.cancel()
+        typingTask?.cancel()
+        connectionStateTask?.cancel()
+        persistenceTask?.cancel()
+        remoteChangesTask?.cancel()
+        persistencePump?.cancel()
+        searchReindexTask?.cancel()
         Logger.lifecycle.debug("ChatViewModel deinit")
     }
 
     // MARK: - Setup
+
+    /// Чем жить, когда initialize() не получил транспорт явно. Корень
+    /// композиции подменяет замыкание под окружение (UI-тесты — демо), а
+    /// по умолчанию — фабрика по настройкам приложения.
+    var makeTransport: @MainActor () -> any PeerTransport = { PeerTransportFactory.make() }
 
     /// Точка внедрения зависимостей.
     /// Прод вызывает без аргументов и получает реальные Multipeer + Core Data,
@@ -200,31 +256,28 @@ final class ChatViewModel {
         typingTask?.cancel()
         connectionStateTask?.cancel()
 
-        multipeerService = transport ?? PeerTransportFactory.make()
-        messageStore = store ?? MessageStore()
+        multipeerService = transport ?? makeTransport()
+        if let store {
+            messageStore = store
+        } else {
+            connectSearch()
+        }
 
         Task { [weak self] in
+            #if DEBUG
+            await self?.seedLongConversationIfRequested()
+            #endif
             await self?.loadUnreadCounts()
         }
 
-        transportTask = Task { [weak self] in
-            await self?.consumeTransportEvents()
-        }
-
-        typingTask = Task { [weak self] in
-            await self?.observeTyping()
-        }
-
-        connectionStateTask = Task { [weak self] in
-            await self?.observeConnectionState()
-        }
+        transportTask = makeTransportTask()
+        typingTask = makeTypingTask()
+        connectionStateTask = makeConnectionStateTask()
 
         // Конвейер записи переживает переподключения: он не привязан к
         // конкретному транспорту и не должен терять накопленную пачку.
         if persistenceTask == nil {
-            persistenceTask = Task { [weak self] in
-                await self?.consumePersistenceQueue()
-            }
+            persistenceTask = makePersistenceTask()
         }
 
         // Знакомые могут прийти из iCloud с другого устройства. Контекст
@@ -241,6 +294,135 @@ final class ChatViewModel {
         }
     }
 
+    #if DEBUG
+    /// Засеять длинную переписку одной пачкой, если приложение запущено
+    /// сценарием Profiling. Через транспорт 5000 сообщений идти не должны:
+    /// каждое вызвало бы обновление UI, и Instruments мерил бы построение
+    /// демо-данных, а не прокрутку.
+    private func seedLongConversationIfRequested() async {
+        guard UITestMode.isActive,
+              let count = DemoTransport.requestedMessageCount,
+              let store = messageStore as? any MessageSeeding else {
+            return
+        }
+
+        do {
+            try await store.seedMessages(DemoTransport.longConversationMessages(count: count))
+        }
+        catch {
+            Logger.persistence.error("Не удалось засеять длинную переписку: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+    #endif
+
+    // MARK: - Подписки
+
+    /// Бесконечные циклы живут в замыканиях, а не в методах: задача
+    /// `Task { [weak self] in await self?.method() }` держит self сильно всё
+    /// время работы метода, и у бесконечного `for await` это — вечность:
+    /// модель не умирает, `deinit` не наступает, подписки не снимаются.
+    /// Здесь self захватывается на одну итерацию, а между событиями
+    /// модель свободна — и отмена в `deinit` действительно наступает.
+    private func makeTransportTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let service = self?.multipeerService else {
+                return
+            }
+
+            let peers = service.peerStream
+                // Список пересобирается на каждый чих, включая симуляцию RSSI
+                // раз в три секунды. Содержательные повторы отсекаем —
+                // перерисовывать экран из-за случайного числа незачем.
+                .removeDuplicates { $0.hasSameState(as: $1) }
+                .map(TransportEvent.peers)
+            let messages = service.messageStream.map(TransportEvent.message)
+            let typing = service.typingStream.map(TransportEvent.typing)
+            let strokes = service.strokeStream.map(TransportEvent.stroke)
+            let wallRequests = service.wallRequestStream.map(TransportEvent.wallRequest)
+
+            for await event in merge(merge(peers, messages),
+                                     merge(typing, strokes),
+                                     wallRequests) {
+                await self?.handle(event)
+            }
+        }
+    }
+
+    private func makeTypingTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let keystrokes = self?.keystrokes,
+                  let startDelay = self?.typingStartDelay,
+                  let idleTimeout = self?.typingIdleTimeout else {
+                return
+            }
+
+            // Два потребителя одного потока нажатий с разными интервалами.
+            // `share()` обязателен — без него второй `for await` начал бы
+            // отбирать нажатия у первого.
+            let shared = keystrokes.share()
+
+            await withTaskGroup(of: Void.self) { group in
+                // Короткая пауза после нажатия — пользователь печатает.
+                group.addTask { [weak self] in
+                    for await _ in shared.debounce(for: startDelay) {
+                        await self?.sendTypingStart()
+                    }
+                }
+
+                // Длинная пауза — печатать перестали.
+                group.addTask { [weak self] in
+                    for await _ in shared.debounce(for: idleTimeout) {
+                        await self?.sendTypingStop()
+                    }
+                }
+            }
+        }
+    }
+
+    private func makeConnectionStateTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let updates = self?.multipeerService?.connectionStateUpdates else {
+                return
+            }
+
+            for await state in updates {
+                self?.transportState = state
+                self?.updateConnectionStatus()
+            }
+        }
+    }
+
+    /// Пишет накопленное пачками: `chunked(by:)` собирает всё пришедшее за
+    /// интервал в массив, записи идут последовательно одной задачей.
+    private func makePersistenceTask() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let queue = self?.messagesToPersist,
+                  let interval = self?.persistenceFlushInterval else {
+                return
+            }
+
+            let batches = queue.chunked(
+                by: AsyncTimerSequence.repeating(every: interval)
+            )
+
+            for await batch in batches {
+                guard let store = self?.messageStore else {
+                    continue
+                }
+
+                for message in batch {
+                    do {
+                        try await store.saveMessage(message)
+                    }
+                    catch {
+                        Logger.chat.error("Failed to save message: \(error)")
+                    }
+                }
+                self?.persistedBatches += 1
+            }
+        }
+    }
+
     // MARK: - Persistence
 
     func switchToConversation(with address: String, named name: String? = nil) async {
@@ -249,6 +431,11 @@ final class ChatViewModel {
         }
         do {
             let filtered = try await messageStore.loadMessages(with: address)
+            // Переход могли отменить, пока история читалась: тогда открытым
+            // должен остаться чат последнего запроса, а не этот.
+            guard !Task.isCancelled else {
+                return
+            }
             messages = filtered
             currentConversationPeer = address
             missedMessages = filtered.filter(\.isUnread)
@@ -265,6 +452,10 @@ final class ChatViewModel {
             currentConversationName = name
                 ?? peers.first { $0.address == address }?.displayName
                 ?? filtered.last { !$0.isFromMe }?.senderName
+            // Строка под заголовком относится к новому собеседнику сразу,
+            // а не со следующим сетевым событием — иначе при открытии чата
+            // видно статус предыдущего.
+            updateConnectionStatus()
             Logger.chat.info("Showing conversation with \(address, privacy: .private(mask: .hash)): \(filtered.count) messages")
         }
         catch {
@@ -417,54 +608,27 @@ final class ChatViewModel {
 
     // MARK: - Listening
 
-    /// Один цикл на три потока.
+    /// Одно событие из слипшихся потоков транспорта.
     ///
     /// Было: три независимые `Task`, каждая со своим `for await`. Стало: потоки
-    /// приводятся к общему типу события и сливаются `merge`. Плюсы — одна точка
-    /// отмены, один `switch` и гарантированный порядок обработки внутри цикла.
-    private func consumeTransportEvents() async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
+    /// приводятся к общему типу события и сливаются `merge` в одном цикле —
+    /// одна точка отмены, один `switch` и гарантированный порядок обработки.
+    private func handle(_ event: TransportEvent) async {
+        switch event {
+        case .peers(let discoveredPeers):
+            await handlePeers(discoveredPeers)
 
-        let peers = multipeerService.peerStream
-            // Список пересобирается на каждый чих, включая симуляцию RSSI раз
-            // в три секунды. Содержательные повторы отсекаем — перерисовывать
-            // экран из-за случайного числа незачем.
-            //
-            // Ограничения частоты здесь больше нет. `_throttle(latest:)`
-            // придерживает последний элемент серии до следующего, а следующего
-            // может не быть: двое, подключившиеся в пределах окна, оставляли
-            // список навсегда отстающим на одно обновление. Настоящих
-            // источников частых событий тут нет — присутствие меняется, когда
-            // кто-то приходит или уходит.
-            .removeDuplicates { $0.hasSameState(as: $1) }
-            .map(TransportEvent.peers)
+        case .message(let incoming):
+            await handleIncomingMessage(incoming)
 
-        let messages = multipeerService.messageStream.map(TransportEvent.message)
-        let typing = multipeerService.typingStream.map(TransportEvent.typing)
-        let strokes = multipeerService.strokeStream.map(TransportEvent.stroke)
-        let wallRequests = multipeerService.wallRequestStream.map(TransportEvent.wallRequest)
+        case .typing(let incoming):
+            handleTypingEvent(incoming)
 
-        for await event in merge(merge(peers, messages),
-                                 merge(typing, strokes),
-                                 wallRequests) {
-            switch event {
-            case .peers(let discoveredPeers):
-                await handlePeers(discoveredPeers)
+        case .stroke(let incoming):
+            await handleIncomingStroke(incoming)
 
-            case .message(let incoming):
-                await handleIncomingMessage(incoming)
-
-            case .typing(let incoming):
-                handleTypingEvent(incoming)
-
-            case .stroke(let incoming):
-                await handleIncomingStroke(incoming)
-
-            case .wallRequest(let asker):
-                await answerWallRequest(from: asker)
-            }
+        case .wallRequest(let asker):
+            await answerWallRequest(from: asker)
         }
     }
 
@@ -545,7 +709,7 @@ final class ChatViewModel {
                 messageID: message.id,
                 address: incoming.sender,
                 name: peers.first { $0.address == incoming.sender }?.displayName ?? message.senderName ?? incoming.sender,
-                preview: message.mosaic == nil ? message.text : "мозаика",
+                preview: message.mosaic == nil ? message.text : String(localized: "мозаика"),
                 mosaic: message.mosaic
             )
         }
@@ -705,31 +869,41 @@ final class ChatViewModel {
         pendingPersistence.isEmpty ? nil : pendingPersistence.removeFirst()
     }
 
-    /// Пишет накопленное пачками.
-    ///
-    /// Было: `Task { try? await store.saveMessage(message) }` на каждое
-    /// сообщение — незаказанные конкурентные записи в Core Data без гарантии
-    /// порядка. Стало: один потребитель, `chunked(by:)` собирает всё
-    /// пришедшее за интервал в массив, записи идут последовательно.
-    private func consumePersistenceQueue() async {
-        let batches = messagesToPersist.chunked(
-            by: AsyncTimerSequence.repeating(every: persistenceFlushInterval)
-        )
+    // MARK: - Поиск
 
-        for await batch in batches {
-            guard let messageStore = messageStore else {
-                continue
-            }
+    /// Хранилища за индексом: сохранили — нашлось поиском, удалили —
+    /// пропало из поиска.
+    private func connectSearch() {
+        let index = SpotlightIndex.shared
+        searchIndex = index
+        let messages = SearchIndexedMessageStore(MessageStore(), index: index)
+        messageStore = messages
+        if !(knownPeerStore is SearchIndexedKnownPeerStore) {
+            knownPeerStore = SearchIndexedKnownPeerStore(knownPeerStore, index: index)
+        }
 
-            for message in batch {
-                do {
-                    try await messageStore.saveMessage(message)
-                }
-                catch {
-                    Logger.chat.error("Failed to save message: \(error)")
-                }
-            }
-            persistedBatches += 1
+        let people = knownPeerStore
+        searchReindexTask?.cancel()
+        searchReindexTask = Task {
+            await index.rebuildIfNeeded(messages: messages, people: people)
+        }
+    }
+
+    var showsInSearch: Bool {
+        UserSettings.showsInSearch
+    }
+
+    /// Выключили — индекс стирается целиком. Включили — собирается заново
+    /// из истории: всё, что пришло, пока поиск был выключен, тоже найдётся.
+    func setShowsInSearch(_ shows: Bool) async {
+        UserSettings.showsInSearch = shows
+        guard let searchIndex, let messageStore else {
+            return
+        }
+        if shows {
+            await searchIndex.rebuild(messages: messageStore, people: knownPeerStore)
+        } else {
+            await searchIndex.removeAll()
         }
     }
 
@@ -741,7 +915,7 @@ final class ChatViewModel {
             return
         }
         isDiscovering = true
-        connectionStatus = "Ищем устройства..."
+        connectionStatus = String(localized: "Ищем устройства...")
 
         // Список знакомых нужен до того, как придёт первое присутствие:
         // иначе первые пол-секунды все выглядят незнакомцами.
@@ -756,32 +930,23 @@ final class ChatViewModel {
         }
         isDiscovering = false
         multipeerService.stopDeviceDiscovery()
-        connectionStatus = "Поиск остановлен"
+        connectionStatus = String(localized: "Поиск остановлен")
 
         stopTyping()
-    }
-
-    /// Состояние связи важнее числа найденных устройств: если сети нет,
-    /// «Нет устройств рядом» вводит в заблуждение.
-    private func observeConnectionState() async {
-        guard let multipeerService = multipeerService else {
-            return
-        }
-
-        for await state in multipeerService.connectionStateUpdates {
-            transportState = state
-            updateConnectionStatus()
-        }
     }
 
     private func updateConnectionStatus() {
         switch transportState {
         case .waitingForNetwork:
-            connectionStatus = "Нет сети"
+            isConversationEncrypted = false
+            connectionStatus = String(localized: "Нет сети")
+            syncLiveActivity()
             return
 
         case .connecting:
-            connectionStatus = "Переподключаемся..."
+            isConversationEncrypted = false
+            connectionStatus = String(localized: "Переподключаемся...")
+            syncLiveActivity()
             return
 
         case .offline, .online:
@@ -801,13 +966,40 @@ final class ChatViewModel {
             // Зато адрес — то, что стоит показать: это единственное, чем
             // человек может сверить, с кем говорит. И раз он на связи —
             // переписка с ним зашифрована: без ключей в список не попасть.
+            isConversationEncrypted = isReachable
             connectionStatus = isReachable
-                ? "зашифровано · \(Fingerprint.display(address))"
-                : "не на связи"
+                ? String(localized: "зашифровано · \(Fingerprint.display(address))")
+                : String(localized: "не на связи")
+            syncLiveActivity()
             return
         }
 
-        connectionStatus = peers.isEmpty ? "" : "Рядом: \(peers.count)"
+        isConversationEncrypted = false
+        connectionStatus = peers.isEmpty ? "" : String(localized: "Рядом: \(peers.count)")
+        syncLiveActivity()
+    }
+
+    /// Live Activity держит связь и отправку там, где человек уже не смотрит
+    /// на приложение: на экране блокировки и в Dynamic Island. Состояние
+    /// считается здесь, а ActivityKit обновляется только при реальном
+    /// изменении.
+    private func syncLiveActivity() {
+        let sendingCount = messages.filter { $0.isFromMe && $0.status == .sending }.count
+        let failedCount = messages.filter { $0.isFromMe && $0.status == .failed }.count
+        let peerAddress = currentConversationPeer ?? "echos"
+        let peerName = currentConversationName ?? currentConversationPeer ?? "echos"
+        let connectionText = connectionStatus.isEmpty
+            ? String(localized: "Соединение устанавливается")
+            : connectionStatus
+
+        LiveActivityService.shared.sync(
+            peerAddress: peerAddress,
+            peerName: peerName,
+            connectionText: connectionText,
+            isEncrypted: isConversationEncrypted,
+            sendingCount: sendingCount,
+            failedCount: failedCount
+        )
     }
 
     // MARK: - Messaging
@@ -862,7 +1054,7 @@ final class ChatViewModel {
         let index = messages.firstIndex { $0.id == reply.id }
         let original = index.map { messages[$0] }
         let isFromMe = original?.isFromMe ?? reply.isFromMe
-        return Quote(author: isFromMe ? "Вы" : (currentConversationName ?? original?.senderName ?? "Собеседник"),
+        return Quote(author: isFromMe ? String(localized: "Вы") : (currentConversationName ?? original?.senderName ?? String(localized: "Собеседник")),
                      preview: original.map { MessageReply(quoting: $0).preview } ?? reply.preview,
                      index: index)
     }
@@ -877,6 +1069,7 @@ final class ChatViewModel {
         // Адрес проставлен сразу: без него сообщение не принадлежит ни
         // одной переписке и в чате собеседника не покажется.
         messages.append(message)
+        syncLiveActivity()
         stopTyping()
         await deliver(message)
     }
@@ -925,38 +1118,10 @@ final class ChatViewModel {
     // MARK: - Typing indication
 
     /// Вызывается на каждое нажатие клавиши. Никакой логики — только событие
-    /// в поток; решение «печатает / перестал» принимают операторы.
+    /// в поток; решение «печатает / перестал» принимают операторы в
+    /// `typingTask` (см. `initialize`).
     func startTyping() {
         keystrokeContinuation.yield()
-    }
-
-    /// Два потребителя одного потока нажатий с разными интервалами.
-    ///
-    /// Было: `typingDebounceTimer` и `typingTimer` — две задачи с `Task.sleep`,
-    /// которые надо было руками отменять в четырёх местах. Стало: тот же
-    /// поток нажатий, размноженный `share()`, и два `debounce` с разными
-    /// интервалами. `share()` здесь обязателен — без него второй `for await`
-    /// начал бы отбирать нажатия у первого.
-    private func observeTyping() async {
-        let shared = keystrokes.share()
-        let startDelay = typingStartDelay
-        let idleTimeout = typingIdleTimeout
-
-        await withTaskGroup(of: Void.self) { group in
-            // Короткая пауза после нажатия — пользователь печатает.
-            group.addTask { [weak self] in
-                for await _ in shared.debounce(for: startDelay) {
-                    await self?.sendTypingStart()
-                }
-            }
-
-            // Длинная пауза — печатать перестали.
-            group.addTask { [weak self] in
-                for await _ in shared.debounce(for: idleTimeout) {
-                    await self?.sendTypingStop()
-                }
-            }
-        }
     }
 
     /// Явная остановка: отправка сообщения, уход с экрана, остановка поиска.
@@ -1003,6 +1168,7 @@ final class ChatViewModel {
         }
 
         messages[idx].status = status
+        syncLiveActivity()
         persist(messages[idx])
     }
 }

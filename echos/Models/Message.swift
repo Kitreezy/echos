@@ -113,7 +113,7 @@ struct MessageReply: Codable, Equatable, Sendable {
     /// Ответ на это сообщение.
     init(quoting message: Message) {
         self.init(id: message.id,
-                  preview: message.mosaic == nil ? message.text : "мозаика",
+                  preview: message.mosaic == nil ? message.text : String(localized: "мозаика"),
                   isFromMe: message.isFromMe)
     }
 }

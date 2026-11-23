@@ -6,6 +6,7 @@
 //
 
 import CryptoKit
+import EchosCrypto
 import Foundation
 import Testing
 @testable import echos

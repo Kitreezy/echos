@@ -69,11 +69,15 @@ struct DigestView: View {
     }
 
     private var footnote: String {
-        var text = "Пересказ составлен на этом телефоне. Переписка никуда не отправлялась."
+        var parts = [String(localized: "Пересказ составлен на этом телефоне. Переписка никуда не отправлялась.")]
         if let pivot = viewModel.translatedVia {
-            text += " Модель не знает языка переписки, поэтому она переведена на \(pivot) язык, а пересказ — обратно; перевод тоже сделан на телефоне."
+            parts.append(String(localized: """
+                Модель не знает языка переписки, поэтому она переведена на \(pivot) язык, \
+                а пересказ — обратно; перевод тоже сделан на телефоне.
+                """))
         }
-        return text + " Модель может ошибаться — сверяйтесь с сообщениями."
+        parts.append(String(localized: "Модель может ошибаться — сверяйтесь с сообщениями."))
+        return parts.joined(separator: " ")
     }
 
     @ViewBuilder
@@ -201,7 +205,7 @@ struct DigestView: View {
     }
 
     @ViewBuilder
-    private func items(_ title: String, _ items: [String]) -> some View {
+    private func items(_ title: LocalizedStringKey, _ items: [String]) -> some View {
         // Пустое не показывается: «ждут ответа — ничего» — шум.
         if !items.isEmpty {
             Section(title) {
@@ -212,7 +216,7 @@ struct DigestView: View {
         }
     }
 
-    private func progress(_ text: String) -> some View {
+    private func progress(_ text: LocalizedStringKey) -> some View {
         Section {
             HStack(spacing: 12) {
                 ProgressView()

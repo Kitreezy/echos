@@ -94,8 +94,8 @@ final class WallViewModel {
 
     /// Чужие росчерки приходят только на свою стену: рисуют у вас, а не у себя.
     ///
-    /// Задача снимается в `stop()` из `onDisappear`, а не в `deinit`:
-    /// до изолированного свойства оттуда не дотянуться.
+    /// Задача снимается в `stop()` из `onDisappear` экрана; подстраховка —
+    /// `isolated deinit`: обычный до свойств `@Observable` не дотягивается.
     private func observeIncoming() {
         guard incomingTask == nil, owner == nil else {
             return
@@ -264,5 +264,11 @@ final class WallViewModel {
 
     var isEmpty: Bool {
         strokes.isEmpty && pending == nil
+    }
+
+    isolated deinit {
+        incomingTask?.cancel()
+        wallStateTask?.cancel()
+        remoteChangesTask?.cancel()
     }
 }

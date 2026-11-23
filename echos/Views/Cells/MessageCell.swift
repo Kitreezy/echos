@@ -69,13 +69,22 @@ final class MessageCell: UITableViewCell {
         return view
     }()
 
-    /// Мозаика — вместо текста, когда сообщение ею и является.
-    private let mosaicView: MosaicView = {
-        let view = MosaicView()
+    /// Мозаика — вместо текста, когда сообщение ею и является. В ленте это
+    /// уже отрисованная картинка: сетка из UILabel внутри dequeue была
+    /// основной работой ячейки на длинной переписке.
+    private let mosaicImageView: UIImageView = {
+        let view = UIImageView()
+        view.contentMode = .scaleAspectFit
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.isAccessibilityElement = true
         view.isHidden = true
         return view
     }()
+
+    /// Откуда брать отрисованные мозаики. Контроллер чата присваивает общий
+    /// на граф экземпляр; дефолт — синглтон, чтобы ячейка не падала вне
+    /// чата (превью, будущие экраны).
+    var mosaicCache: MosaicChatImageCache = .shared
 
     /// Текст или мозаика — что-то одно; скрытое в стеке не занимает места.
     private let body: UIStackView = {
@@ -149,7 +158,7 @@ final class MessageCell: UITableViewCell {
         body.addArrangedSubview(quoteView)
         body.setCustomSpacing(Space.tight, after: quoteView)
         body.addArrangedSubview(messageLabel)
-        body.addArrangedSubview(mosaicView)
+        body.addArrangedSubview(mosaicImageView)
         quoteView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(quoteTapped)))
 
         columnLeading = column.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
@@ -194,13 +203,27 @@ final class MessageCell: UITableViewCell {
         }
 
         if let mosaic = message.mosaic {
-            mosaicView.show(mosaic)
-            mosaicView.isHidden = false
+            // Prefetch обычно успевает первым. Если нет — рисуем один раз
+            // синхронно, и следующая показанная копия возьмёт картинку из
+            // кэша.
+            if let cached = mosaicCache.image(for: mosaic) {
+                mosaicImageView.image = cached
+            } else {
+                let rendered = MosaicChatImageRenderer.render(mosaic)
+                mosaicCache.insert(rendered, for: mosaic)
+                mosaicImageView.image = rendered
+            }
+            // VoiceOver видит мозаику одним элементом, а не набором клеток:
+            // рисунок из эмодзи на слух не складывается.
+            mosaicImageView.accessibilityLabel = String(localized: "мозаика \(mosaic.columns) на \(mosaic.rows)")
+            mosaicImageView.accessibilityValue = String(localized: "закрашено клеток: \(mosaic.cells.filter { !$0.isEmpty }.count)")
+            mosaicImageView.isHidden = false
             messageLabel.isHidden = true
         } else {
             messageLabel.text = message.text
             messageLabel.isHidden = false
-            mosaicView.isHidden = true
+            mosaicImageView.isHidden = true
+            mosaicImageView.image = nil
         }
 
         let time = Self.timeFormatter.string(from: message.timestamp)
@@ -249,13 +272,13 @@ final class MessageCell: UITableViewCell {
     private func footnote(time: String, status: MessageStatus) -> String {
         switch status {
         case .sending:
-            return "\(time) · отправляется"
+            return String(localized: "\(time) · отправляется")
 
         case .sent:
             return time
 
         case .failed:
-            return "\(time) · не отправлено · повторить"
+            return String(localized: "\(time) · не отправлено · повторить")
         }
     }
 
@@ -300,6 +323,7 @@ final class MessageCell: UITableViewCell {
 
         senderNameLabel.isHidden = true
         quoteView.isHidden = true
+        mosaicImageView.image = nil
         onQuoteTap = nil
         contentView.layer.removeAllAnimations()
         contentView.backgroundColor = .clear

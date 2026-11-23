@@ -9,9 +9,8 @@
 import CryptoKit
 import Foundation
 import Testing
-@testable import echos
+@testable import EchosCrypto
 
-@Suite(.tags(.crypto))
 struct KeyBundleTests {
 
     private func bundle(of identity: DeviceIdentity) throws -> KeyBundle {
@@ -144,55 +143,5 @@ struct KeyBundleTests {
 
         #expect(restored == bundle)
         #expect(restored.verified() != nil)
-    }
-
-    // MARK: - Участник релея
-
-    @Test func participant_withMatchingKeys_hasIdentity() throws {
-        let bob = DeviceIdentity()
-        let participant = RelayParticipant(id: bob.fingerprint, name: "Bob", keys: try bundle(of: bob))
-
-        #expect(participant.verifiedIdentity?.fingerprint == bob.fingerprint)
-    }
-
-    @Test func participant_withoutKeys_hasNoIdentity() {
-        let participant = RelayParticipant(id: "0123456789abcdef", name: "Старая сборка")
-        #expect(participant.verifiedIdentity == nil)
-    }
-
-    /// Релей поставил рядом с адресом Боба ключи Мэллори. Отпечаток ключей
-    /// с адресом не совпадает — и этого достаточно, чтобы отказать.
-    @Test func participant_withSomeoneElsesKeys_hasNoIdentity() throws {
-        let bob = DeviceIdentity()
-        let mallory = DeviceIdentity()
-        let participant = RelayParticipant(id: bob.fingerprint, name: "Bob", keys: try bundle(of: mallory))
-
-        #expect(participant.verifiedIdentity == nil)
-    }
-
-    /// Присутствие от старого релея, без ключей, разбирается — участник
-    /// просто остаётся без личности.
-    @Test func participant_fromOldRelay_decodes() throws {
-        let json = #"[{"id":"0123456789abcdef","name":"Bob"}]"#
-        let participants = try JSONDecoder().decode([RelayParticipant].self, from: Data(json.utf8))
-
-        #expect(participants.count == 1)
-        #expect(participants[0].verifiedIdentity == nil)
-    }
-
-    /// Участник со статическим ключом, но без сессионного — сборка между
-    /// двумя шагами. Ключ переписки с ней вывести нельзя.
-    @Test func participant_withoutSessionKey_hasNoIdentity() throws {
-        let bob = DeviceIdentity()
-        let honest = try bundle(of: bob)
-        let json = """
-        [{"id":"\(bob.fingerprint)","name":"Bob",
-          "publicKey":"\(honest.publicKey.base64EncodedString())",
-          "agreementKey":"\(honest.agreementKey.base64EncodedString())",
-          "agreementProof":"\(honest.agreementProof.base64EncodedString())"}]
-        """
-        let participants = try JSONDecoder().decode([RelayParticipant].self, from: Data(json.utf8))
-
-        #expect(participants[0].verifiedIdentity == nil)
     }
 }

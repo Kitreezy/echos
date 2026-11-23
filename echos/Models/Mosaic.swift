@@ -22,6 +22,10 @@ struct Mosaic: Codable, Equatable, Sendable {
     /// экране телефона клетки меньше уже не разглядеть.
     static let sideRange = 1...8
 
+    /// Сколько кодовых точек может быть в одной клетке. Самые длинные
+    /// эмодзи — семья с оттенками кожи — занимают одиннадцать.
+    static let maxScalarsPerCell = 16
+
     let columns: Int
     let rows: Int
 
@@ -38,10 +42,14 @@ struct Mosaic: Codable, Equatable, Sendable {
 
     /// Сетка с готовыми клетками. `nil`, если клеток не столько, сколько
     /// должно быть, размер вне допустимого или в клетке больше одного знака.
+    ///
+    /// «Один знак» — это и одна графема, и немного кодовых точек: буква с
+    /// пятью тысячами ударений для `count` тоже один знак. Такую клетку
+    /// нашла проверка на сгенерированных входах.
     init?(columns: Int, rows: Int, cells: [String]) {
         guard Self.sideRange.contains(columns), Self.sideRange.contains(rows),
               cells.count == columns * rows,
-              cells.allSatisfy({ $0.count <= 1 }) else {
+              cells.allSatisfy({ $0.count <= 1 && $0.unicodeScalars.count <= Self.maxScalarsPerCell }) else {
             return nil
         }
         self.columns = columns

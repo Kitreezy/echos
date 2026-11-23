@@ -5,6 +5,8 @@
 //  Created by Artem Rodionov on 18.02.2026.
 //
 
+import AsyncAlgorithms
+import EchosCrypto
 import Foundation
 import UIKit
 import OSLog
@@ -181,11 +183,7 @@ final class MultipeerService: NSObject {
         browser?.delegate = self
         browser?.startBrowsingForPeers()
 
-        // Временно решение: симуляция RSSI для найденных peers
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            simulateRSSIUpdates()
-        }
+        startRSSISimulation()
 
         Logger.nearby.notice("Discovery started: advertising as '\(self.myPeerID.displayName)'")
     }
@@ -196,6 +194,8 @@ final class MultipeerService: NSObject {
     }
 
     private func suspendDiscovery() {
+        stopRSSISimulation()
+
         advertiser?.stopAdvertisingPeer()
         advertiser?.delegate = nil
         advertiser = nil
@@ -219,36 +219,67 @@ final class MultipeerService: NSObject {
     /// другое — там соединение в фоне ещё полминуты живёт, — поэтому
     /// каждый транспорт решает за себя.
     private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.wantsDiscovery else { return }
-                self.suspendDiscovery()
-            }
-        }
-        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.wantsDiscovery else { return }
-                self.resumeDiscovery()
-            }
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appDidEnterBackground),
+                                               name: UIApplication.didEnterBackgroundNotification,
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(appWillEnterForeground),
+                                               name: UIApplication.willEnterForegroundNotification,
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(thermalStateDidChange),
+                                               name: ProcessInfo.thermalStateDidChangeNotification,
+                                               object: nil)
+    }
+
+    /// Уведомление приходит на потоке отправителя, поэтому оборачиваем —
+    /// как в остальных делегатах выше.
+    @objc
+    nonisolated private func thermalStateDidChange() {
+        Task { @MainActor [weak self] in
+            self?.applyThermalState(ProcessInfo.processInfo.thermalState)
         }
     }
 
-    // Симуляция RSSI (пока нет Core Bluetooth)
-    private func simulateRSSIUpdates() {
-        for peerID in discoveredPeers.keys {
-            let rssi = Int.random(in: -90...(-40))
-            peerRSSI[peerID] = rssi
-            peerDistances[peerID] = calculateDistance(from: rssi)
+    @objc
+    private func appDidEnterBackground() {
+        guard wantsDiscovery else {
+            return
         }
-        emitPeers()
-
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            simulateRSSIUpdates()
-        }
+        suspendDiscovery()
     }
+
+    @objc
+    private func appWillEnterForeground() {
+        guard wantsDiscovery else {
+            return
+        }
+        resumeDiscovery()
+    }
+
+    // MARK: - Симуляция RSSI (сама симуляция — в extension ниже)
+
+    /// Интервал между обновлениями. Меняется до старта — тесты ставят меньше;
+    /// во время работы его двигает тепловой режим (`applyThermalState`).
+    var rssiUpdateInterval: Duration = .seconds(3)
+
+    /// Обновить интервал симуляции под тепловой режим. Внутренняя, чтобы
+    /// держать `EnergyPolicy` единственным знающим правила; в проде вызывается
+    /// из наблюдателя за `thermalStateDidChangeNotification`.
+    func applyThermalState(_ thermal: ProcessInfo.ThermalState) {
+        let interval = EnergyPolicy.rssiSimulationInterval(thermal: thermal)
+        guard interval != rssiUpdateInterval else {
+            return
+        }
+        rssiUpdateInterval = interval
+        Logger.nearby.notice("RSSI simulation interval → \(interval) (thermal: \(String(describing: thermal), privacy: .public))")
+    }
+
+    /// Сколько раз крутилась симуляция. Диагностика для тестов на отмену.
+    private(set) var rssiSimulationTicks = 0
+
+    private var rssiSimulationTask: Task<Void, Never>?
 
     // MARK: - Manual Connection
 
@@ -557,13 +588,73 @@ final class MultipeerService: NSObject {
         peerBroadcast.yield(peers)
     }
 
-    /// `deinit` вызывается вне главного актора, поэтому изолированный стейт
-    /// здесь трогать нельзя. Закрывать потоки руками и не нужно: вместе с
+    /// `deinit` — `isolated`: обычный, вне главного актора, до изолированного
+    /// состояния не дотягивается. Закрывать потоки руками не нужно: вместе с
     /// сервисом освобождаются броадкастеры, а `AsyncStream` завершается сам,
     /// когда его continuation деаллоцируется.
     /// Остановку advertiser/browser/session делает `stopDeviceDiscovery()`.
-    deinit {
+    isolated deinit {
+        NotificationCenter.default.removeObserver(self)
+        // Таймер симуляции держит self слабо и сам бы не закончился никогда.
+        rssiSimulationTask?.cancel()
         Logger.lifecycle.debug("MultipeerService deinit")
+    }
+}
+
+// MARK: - Симуляция RSSI (пока нет Core Bluetooth)
+
+extension MultipeerService {
+
+    /// Одна отменяемая задача с таймером вместо цепочки
+    /// `Task { sleep; simulateRSSIUpdates() }`, которая порождала себя заново
+    /// после каждого тика. Та цепочка не отменялась вовсе: жила после
+    /// остановки поиска, заводила вторую ветку на каждом возврате из фона
+    /// и держала сервис в памяти вечно — `deinit` никогда не наступал.
+    ///
+    /// Internal ради тестов на отмену: в проде вызывается из
+    /// `resumeDiscovery`/`suspendDiscovery`.
+    func startRSSISimulation() {
+        guard rssiSimulationTask == nil else {
+            return
+        }
+
+        rssiSimulationTask = Task { [weak self] in
+            // Паузу читаем на каждом тике, а не фиксируем при старте:
+            // тепловой режим меняет интервал на лету, перезапуск не нужен.
+            while !Task.isCancelled {
+                guard let self else {
+                    return
+                }
+                try? await Task.sleep(for: self.rssiUpdateInterval)
+                guard !Task.isCancelled else {
+                    return
+                }
+                self.simulateRSSIStep()
+            }
+        }
+    }
+
+    func stopRSSISimulation() {
+        rssiSimulationTask?.cancel()
+        rssiSimulationTask = nil
+    }
+
+    private func simulateRSSIStep() {
+        rssiSimulationTicks += 1
+
+        // Телефон не в курсе пустого списка: тик с нулём собеседников будил
+        // бы процессор впустую. Счётчик тикает — тесты на отмену смотрят на
+        // него, а вещать нечего.
+        guard !discoveredPeers.isEmpty else {
+            return
+        }
+
+        for peerID in discoveredPeers.keys {
+            let rssi = Int.random(in: -90...(-40))
+            peerRSSI[peerID] = rssi
+            peerDistances[peerID] = calculateDistance(from: rssi)
+        }
+        emitPeers()
     }
 }
 
@@ -845,19 +936,19 @@ enum MultipeerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noSession:
-            return "MCSession не создана"
+            return String(localized: "MCSession не создана")
 
         case .noPeers:
-            return "Нет подключённых устройств"
+            return String(localized: "Нет подключённых устройств")
 
         case .sendFailed:
-            return "Не удалось отправить сообщение"
+            return String(localized: "Не удалось отправить сообщение")
 
         case .peerNotFound:
-            return "Устройство не найдено"
+            return String(localized: "Устройство не найдено")
 
         case .noCipher:
-            return "Нет ключа переписки с этим устройством"
+            return String(localized: "Нет ключа переписки с этим устройством")
         }
     }
 }

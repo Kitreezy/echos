@@ -117,8 +117,12 @@ final class WebSocketClient {
 
     init(url: URL,
          configuration: URLSessionConfiguration = .ephemeral,
+         publicKeyPins: Set<Data>? = nil,
          networkMonitor: any NetworkMonitoring = NetworkMonitor.shared) {
-        self.makeSocket = { URLSessionRawSocket(url: url, configuration: configuration) }
+        let pins = publicKeyPins ?? CertificatePinning.pins(for: url)
+        self.makeSocket = {
+            URLSessionRawSocket(url: url, configuration: configuration, publicKeyPins: pins)
+        }
         self.networkMonitor = networkMonitor
     }
 
@@ -455,6 +459,33 @@ final class WebSocketClient {
 
     // MARK: - Reconnect
 
+    /// Внешний сигнал «сеть уже другая, пересоздай соединение сейчас».
+    /// Отличается от обычного ретрая: счётчик попыток обнуляется, а старое
+    /// соединение не дожидается таймаута — при смене интерфейса оно уже мертво.
+    func reconnect() {
+        guard !isStopped else {
+            return
+        }
+
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempt = 0
+
+        // Собственный наблюдатель сети может ответить на тот же путь первым.
+        // Повторный openConnection на середине попытки только сорвал бы свежий
+        // сокет — внешний сигнал должен быть идемпотентным.
+        guard state != .connecting else {
+            return
+        }
+
+        guard networkMonitor.currentPath?.isReachable != false else {
+            state = .waitingForNetwork
+            return
+        }
+
+        openConnection()
+    }
+
     private func scheduleReconnect() {
         guard !isStopped else {
             return
@@ -561,7 +592,7 @@ struct TimeoutError: Error, LocalizedError {
     let duration: Duration
 
     var errorDescription: String? {
-        "Нет ответа за \(duration)"
+        String(localized: "Нет ответа за \(duration)")
     }
 }
 

@@ -15,6 +15,7 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
 
     private let url: URL
     private let configuration: URLSessionConfiguration
+    private let pinning: CertificatePinning?
 
     private var session: URLSession?
     private var socket: URLSessionWebSocketTask?
@@ -23,9 +24,13 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
     private let broadcast = AsyncBroadcast<RawWebSocketEvent>()
     var events: AsyncStream<RawWebSocketEvent> { broadcast.stream }
 
-    init(url: URL, configuration: URLSessionConfiguration = .ephemeral) {
+    init(url: URL,
+         configuration: URLSessionConfiguration = .ephemeral,
+         publicKeyPins: Set<Data>? = nil) {
         self.url = url
         self.configuration = configuration
+        let pins = publicKeyPins ?? CertificatePinning.pins(for: url)
+        self.pinning = pins.map(CertificatePinning.init(publicKeyHashes:))
         super.init()
     }
 
@@ -37,7 +42,7 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
 
     func open() {
         let session = URLSession(configuration: configuration,
-                                 delegate: SocketDelegate(socket: self),
+                                 delegate: SocketDelegate(socket: self, pinning: pinning),
                                  delegateQueue: .main)
         self.session = session
 
@@ -152,9 +157,31 @@ final class URLSessionRawSocket: NSObject, RawWebSocket {
 private final class SocketDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
 
     weak let socket: URLSessionRawSocket?
+    let pinning: CertificatePinning?
 
-    init(socket: URLSessionRawSocket) {
+    init(socket: URLSessionRawSocket, pinning: CertificatePinning?) {
         self.socket = socket
+        self.pinning = pinning
+    }
+
+    func urlSession(_ session: URLSession,
+                    didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+
+        if let pinning {
+            guard pinning.evaluate(trust) else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return
+            }
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
     }
 
     func urlSession(_ session: URLSession,

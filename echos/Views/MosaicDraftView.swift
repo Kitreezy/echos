@@ -36,6 +36,8 @@ final class MosaicDraftView: UIView {
         label.adjustsFontForContentSizeCategory = true
         label.textColor = .inkMuted
         label.textAlignment = .right
+        // Карточка узкая: длинная подпись переносится, а не обрезается.
+        label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -70,7 +72,7 @@ final class MosaicDraftView: UIView {
     func show(_ mosaic: Mosaic) {
         grid.show(mosaic)
         footnote.text = mosaic.isEmpty
-            ? "черновик"
-            : "черновик · \(mosaic.filledCount) из \(mosaic.cells.count)"
+            ? String(localized: "черновик")
+            : String(localized: "черновик · \(mosaic.filledCount) из \(mosaic.cells.count)")
     }
 }

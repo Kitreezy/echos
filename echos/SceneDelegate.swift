@@ -5,13 +5,20 @@
 //  Created by Artem Rodionov on 16.02.2026.
 //
 
+import CoreSpotlight
 import UIKit
 
+@MainActor
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
 
+    /// Владелец навигации и модели. Сцена держит его, экраны — слабо.
+    /// Граф собирает корень композиции; сцена его только хранит.
+    private var coordinator: AppCoordinator?
+
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        LaunchTrace.sceneWillConnect()
         guard let windowScene = (scene as? UIWindowScene) else { return }
 
         let window = UIWindow(windowScene: windowScene)
@@ -23,8 +30,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // ставить его на каждый экран значит однажды забыть.
         window.overrideUserInterfaceStyle = .dark
 
-        let discoveryVC = DiscoveryViewController()
-        let navigationController = UINavigationController(rootViewController: discoveryVC)
+        let root = CompositionRoot(environment: .current())
+        coordinator = root.coordinator
+        let navigationController = root.coordinator.navigationController
 
 //        navigationController.setNavigationBarHidden(true, animated: false)
 
@@ -51,10 +59,45 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = navigationController
         window.makeKeyAndVisible()
         self.window = window
+        LaunchTrace.sceneDidCreateWindow()
+
+        // Холодный запуск нажатием в поиске: активность приходит здесь, а
+        // не в `scene(_:continue:)`.
+        connectionOptions.userActivities.forEach(openSearchResult)
+
+        // Холодный запуск ссылкой echos://: контексты приходят здесь,
+        // тёплый — в `scene(_:openURLContexts:)`.
+        connectionOptions.urlContexts.forEach(openURLContext)
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        URLContexts.forEach(openURLContext)
+    }
+
+    private func openURLContext(_ context: UIOpenURLContext) {
+        guard let link = DeepLink(url: context.url) else {
+            return
+        }
+        coordinator?.route(AppRoute(link))
+    }
+
+    func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+        openSearchResult(userActivity)
+    }
+
+    private func openSearchResult(_ activity: NSUserActivity) {
+        guard activity.activityType == CSSearchableItemActionType,
+              let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+              let target = SpotlightItems.target(from: identifier) else {
+            return
+        }
+        coordinator?.route(AppRoute(target))
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {}
-    func sceneDidBecomeActive(_ scene: UIScene) {}
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        LaunchTrace.sceneDidBecomeActive()
+    }
     func sceneWillResignActive(_ scene: UIScene) {}
     func sceneWillEnterForeground(_ scene: UIScene) {}
     func sceneDidEnterBackground(_ scene: UIScene) {}

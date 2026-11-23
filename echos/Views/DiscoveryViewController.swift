@@ -5,8 +5,9 @@
 //  Created by Artem Rodionov on 13.03.2026.
 //
 
-import UIKit
+import EchosCrypto
 import SwiftUI
+import UIKit
 
 // Долг: тип вырос за лимит .swiftlint.yml. Разрезать, а не поднимать лимит.
 // swiftlint:disable:next type_body_length
@@ -14,9 +15,25 @@ final class DiscoveryViewController: UIViewController {
 
     // MARK: - ViewModel
 
-    private let viewModel = ChatViewModel()
+    let viewModel: ChatViewModel
+
+    /// Переходы просим у координатора, а не двигаем навигацию сами.
+    /// Слабо: координатор держит нас сильно, обратная сильная ссылка —
+    /// цикл, который не разорвать. Просится через init нельзя: координатор
+    /// создаёт нас до конца собственной инициализации, поэтому прикрепляем
+    /// сразу после создания.
+    weak var coordinator: AppCoordinator?
 
     private let radarState = RadarState()
+
+    init(viewModel: ChatViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     // MARK: - UI Components
 
@@ -93,7 +110,7 @@ final class DiscoveryViewController: UIViewController {
         var config = UIButton.Configuration.plain()
         config.scalesTitle { Typography.micro }
         config.attributedTitle = AttributedString(
-            "моя стена",
+            String(localized: "моя стена"),
             attributes: AttributeContainer([
                 .kern: Typography.narrow
             ])
@@ -114,7 +131,7 @@ final class DiscoveryViewController: UIViewController {
         label.textColor = .inkMuted
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Разговоров пока нет."
+        label.text = String(localized: "Разговоров пока нет.")
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -180,7 +197,7 @@ final class DiscoveryViewController: UIViewController {
 
         // У радара нет заголовка, поэтому кнопка возврата на вложенных
         // экранах называлась бы системным «Back».
-        navigationItem.backButtonTitle = "Назад"
+        navigationItem.backButtonTitle = String(localized: "Назад")
 
         setupUI()
         setupTableView()
@@ -198,8 +215,8 @@ final class DiscoveryViewController: UIViewController {
         Task {
             if !UserSettings.hasCompletedOnboarding {
                 await askForName(
-                    title: "Как вас зовут?",
-                    message: "Это имя увидят те, кто окажется рядом."
+                    title: String(localized: "Как вас зовут?"),
+                    message: String(localized: "Это имя увидят те, кто окажется рядом.")
                 )
             }
 
@@ -216,7 +233,7 @@ final class DiscoveryViewController: UIViewController {
 
     private func updateLinkButton() {
         linkButton.configuration?.attributedTitle = AttributedString(
-            usesRelay ? "связь · через сервер" : "связь · рядом",
+            usesRelay ? String(localized: "связь · через сервер") : String(localized: "связь · рядом"),
             attributes: AttributeContainer([
                 .kern: Typography.narrow
             ])
@@ -226,22 +243,23 @@ final class DiscoveryViewController: UIViewController {
     @objc
     private func chooseLink() {
         let sheet = UIAlertController(
-            title: "Как держать связь",
-            message: "Рядом — напрямую между устройствами, без интернета, "
-                   + "метров на сто. Через сервер — с кем угодно, где есть сеть; "
-                   + "кто рядом, останется рядом.",
+            title: String(localized: "Как держать связь"),
+            message: String(localized: """
+                Рядом — напрямую между устройствами, без интернета, метров на сто. \
+                Через сервер — с кем угодно, где есть сеть; кто рядом, останется рядом.
+                """),
             preferredStyle: .actionSheet
         )
 
-        sheet.addAction(UIAlertAction(title: "Только рядом", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: String(localized: "Только рядом"), style: .default) { [weak self] _ in
             self?.setUsesRelay(false)
         })
 
-        sheet.addAction(UIAlertAction(title: "Рядом и через сервер", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: String(localized: "Рядом и через сервер"), style: .default) { [weak self] _ in
             self?.setUsesRelay(true)
         })
 
-        sheet.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+        sheet.addAction(UIAlertAction(title: String(localized: "Отмена"), style: .cancel))
 
         // На широком экране лист привязывается к кнопке, иначе упадёт.
         sheet.popoverPresentationController?.sourceView = linkButton
@@ -288,7 +306,7 @@ final class DiscoveryViewController: UIViewController {
         let address = ownAddress
         addressButton.isHidden = address.isEmpty
         addressButton.configuration?.attributedTitle = AttributedString(
-            text ?? "адрес · \(Fingerprint.display(address))",
+            text ?? String(localized: "адрес · \(Fingerprint.display(address))"),
             attributes: AttributeContainer([
                 .kern: Typography.narrow
             ])
@@ -303,7 +321,7 @@ final class DiscoveryViewController: UIViewController {
         }
 
         UIPasteboard.general.string = Fingerprint.display(address)
-        updateAddressButton(text: "адрес скопирован")
+        updateAddressButton(text: String(localized: "адрес скопирован"))
 
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.5))
@@ -314,8 +332,8 @@ final class DiscoveryViewController: UIViewController {
     @objc
     private func changeName() {
         Task {
-            await askForName(title: "Как вас зовут?",
-                             message: "Имя увидят те, кто окажется рядом.")
+            await askForName(title: String(localized: "Как вас зовут?"),
+                             message: String(localized: "Имя увидят те, кто окажется рядом."))
 
             // Транспорт берёт имя при создании, поэтому пересобираем его
             // целиком. Заодно снимаются старые подписки.
@@ -329,6 +347,10 @@ final class DiscoveryViewController: UIViewController {
         viewModel.multipeerService?.approvalDelegate = self
         await viewModel.startDeviceDiscovery()
         radarState.isScanning = true
+
+        // Хранилища подключены — координатор может выполнить маршруты,
+        // пришедшие раньше (ссылка, нажатие в поиске).
+        coordinator?.markReady()
     }
 
     /// Спрашивает имя и не отпускает, пока не назовут.
@@ -352,14 +374,14 @@ final class DiscoveryViewController: UIViewController {
                                       preferredStyle: .alert)
 
         alert.addTextField { field in
-            field.placeholder = "Имя"
+            field.placeholder = String(localized: "Имя")
             field.text = UserSettings.userName
             field.autocapitalizationType = .words
             field.returnKeyType = .done
             field.clearButtonMode = .whileEditing
         }
 
-        let confirm = UIAlertAction(title: "Готово", style: .default) { [weak self] _ in
+        let confirm = UIAlertAction(title: String(localized: "Готово"), style: .default) { [weak self] _ in
             let entered = alert.textFields?.first?.text?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
@@ -405,6 +427,19 @@ final class DiscoveryViewController: UIViewController {
                                                name: UIApplication.willEnterForegroundNotification,
                                                object: nil
         )
+
+        // Serious/critical — гасим анимации радара, пока телефон не остынет.
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(thermalStateDidChange),
+                                               name: ProcessInfo.thermalStateDidChangeNotification,
+                                               object: nil
+        )
+        updateCalmForThermalState()
+    }
+
+    @objc
+    private func thermalStateDidChange() {
+        updateCalmForThermalState()
     }
 
     /// Связь в фоне — дело транспортов: Multipeer останавливается сам,
@@ -560,21 +595,7 @@ final class DiscoveryViewController: UIViewController {
 
     @objc
     private func showOwnWall() {
-        guard let transport = viewModel.multipeerService else {
-            return
-        }
-
-        let wall = WallView(
-            viewModel: WallViewModel(owner: nil, transport: transport),
-            ownAddress: transport.myAddress
-        )
-
-        // Радар прячет панель навигации в viewWillAppear, и стена без этой
-        // строки открывалась бы без кнопки «назад». При возврате радар
-        // спрячет её снова сам.
-        navigationController?.setNavigationBarHidden(false, animated: true)
-        navigationController?.pushViewController(UIHostingController(rootView: wall),
-                                                 animated: true)
+        coordinator?.route(.ownWall)
     }
 
     // MARK: - Animations
@@ -635,20 +656,25 @@ final class DiscoveryViewController: UIViewController {
             return
         }
         NoticeBanner.show(notice, in: window) { [weak self] in
-            self?.open(conversationWith: notice.address, named: notice.name)
+            self?.coordinator?.route(
+                .conversation(address: notice.address, name: notice.name, focus: nil)
+            )
         }
     }
 
-    /// Открыть чат с человеком, откуда бы ни нажали: назад к корню и в чат.
-    private func open(conversationWith address: String, named name: String) {
-        guard let navigation = navigationController else {
-            return
-        }
-        navigation.popToRootViewController(animated: false)
+    /// Всплески событий транспорта (присутствие, тики RSSI) иначе шли на
+    /// экран по одному: каждый — пересборка списка и reloadData. Серия
+    /// схлопывается в один проход: пока события идут, перерисовка ждёт.
+    private var uiUpdateTask: Task<Void, Never>?
 
-        Task {
-            await viewModel.switchToConversation(with: address, named: name)
-            navigation.pushViewController(ChatViewController(viewModel: viewModel), animated: true)
+    private func scheduleUIUpdate() {
+        uiUpdateTask?.cancel()
+        uiUpdateTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard let self, !Task.isCancelled else {
+                return
+            }
+            self.updateUI()
         }
     }
 
@@ -660,10 +686,18 @@ final class DiscoveryViewController: UIViewController {
             // поэтому возвращаемся на него явно через Task { @MainActor }.
             Task { @MainActor in
                 guard let self else { return }
-                self.updateUI()
+                self.scheduleUIUpdate()
                 self.scheduleObservation()
             }
         }
+    }
+
+    /// Кольцо на воде — украшение: в serious/critical тепловом режиме
+    /// замерзает, пока телефон не остынет. Пауза не меняет сам поиск.
+    private func updateCalmForThermalState() {
+        radarState.calm = !EnergyPolicy.allowsAmbientAnimation(
+            ProcessInfo.processInfo.thermalState
+        )
     }
 
     /// Что показывать в списке. Демо-список подставляется, только если его
@@ -686,10 +720,12 @@ final class DiscoveryViewController: UIViewController {
         // «Рядом» через сервер было бы неправдой: собеседник может быть в
         // другом городе.
         if displayPeers.isEmpty {
-            statusLabel.text = usesRelay ? "Пока никого на связи" : "Пока никого рядом"
+            statusLabel.text = usesRelay ? String(localized: "Пока никого на связи") : String(localized: "Пока никого рядом")
         } else {
-            let word = usesRelay ? "На связи" : "Рядом"
-            statusLabel.text = "\(word) \(displayPeers.count) — посмотреть"
+            let count = displayPeers.count
+            statusLabel.text = usesRelay
+                ? String(localized: "На связи \(count) — посмотреть")
+                : String(localized: "Рядом \(count) — посмотреть")
         }
 
         // Кто на связи, видно по точке в строке разговора, поэтому список
@@ -715,8 +751,9 @@ final class DiscoveryViewController: UIViewController {
 
             // Подсказка про круг зависит от способа связи: «кто рядом» через
             // сервер было бы неправдой.
-            noConversationsLabel.text = "Разговоров пока нет.\nНажмите на круг, чтобы "
-                + (usesRelay ? "посмотреть, кто на связи." : "посмотреть, кто рядом.")
+            noConversationsLabel.text = usesRelay
+                ? String(localized: "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто на связи.")
+                : String(localized: "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто рядом.")
             noConversationsLabel.isHidden = !conversations.isEmpty
             tableView.reloadData()
         }
@@ -724,9 +761,7 @@ final class DiscoveryViewController: UIViewController {
 
     @objc
     private func showNearby() {
-        navigationController?.pushViewController(
-            NearbyViewController(viewModel: viewModel), animated: true
-        )
+        coordinator?.route(.nearby)
     }
 }
 
@@ -760,14 +795,11 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
 
         let conversation = conversations[indexPath.row]
 
-        Task {
-            await viewModel.switchToConversation(with: conversation.peerAddress,
-                                                 named: conversation.peerName)
-
-            navigationController?.pushViewController(
-                ChatViewController(viewModel: viewModel), animated: true
-            )
-        }
+        coordinator?.route(
+            .conversation(address: conversation.peerAddress,
+                          name: conversation.peerName,
+                          focus: nil)
+        )
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {

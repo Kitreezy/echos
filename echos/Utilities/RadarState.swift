@@ -14,4 +14,9 @@ final class RadarState: ObservableObject {
     /// Сколько человек вокруг. Радар рисует их точками — это тот же счётчик,
     /// только видимый, а не прочитанный.
     @Published var nearbyCount: Int = 0
+
+    /// Тепловой режим serious и выше — украшения выключены, кольцо замерло.
+    /// Решение о том, когда calm, принимает EnergyPolicy; состояние только
+    /// передаёт вью.
+    @Published var calm: Bool = false
 }
