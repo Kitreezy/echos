@@ -14,6 +14,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
     /// Владелец навигации и модели. Сцена держит его, экраны — слабо.
+    /// Граф собирает корень композиции; сцена его только хранит.
     private var coordinator: AppCoordinator?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
@@ -29,9 +30,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // ставить его на каждый экран значит однажды забыть.
         window.overrideUserInterfaceStyle = .dark
 
-        let coordinator = AppCoordinator()
-        self.coordinator = coordinator
-        let navigationController = coordinator.navigationController
+        let root = CompositionRoot(environment: .current())
+        coordinator = root.coordinator
+        let navigationController = root.coordinator.navigationController
 
 //        navigationController.setNavigationBarHidden(true, animated: false)
 

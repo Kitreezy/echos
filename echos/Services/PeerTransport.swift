@@ -173,12 +173,9 @@ enum PeerTransportFactory {
 
     @MainActor
     static func make() -> any PeerTransport {
-        #if DEBUG
-        // UI-тесты: собеседники и переписка — декорация, см. UITestMode.
-        if UITestMode.isActive {
-            return DemoTransport()
-        }
-        #endif
+        // Решение об окружении (UI-тесты → DemoTransport) принимает корень
+        // композиции, подменяя ChatViewModel.makeTransport; здесь — только
+        // продовый выбор по настройкам.
         switch kind(usesRelay: UserSettings.usesRelay, customURL: UserSettings.relayURL) {
         case .relay(let url):
             Logger.network.notice("Transport: nearby + relay \(url, privacy: .public)")

@@ -235,6 +235,11 @@ final class ChatViewModel {
 
     // MARK: - Setup
 
+    /// Чем жить, когда initialize() не получил транспорт явно. Корень
+    /// композиции подменяет замыкание под окружение (UI-тесты — демо), а
+    /// по умолчанию — фабрика по настройкам приложения.
+    var makeTransport: @MainActor () -> any PeerTransport = { PeerTransportFactory.make() }
+
     /// Точка внедрения зависимостей.
     /// Прод вызывает без аргументов и получает реальные Multipeer + Core Data,
     /// тест передаёт свои реализации.
@@ -251,7 +256,7 @@ final class ChatViewModel {
         typingTask?.cancel()
         connectionStateTask?.cancel()
 
-        multipeerService = transport ?? PeerTransportFactory.make()
+        multipeerService = transport ?? makeTransport()
         if let store {
             messageStore = store
         } else {

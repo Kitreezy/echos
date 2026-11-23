@@ -36,7 +36,7 @@ struct CoordinatorTests {
     /// Регрессия pendingDeepLink/pendingSearchTarget: маршрут, пришедший до
     /// `markReady()`, не должен трогать стек — он ждёт и выполняется после.
     @Test func routeBeforeReady_waitsForMarkReady() async {
-        let coordinator = AppCoordinator()
+        let coordinator = AppCoordinator(viewModel: ChatViewModel(), mosaicCache: MosaicChatImageCache())
         #expect(coordinator.navigationController.viewControllers.count == 1)
 
         coordinator.route(.nearby)
@@ -54,7 +54,7 @@ struct CoordinatorTests {
 
     /// Маршрут, пришедший после готовности, выполняется сразу.
     @Test func routeAfterReady_executesImmediately() async {
-        let coordinator = AppCoordinator()
+        let coordinator = AppCoordinator(viewModel: ChatViewModel(), mosaicCache: MosaicChatImageCache())
         coordinator.markReady()
 
         coordinator.route(.nearby)
@@ -69,7 +69,7 @@ struct CoordinatorTests {
     /// Стена без транспорта (модель не инициализирована) — тихий пропуск,
     /// как раньше делал guard в самом контроллере.
     @Test func ownWallWithoutTransport_isNoOp() async {
-        let coordinator = AppCoordinator()
+        let coordinator = AppCoordinator(viewModel: ChatViewModel(), mosaicCache: MosaicChatImageCache())
         coordinator.markReady()
 
         coordinator.route(.ownWall)
@@ -81,7 +81,7 @@ struct CoordinatorTests {
     /// Последний из серии маршрутов побеждает: два подряд — один чат,
     /// а не два поверх друг друга.
     @Test func secondRouteCancelsFirstConversation() async {
-        let coordinator = AppCoordinator()
+        let coordinator = AppCoordinator(viewModel: ChatViewModel(), mosaicCache: MosaicChatImageCache())
         coordinator.markReady()
 
         coordinator.route(.conversation(address: "first", name: nil, focus: nil))
