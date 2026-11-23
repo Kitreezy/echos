@@ -15,9 +15,25 @@ final class DiscoveryViewController: UIViewController {
 
     // MARK: - ViewModel
 
-    let viewModel = ChatViewModel()
+    let viewModel: ChatViewModel
+
+    /// Переходы просим у координатора, а не двигаем навигацию сами.
+    /// Слабо: координатор держит нас сильно, обратная сильная ссылка —
+    /// цикл, который не разорвать. Просится через init нельзя: координатор
+    /// создаёт нас до конца собственной инициализации, поэтому прикрепляем
+    /// сразу после создания.
+    weak var coordinator: AppCoordinator?
 
     private let radarState = RadarState()
+
+    init(viewModel: ChatViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     // MARK: - UI Components
 
@@ -332,29 +348,10 @@ final class DiscoveryViewController: UIViewController {
         await viewModel.startDeviceDiscovery()
         radarState.isScanning = true
 
-        isStarted = true
-        if let target = pendingSearchTarget {
-            pendingSearchTarget = nil
-            open(target)
-        }
-        if let link = pendingDeepLink {
-            pendingDeepLink = nil
-            open(link)
-        }
+        // Хранилища подключены — координатор может выполнить маршруты,
+        // пришедшие раньше (ссылка, нажатие в поиске).
+        coordinator?.markReady()
     }
-
-    // MARK: - Из системного поиска и по ссылке
-
-    /// Хранилище подключается в `startDiscovery()`. Нажатие в поиске или
-    /// переход по ссылке при холодном запуске приходят раньше — и ждут здесь.
-    var isStarted = false
-    var pendingSearchTarget: SpotlightItems.Target?
-    var pendingDeepLink: DeepLink?
-
-    /// Последний запрошенный извне переход. Поиск, ссылка и входящее могут
-    /// прийти почти одновременно; без отмены два перехода открыли бы два чата
-    /// поверх друг друга.
-    var openConversationTask: Task<Void, Never>?
 
     /// Спрашивает имя и не отпускает, пока не назовут.
     ///
@@ -430,6 +427,19 @@ final class DiscoveryViewController: UIViewController {
                                                name: UIApplication.willEnterForegroundNotification,
                                                object: nil
         )
+
+        // Serious/critical — гасим анимации радара, пока телефон не остынет.
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(thermalStateDidChange),
+                                               name: ProcessInfo.thermalStateDidChangeNotification,
+                                               object: nil
+        )
+        updateCalmForThermalState()
+    }
+
+    @objc
+    private func thermalStateDidChange() {
+        updateCalmForThermalState()
     }
 
     /// Связь в фоне — дело транспортов: Multipeer останавливается сам,
@@ -457,7 +467,6 @@ final class DiscoveryViewController: UIViewController {
     }
 
     deinit {
-        openConversationTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -586,21 +595,7 @@ final class DiscoveryViewController: UIViewController {
 
     @objc
     private func showOwnWall() {
-        guard let transport = viewModel.multipeerService else {
-            return
-        }
-
-        let wall = WallView(
-            viewModel: WallViewModel(owner: nil, transport: transport),
-            ownAddress: transport.myAddress
-        )
-
-        // Радар прячет панель навигации в viewWillAppear, и стена без этой
-        // строки открывалась бы без кнопки «назад». При возврате радар
-        // спрячет её снова сам.
-        navigationController?.setNavigationBarHidden(false, animated: true)
-        navigationController?.pushViewController(UIHostingController(rootView: wall),
-                                                 animated: true)
+        coordinator?.route(.ownWall)
     }
 
     // MARK: - Animations
@@ -661,7 +656,25 @@ final class DiscoveryViewController: UIViewController {
             return
         }
         NoticeBanner.show(notice, in: window) { [weak self] in
-            self?.open(conversationWith: notice.address, named: notice.name)
+            self?.coordinator?.route(
+                .conversation(address: notice.address, name: notice.name, focus: nil)
+            )
+        }
+    }
+
+    /// Всплески событий транспорта (присутствие, тики RSSI) иначе шли на
+    /// экран по одному: каждый — пересборка списка и reloadData. Серия
+    /// схлопывается в один проход: пока события идут, перерисовка ждёт.
+    private var uiUpdateTask: Task<Void, Never>?
+
+    private func scheduleUIUpdate() {
+        uiUpdateTask?.cancel()
+        uiUpdateTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard let self, !Task.isCancelled else {
+                return
+            }
+            self.updateUI()
         }
     }
 
@@ -673,10 +686,18 @@ final class DiscoveryViewController: UIViewController {
             // поэтому возвращаемся на него явно через Task { @MainActor }.
             Task { @MainActor in
                 guard let self else { return }
-                self.updateUI()
+                self.scheduleUIUpdate()
                 self.scheduleObservation()
             }
         }
+    }
+
+    /// Кольцо на воде — украшение: в serious/critical тепловом режиме
+    /// замерзает, пока телефон не остынет. Пауза не меняет сам поиск.
+    private func updateCalmForThermalState() {
+        radarState.calm = !EnergyPolicy.allowsAmbientAnimation(
+            ProcessInfo.processInfo.thermalState
+        )
     }
 
     /// Что показывать в списке. Демо-список подставляется, только если его
@@ -740,9 +761,7 @@ final class DiscoveryViewController: UIViewController {
 
     @objc
     private func showNearby() {
-        navigationController?.pushViewController(
-            NearbyViewController(viewModel: viewModel), animated: true
-        )
+        coordinator?.route(.nearby)
     }
 }
 
@@ -776,14 +795,11 @@ extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
 
         let conversation = conversations[indexPath.row]
 
-        Task {
-            await viewModel.switchToConversation(with: conversation.peerAddress,
-                                                 named: conversation.peerName)
-
-            navigationController?.pushViewController(
-                ChatViewController(viewModel: viewModel), animated: true
-            )
-        }
+        coordinator?.route(
+            .conversation(address: conversation.peerAddress,
+                          name: conversation.peerName,
+                          focus: nil)
+        )
     }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
