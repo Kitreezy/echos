@@ -496,10 +496,14 @@ final class ChatViewController: UIViewController {
             // InputContainer
             inputContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            // Не меньше, а не ровно: при крупном тексте поле растёт, и в
-            // точную высоту оно не помещалось — текст обрезался.
-            inputContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
-            inputContainer.heightAnchor.constraint(greaterThanOrEqualTo: textField.heightAnchor, constant: 24),
+            // Ровно, а не «не меньше»: вместе с нулевыми скрытыми
+            // typingLabel/replyBar неравенство оставляло систему без
+            // одного уравнения — AutoLayout отдавал весь свободный ход
+            // контейнеру (вырождался на весь экран), а таблица сообщений
+            // схлопывалась в ноль. Равенство фиксирует высоту цепочки.
+            // textField ≥ 40 ⇒ контейнер ≥ 64; при крупном тексте
+            // (Dynamic Type) растёт вместе с полем, обрезки нет.
+            inputContainer.heightAnchor.constraint(equalTo: textField.heightAnchor, constant: 24),
             inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
 
             // Черновик мозаики — над полем ввода, справа, как своё сообщение.
