@@ -29,7 +29,7 @@ struct RadarView: View {
                 .stroke(Color.hairline, lineWidth: 1)
                 .frame(width: diameter, height: diameter)
 
-            if state.isScanning {
+            if state.isScanning && !state.calm {
                 Circle()
                     .stroke(Color.alive, lineWidth: 1)
                     .frame(width: diameter, height: diameter)
@@ -55,8 +55,8 @@ struct RadarView: View {
                 .frame(width: 5, height: 5)
         }
         .frame(width: diameter, height: diameter)
-        .task(id: state.isScanning) {
-            guard state.isScanning else {
+        .task(id: state.isScanning && !state.calm) {
+            guard state.isScanning, !state.calm else {
                 return
             }
             await breathe()

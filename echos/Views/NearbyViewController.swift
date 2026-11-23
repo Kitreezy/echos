@@ -17,6 +17,7 @@ import OSLog
 final class NearbyViewController: UIViewController {
 
     private let viewModel: ChatViewModel
+    private weak var coordinator: AppCoordinator?
 
     // MARK: - UI
 
@@ -55,8 +56,9 @@ final class NearbyViewController: UIViewController {
 
     // MARK: - Init
 
-    init(viewModel: ChatViewModel) {
+    init(viewModel: ChatViewModel, coordinator: AppCoordinator) {
         self.viewModel = viewModel
+        self.coordinator = coordinator
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -150,13 +152,9 @@ final class NearbyViewController: UIViewController {
     }
 
     private func openChat(with peer: Peer) {
-        Task {
-            await viewModel.switchToConversation(with: peer.address,
-                                                 named: peer.displayName)
-
-            let chat = ChatViewController(viewModel: viewModel)
-            navigationController?.pushViewController(chat, animated: true)
-        }
+        coordinator?.route(
+            .conversation(address: peer.address, name: peer.displayName, focus: nil)
+        )
     }
 }
 

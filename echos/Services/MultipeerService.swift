@@ -227,6 +227,19 @@ final class MultipeerService: NSObject {
                                                selector: #selector(appWillEnterForeground),
                                                name: UIApplication.willEnterForegroundNotification,
                                                object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(thermalStateDidChange),
+                                               name: ProcessInfo.thermalStateDidChangeNotification,
+                                               object: nil)
+    }
+
+    /// Уведомление приходит на потоке отправителя, поэтому оборачиваем —
+    /// как в остальных делегатах выше.
+    @objc
+    nonisolated private func thermalStateDidChange() {
+        Task { @MainActor [weak self] in
+            self?.applyThermalState(ProcessInfo.processInfo.thermalState)
+        }
     }
 
     @objc
@@ -247,8 +260,21 @@ final class MultipeerService: NSObject {
 
     // MARK: - Симуляция RSSI (сама симуляция — в extension ниже)
 
-    /// Интервал между обновлениями. Меняется до старта — тесты ставят меньше.
+    /// Интервал между обновлениями. Меняется до старта — тесты ставят меньше;
+    /// во время работы его двигает тепловой режим (`applyThermalState`).
     var rssiUpdateInterval: Duration = .seconds(3)
+
+    /// Обновить интервал симуляции под тепловой режим. Внутренняя, чтобы
+    /// держать `EnergyPolicy` единственным знающим правила; в проде вызывается
+    /// из наблюдателя за `thermalStateDidChangeNotification`.
+    func applyThermalState(_ thermal: ProcessInfo.ThermalState) {
+        let interval = EnergyPolicy.rssiSimulationInterval(thermal: thermal)
+        guard interval != rssiUpdateInterval else {
+            return
+        }
+        rssiUpdateInterval = interval
+        Logger.nearby.notice("RSSI simulation interval → \(interval) (thermal: \(String(describing: thermal), privacy: .public))")
+    }
 
     /// Сколько раз крутилась симуляция. Диагностика для тестов на отмену.
     private(set) var rssiSimulationTicks = 0
@@ -592,14 +618,18 @@ extension MultipeerService {
             return
         }
 
-        let interval = rssiUpdateInterval
         rssiSimulationTask = Task { [weak self] in
-            let ticks = AsyncTimerSequence.repeating(every: interval)
-            for await _ in ticks {
+            // Паузу читаем на каждом тике, а не фиксируем при старте:
+            // тепловой режим меняет интервал на лету, перезапуск не нужен.
+            while !Task.isCancelled {
+                guard let self else {
+                    return
+                }
+                try? await Task.sleep(for: self.rssiUpdateInterval)
                 guard !Task.isCancelled else {
                     return
                 }
-                self?.simulateRSSIStep()
+                self.simulateRSSIStep()
             }
         }
     }
@@ -610,12 +640,20 @@ extension MultipeerService {
     }
 
     private func simulateRSSIStep() {
+        rssiSimulationTicks += 1
+
+        // Телефон не в курсе пустого списка: тик с нулём собеседников будил
+        // бы процессор впустую. Счётчик тикает — тесты на отмену смотрят на
+        // него, а вещать нечего.
+        guard !discoveredPeers.isEmpty else {
+            return
+        }
+
         for peerID in discoveredPeers.keys {
             let rssi = Int.random(in: -90...(-40))
             peerRSSI[peerID] = rssi
             peerDistances[peerID] = calculateDistance(from: rssi)
         }
-        rssiSimulationTicks += 1
         emitPeers()
     }
 }

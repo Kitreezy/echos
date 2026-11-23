@@ -8,9 +8,13 @@
 import CoreSpotlight
 import UIKit
 
+@MainActor
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
+
+    /// Владелец навигации и модели. Сцена держит его, экраны — слабо.
+    private var coordinator: AppCoordinator?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         LaunchTrace.sceneWillConnect()
@@ -25,8 +29,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // ставить его на каждый экран значит однажды забыть.
         window.overrideUserInterfaceStyle = .dark
 
-        let discoveryVC = DiscoveryViewController()
-        let navigationController = UINavigationController(rootViewController: discoveryVC)
+        let coordinator = AppCoordinator()
+        self.coordinator = coordinator
+        let navigationController = coordinator.navigationController
 
 //        navigationController.setNavigationBarHidden(true, animated: false)
 
@@ -69,12 +74,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func openURLContext(_ context: UIOpenURLContext) {
-        guard let link = DeepLink(url: context.url),
-              let navigation = window?.rootViewController as? UINavigationController,
-              let discovery = navigation.viewControllers.first as? DiscoveryViewController else {
+        guard let link = DeepLink(url: context.url) else {
             return
         }
-        discovery.open(link)
+        coordinator?.route(AppRoute(link))
     }
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
@@ -84,12 +87,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func openSearchResult(_ activity: NSUserActivity) {
         guard activity.activityType == CSSearchableItemActionType,
               let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
-              let target = SpotlightItems.target(from: identifier),
-              let navigation = window?.rootViewController as? UINavigationController,
-              let discovery = navigation.viewControllers.first as? DiscoveryViewController else {
+              let target = SpotlightItems.target(from: identifier) else {
             return
         }
-        discovery.open(target)
+        coordinator?.route(AppRoute(target))
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {}

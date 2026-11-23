@@ -1300,6 +1300,15 @@ final class ChatViewController: UIViewController {
         typingLabel.isHidden = false
         typingDots = 0
 
+        // Serious/critical — таймер на 0,5 с будил бы телефон впустую:
+        // показываем троеточие статичным текстом, пока не остынет.
+        guard EnergyPolicy.allowsAmbientAnimation(
+            ProcessInfo.processInfo.thermalState
+        ) else {
+            typingLabel.text = String(localized: "\(peerName) печатает") + "…"
+            return
+        }
+
         typingAnimationTimer = Timer.scheduledTimer(withTimeInterval: 0.5,
                                                     repeats: true) { [weak self] _ in
             // Timer со scheduledTimer всегда стреляет на главном run loop,
