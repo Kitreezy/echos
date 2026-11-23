@@ -200,7 +200,7 @@ final class ChatViewController: UIViewController {
 
     /// Пересказ живёт, пока не сменилось пропущенное: открыть его снова —
     /// увидеть готовое, а не ждать модель второй раз.
-    private var digestViewModel: DigestViewModel?
+    private var digestStore: DigestStore?
     private var digestKey: [UUID] = []
     private weak var digestButton: UIBarButtonItem?
 
@@ -1187,21 +1187,21 @@ final class ChatViewController: UIViewController {
     @objc
     private func showDigest() {
         let key = viewModel.missedMessages.map(\.id)
-        if digestViewModel == nil || digestKey != key {
-            digestViewModel = DigestViewModel(
+        if digestStore == nil || digestKey != key {
+            digestStore = DigestStore(
                 messages: viewModel.missedMessages,
                 peerName: viewModel.currentConversationName ?? String(localized: "собеседник"),
                 digester: viewModel.digester
             )
             digestKey = key
         }
-        guard let digestViewModel else {
+        guard let digestStore else {
             return
         }
-        digestViewModel.answered = viewModel.answeredMessageIDs
+        digestStore.send(.syncAnswered(viewModel.answeredMessageIDs))
 
         let digestView = DigestView(
-            viewModel: digestViewModel,
+            store: digestStore,
             onReply: { [weak self] reply, messageID in
                 self?.draftReply(reply, to: messageID)
             },
@@ -1223,12 +1223,12 @@ final class ChatViewController: UIViewController {
         guard #available(iOS 26.0, *), let digestButton else {
             return
         }
-        guard let digestViewModel else {
+        guard let digestStore else {
             digestButton.badge = nil
             return
         }
-        digestViewModel.answered = viewModel.answeredMessageIDs
-        let count = digestViewModel.unansweredCount
+        digestStore.send(.syncAnswered(viewModel.answeredMessageIDs))
+        let count = digestStore.state.unansweredCount
         digestButton.badge = count > 0 ? .count(count) : nil
     }
 

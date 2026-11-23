@@ -111,8 +111,10 @@ struct DigestFailure: Error, Equatable {
 }
 
 /// Кто пересказывает. В приложении — модель на устройстве, в тестах — заглушка.
+/// `Sendable` — как у всякого @MainActor-типа: эффекты несут пересказчика
+/// через актора без отдельной обёртки.
 @MainActor
-protocol Digesting {
+protocol Digesting: Sendable {
     var availability: DigestAvailability { get }
 
     /// Как пересказывать эти сообщения: напрямую, через перевод или никак.

@@ -145,12 +145,30 @@ final class DigestTextsTests: XCTestCase {
 // MARK: - Экран пересказа
 
 @MainActor
-final class DigestViewModelTests: XCTestCase {
+final class DigestStoreTests: XCTestCase {
 
-    private func makeViewModel(_ digester: StubDigester) -> DigestViewModel {
-        DigestViewModel(messages: [Message(text: "привет", isFromMe: false)],
-                        peerName: "Боб",
-                        digester: digester)
+    private func makeStore(_ digester: StubDigester) -> DigestStore {
+        DigestStore(messages: [Message(text: "привет", isFromMe: false)],
+                    peerName: "Боб",
+                    digester: digester)
+    }
+
+    /// Даёт эффектам доехать до одного из завершающих состояний.
+    private func settle(_ store: DigestStore) async {
+        let settled = await waitUntil(timeout: .seconds(5)) {
+            switch store.state.phase {
+            case .done, .failed:
+                return true
+            default:
+                return false
+            }
+        }
+        XCTAssertTrue(settled, "Пересказ не завершился: \(store.state.phase)")
+    }
+
+    private func start(_ store: DigestStore) async {
+        store.send(.start)
+        await settle(store)
     }
 
     func test_draftsArrive_thenTheLastOneIsTheResult() async {
@@ -162,52 +180,55 @@ final class DigestViewModelTests: XCTestCase {
             .draft(Digest(points: ["Боб зовёт"])),
             .draft(final)
         ]
-        let viewModel = makeViewModel(digester)
+        let store = makeStore(digester)
 
-        await viewModel.start()
+        await start(store)
 
-        XCTAssertEqual(viewModel.state, .done(final))
+        XCTAssertEqual(store.state.phase, .done(final))
     }
 
     func test_modelFailure_isShownInItsOwnWords() async {
         let digester = StubDigester()
         digester.failure = DigestFailure(message: "Модель на устройстве не работает с языком этой переписки")
-        let viewModel = makeViewModel(digester)
+        let store = makeStore(digester)
 
-        await viewModel.start()
+        await start(store)
 
-        XCTAssertEqual(viewModel.state, .failed("Модель на устройстве не работает с языком этой переписки"))
+        XCTAssertEqual(store.state.phase, .failed("Модель на устройстве не работает с языком этой переписки"))
     }
 
     func test_modelNotReady_explainsWithoutCallingIt() async {
         let digester = StubDigester()
         digester.availability = .notNow("Включите Apple Intelligence")
-        let viewModel = makeViewModel(digester)
+        let store = makeStore(digester)
 
-        await viewModel.start()
+        store.send(.start)
 
-        XCTAssertEqual(viewModel.state, .failed("Включите Apple Intelligence"))
+        XCTAssertEqual(store.state.phase, .failed("Включите Apple Intelligence"))
         XCTAssertTrue(digester.digested.isEmpty)
     }
 
     func test_unreadableLanguage_explainedWithoutCallingTheModel() async {
         let digester = StubDigester()
         digester.plan = .impossible("Ни модель, ни переводчик не знают языка")
-        let viewModel = makeViewModel(digester)
+        let store = makeStore(digester)
 
-        await viewModel.start()
+        await start(store)
 
-        XCTAssertEqual(viewModel.state, .failed("Ни модель, ни переводчик не знают языка"))
+        XCTAssertEqual(store.state.phase, .failed("Ни модель, ни переводчик не знают языка"))
         XCTAssertTrue(digester.digested.isEmpty, "Отказ известен заранее — звать модель незачем")
     }
 
     func test_reopening_showsTheReadyDigestWithoutTheModel() async {
         let digester = StubDigester()
         digester.script = [.draft(Digest(points: ["a"]))]
-        let viewModel = makeViewModel(digester)
-        await viewModel.startIfNeeded()
+        let store = makeStore(digester)
 
-        await viewModel.startIfNeeded()
+        store.send(.start)
+        let first = await waitUntil { digester.digested.count == 1 }
+        XCTAssertTrue(first)
+        store.send(.start)
+        try? await Task.sleep(for: .milliseconds(100))
 
         XCTAssertEqual(digester.digested.count, 1, "Второе открытие — готовый пересказ, модель не зовём")
     }
@@ -215,14 +236,17 @@ final class DigestViewModelTests: XCTestCase {
     func test_interruptedDigest_startsAgain() async {
         let digester = StubDigester()
         digester.failure = CancellationError()
-        let viewModel = makeViewModel(digester)
-        await viewModel.startIfNeeded()
+        let store = makeStore(digester)
+        store.send(.start)
+        let failedOnce = await waitUntil { digester.digested.count == 1 }
+        XCTAssertTrue(failedOnce)
 
         digester.failure = nil
         digester.script = [.draft(Digest(points: ["a"]))]
-        await viewModel.startIfNeeded()
+        store.send(.start)
+        await settle(store)
 
-        XCTAssertEqual(viewModel.state, .done(Digest(points: ["a"])))
+        XCTAssertEqual(store.state.phase, .done(Digest(points: ["a"])))
     }
 
     func test_answeredQuestions_areNotCountedAsWaiting() async {
@@ -233,23 +257,23 @@ final class DigestViewModelTests: XCTestCase {
             DigestQuestion(text: "когда?", replies: ["в семь"], messageID: UUID()),
             DigestQuestion(text: "без ссылки", replies: ["ок"])
         ]))]
-        let viewModel = makeViewModel(digester)
-        await viewModel.start()
+        let store = makeStore(digester)
+        await start(store)
 
-        viewModel.answered = [asked]
+        store.send(.syncAnswered([asked]))
 
-        XCTAssertEqual(viewModel.unansweredCount, 2)
+        XCTAssertEqual(store.state.unansweredCount, 2)
     }
 
     func test_emptyAnswer_isNotPresentedAsASummary() async {
         let digester = StubDigester()
         digester.script = [.draft(Digest())]
-        let viewModel = makeViewModel(digester)
+        let store = makeStore(digester)
 
-        await viewModel.start()
+        await start(store)
 
-        guard case .failed = viewModel.state else {
-            return XCTFail("Пустой пересказ — не пересказ: \(viewModel.state)")
+        guard case .failed = store.state.phase else {
+            return XCTFail("Пустой пересказ — не пересказ: \(store.state.phase)")
         }
     }
 }
@@ -366,8 +390,31 @@ final class TranslatedDigestTests: XCTestCase {
     private let russian = Locale.Language(identifier: "ru")
     private let english = Locale.Language(identifier: "en")
 
-    private func makeViewModel(_ digester: StubDigester, messages: [Message]) -> DigestViewModel {
-        DigestViewModel(messages: messages, peerName: "Боб", digester: digester)
+    private func makeStore(_ digester: StubDigester,
+                           messages: [Message],
+                           downloadPollInterval: Duration = .seconds(2)) -> DigestStore {
+        DigestStore(messages: messages,
+                    peerName: "Боб",
+                    digester: digester,
+                    downloadPollInterval: downloadPollInterval)
+    }
+
+    /// Даёт эффектам доехать до одного из завершающих состояний.
+    private func settle(_ store: DigestStore) async {
+        let settled = await waitUntil(timeout: .seconds(5)) {
+            switch store.state.phase {
+            case .done, .failed:
+                return true
+            default:
+                return false
+            }
+        }
+        XCTAssertTrue(settled, "Пересказ не завершился: \(store.state.phase)")
+    }
+
+    private func start(_ store: DigestStore) async {
+        store.send(.start)
+        await settle(store)
     }
 
     func test_conversationGoesThereAndTheDigestComesBack() async {
@@ -379,30 +426,30 @@ final class TranslatedDigestTests: XCTestCase {
                           questions: [DigestQuestion(text: "Are you coming?", replies: ["Yes", "Can't make it"])],
                           plans: ["Saturday 7pm"]))
         ]
-        let viewModel = makeViewModel(digester, messages: [
+        let store = makeStore(digester, messages: [
             Message(text: "пойдём в кино?", isFromMe: false),
             Message(text: "в субботу в семь", isFromMe: false)
         ])
 
-        await viewModel.start()
+        await start(store)
 
         XCTAssertEqual(digester.digested.first?.map(\.text), ["[en] пойдём в кино?", "[en] в субботу в семь"],
                        "Модель читает переведённое")
-        XCTAssertEqual(viewModel.state, .done(Digest(points: ["[ru] Bob invites to the cinema"],
+        XCTAssertEqual(store.state.phase, .done(Digest(points: ["[ru] Bob invites to the cinema"],
                                                      questions: [DigestQuestion(text: "[ru] Are you coming?",
                                                                                 replies: ["[ru] Yes", "[ru] Can't make it"])],
                                                      plans: ["[ru] Saturday 7pm"])),
                        "Пересказ возвращается на язык переписки, разделы не перепутаны")
-        XCTAssertNotNil(viewModel.translatedVia, "Под пересказом сказано, что он шёл через перевод")
+        XCTAssertNotNil(store.state.translatedVia, "Под пересказом сказано, что он шёл через перевод")
     }
 
     func test_backTranslation_isOneBatch() async {
         let digester = StubDigester()
         digester.plan = .translate(from: russian, via: english)
         digester.script = [.draft(Digest(points: ["a", "b"], questions: [DigestQuestion(text: "c", replies: ["c1"])], plans: ["d"]))]
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
+        let store = makeStore(digester, messages: [Message(text: "x", isFromMe: false)])
 
-        await viewModel.start()
+        await start(store)
 
         XCTAssertEqual(digester.translators.map(\.received.count), [1, 1],
                        "Туда и обратно — по одной пачке: переводчик поднимается один раз")
@@ -413,12 +460,12 @@ final class TranslatedDigestTests: XCTestCase {
         digester.plan = .translate(from: russian, via: english)
         digester.script = [.draft(Digest(points: ["a"]))]
         let mosaic = Mosaic(columns: 2, rows: 2, cells: ["🟨", "", "", "🟨"])!
-        let viewModel = makeViewModel(digester, messages: [
+        let store = makeStore(digester, messages: [
             Message(text: "смотри", isFromMe: false),
             Message(text: mosaic.text, mosaic: mosaic, isFromMe: false)
         ])
 
-        await viewModel.start()
+        await start(store)
 
         XCTAssertEqual(digester.digested.first?.last?.text, mosaic.text)
         XCTAssertEqual(digester.digested.first?.last?.mosaic, mosaic)
@@ -428,14 +475,14 @@ final class TranslatedDigestTests: XCTestCase {
         let digester = StubDigester()
         digester.plan = .translate(from: russian, via: english)
         digester.script = [.draft(Digest(points: ["Bob"]))]
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
+        let store = makeStore(digester, messages: [Message(text: "x", isFromMe: false)])
 
-        await viewModel.start()
+        await start(store)
 
         // Черновик на языке-посреднике человеку не показывается: по ходу
         // было бы видно английский текст, который потом сменится русским.
-        guard case .done = viewModel.state else {
-            return XCTFail("\(viewModel.state)")
+        guard case .done = store.state.phase else {
+            return XCTFail("\(store.state.phase)")
         }
     }
 
@@ -443,39 +490,49 @@ final class TranslatedDigestTests: XCTestCase {
         let digester = StubDigester()
         digester.plan = .translate(from: russian, via: english)
         digester.translationFailure = URLError(.unknown)
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
+        let store = makeStore(digester, messages: [Message(text: "x", isFromMe: false)])
 
-        await viewModel.start()
+        await start(store)
 
-        XCTAssertEqual(viewModel.state, .failed("Перевод на устройстве не получился."))
+        XCTAssertEqual(store.state.phase, .failed("Перевод на устройстве не получился."))
         XCTAssertTrue(digester.digested.isEmpty)
     }
 
     func test_languagesNotDownloaded_askFirst() async {
         let digester = StubDigester()
         digester.plan = .download(from: russian, via: english)
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
+        let store = makeStore(digester, messages: [Message(text: "x", isFromMe: false)])
 
-        await viewModel.start()
-
-        guard case .needsDownload = viewModel.state else {
-            return XCTFail("\(viewModel.state)")
+        store.send(.start)
+        let asked = await waitUntil {
+            if case .needsDownload = store.state.phase { return true }
+            return false
         }
-        XCTAssertEqual(viewModel.pendingDownload?.source, russian)
-        XCTAssertEqual(viewModel.pendingDownload?.target, english)
+        XCTAssertTrue(asked)
+
+        guard case .needsDownload = store.state.phase else {
+            return XCTFail("\(store.state.phase)")
+        }
+        XCTAssertEqual(store.state.pendingDownload?.source, russian)
+        XCTAssertEqual(store.state.pendingDownload?.target, english)
         XCTAssertTrue(digester.digested.isEmpty)
     }
 
     func test_tappingDownload_showsThatItIsGoing() async {
         let digester = StubDigester()
         digester.plan = .download(from: russian, via: english)
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
-        await viewModel.start()
+        let store = makeStore(digester, messages: [Message(text: "x", isFromMe: false)])
+        store.send(.start)
+        let asked = await waitUntil {
+            if case .needsDownload = store.state.phase { return true }
+            return false
+        }
+        XCTAssertTrue(asked)
 
-        viewModel.beginDownload()
+        store.send(.beginDownload)
 
-        guard case .downloading = viewModel.state else {
-            return XCTFail("После нажатия экран не должен выглядеть нетронутым: \(viewModel.state)")
+        guard case .downloading = store.state.phase else {
+            return XCTFail("После нажатия экран не должен выглядеть нетронутым: \(store.state.phase)")
         }
     }
 
@@ -485,28 +542,44 @@ final class TranslatedDigestTests: XCTestCase {
         let digester = StubDigester()
         digester.plan = .download(from: russian, via: english)
         digester.script = [.draft(Digest(points: ["a"]))]
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
-        viewModel.downloadPollInterval = .milliseconds(5)
-        await viewModel.start()
+        let store = makeStore(digester,
+                              messages: [Message(text: "x", isFromMe: false)],
+                              downloadPollInterval: .milliseconds(5))
+        store.send(.start)
+        let asked = await waitUntil {
+            if case .needsDownload = store.state.phase { return true }
+            return false
+        }
+        XCTAssertTrue(asked)
 
         let notYet = DigestPlan.download(from: russian, via: english)
         digester.upcomingPlans = [notYet, notYet]
         digester.plan = .translate(from: russian, via: english)
-        await viewModel.waitForLanguages()
+        store.send(.beginDownload)
+        let done = await waitUntil(timeout: .seconds(5)) {
+            if case .done = store.state.phase { return true }
+            return false
+        }
+        XCTAssertTrue(done, "Пересказ не начался после скачивания языков")
 
-        XCTAssertEqual(viewModel.state, .done(Digest(points: ["[ru] a"])))
+        XCTAssertEqual(store.state.phase, .done(Digest(points: ["[ru] a"])))
     }
 
     func test_downloadRefused_isExplained() async {
         let digester = StubDigester()
         digester.plan = .download(from: russian, via: english)
-        let viewModel = makeViewModel(digester, messages: [Message(text: "x", isFromMe: false)])
-        await viewModel.start()
+        let store = makeStore(digester, messages: [Message(text: "x", isFromMe: false)])
+        store.send(.start)
+        let asked = await waitUntil {
+            if case .needsDownload = store.state.phase { return true }
+            return false
+        }
+        XCTAssertTrue(asked)
 
-        viewModel.downloadFailed()
+        store.send(.downloadFailed)
 
-        guard case .failed = viewModel.state else {
-            return XCTFail("\(viewModel.state)")
+        guard case .failed = store.state.phase else {
+            return XCTFail("\(store.state.phase)")
         }
     }
 }
