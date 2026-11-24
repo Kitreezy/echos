@@ -14,7 +14,7 @@ import Translation
 
 struct DigestView: View {
 
-    @State var viewModel: DigestViewModel
+    @State var store: DigestStore
 
     /// Человек выбрал готовый ответ: текст и сообщение, на которое он.
     /// Ответ идёт в поле ввода, а не в переписку: модель может ошибиться,
@@ -48,12 +48,12 @@ struct DigestView: View {
             }
         }
         .task {
-            await viewModel.startIfNeeded()
+            store.send(.start)
         }
         // Замыкание — вне главного актора: сессия не Sendable, а
-        // `prepareTranslation` в нём не живёт. Модель экрана захвачена
-        // явно — она на главном акторе, и к ней возвращаемся через await.
-        .translationTask(download) { @Sendable [viewModel] session in
+        // `prepareTranslation` в нём не живёт. Стор захвачен явно — он на
+        // главном акторе, и к нему возвращаемся через await.
+        .translationTask(download) { @Sendable [store] session in
             do {
                 // Системный запрос «скачать языки?». Отказ — ошибка.
                 try await session.prepareTranslation()
@@ -61,16 +61,16 @@ struct DigestView: View {
                 return  // экран закрыли
             } catch {
                 Logger.digest.error("prepareTranslation failed: \(error, privacy: .public)")
-                await viewModel.downloadFailed()
+                await store.send(.downloadFailed)
                 return
             }
-            await viewModel.waitForLanguages()
+            await store.send(.beginDownload)
         }
     }
 
     private var footnote: String {
         var parts = [String(localized: "Пересказ составлен на этом телефоне. Переписка никуда не отправлялась.")]
-        if let pivot = viewModel.translatedVia {
+        if let pivot = store.state.translatedVia {
             parts.append(String(localized: """
                 Модель не знает языка переписки, поэтому она переведена на \(pivot) язык, \
                 а пересказ — обратно; перевод тоже сделан на телефоне.
@@ -82,9 +82,9 @@ struct DigestView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch viewModel.state {
+        switch store.state.phase {
         case .starting:
-            progress("Читаю \(viewModel.messageCount) сообщений от \(viewModel.peerName)…")
+            progress("Читаю \(store.state.messageCount) сообщений от \(store.state.peerName)…")
         case let .needsDownload(language):
             Section {
                 Text("""
@@ -94,10 +94,10 @@ struct DigestView: View {
                 Button("Скачать языки") {
                     // Повторное нажатие после отказа: та же конфигурация задачу
                     // не перезапустит — её надо объявить недействительной.
-                    viewModel.beginDownload()
+                    store.send(.beginDownload)
                     if download != nil {
                         download?.invalidate()
-                    } else if let pair = viewModel.pendingDownload {
+                    } else if let pair = store.state.pendingDownload {
                         download = TranslationSession.Configuration(source: pair.source, target: pair.target)
                     }
                 }
@@ -145,7 +145,7 @@ struct DigestView: View {
         if !digest.questions.isEmpty {
             Section("Ждут ответа") {
                 ForEach(Array(digest.questions.enumerated()), id: \.offset) { _, question in
-                    if viewModel.isAnswered(question) {
+                    if store.state.isAnswered(question) {
                         // Отвеченное остаётся в списке, но гаснет: видно,
                         // что сделано и что ещё нет.
                         Label(question.text, systemImage: "checkmark")

@@ -102,12 +102,22 @@ final class OnDeviceDigesterLiveTests: XCTestCase {
             throw XCTSkip("Языки для перевода не скачаны или недоступны")
         }
 
-        let viewModel = DigestViewModel(messages: messages, peerName: "Боб", digester: digester)
-        await viewModel.start()
+        let store = DigestStore(messages: messages, peerName: "Боб", digester: digester)
+        store.send(.start)
 
-        print("[live] цепочка: \(viewModel.state)")
-        guard case let .done(digest) = viewModel.state else {
-            return XCTFail("\(viewModel.state)")
+        let settled = await waitUntil(timeout: .seconds(120)) {
+            switch store.state.phase {
+            case .done, .failed:
+                return true
+            default:
+                return false
+            }
+        }
+        XCTAssertTrue(settled, "Цепочка не завершилась за две минуты")
+
+        print("[live] цепочка: \(store.state.phase)")
+        guard case let .done(digest) = store.state.phase else {
+            return XCTFail("\(store.state.phase)")
         }
         XCTAssertFalse(digest.points.isEmpty)
     }
