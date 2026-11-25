@@ -467,6 +467,7 @@ final class DiscoveryViewController: UIViewController {
     }
 
     deinit {
+        widgetUpdateTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -733,9 +734,23 @@ final class DiscoveryViewController: UIViewController {
         reloadConversations()
     }
 
+    /// Снапшот для виджета не пишется на каждое обновление: непрочитанное
+    /// меняется пачками. Схлопываем серию в один проход, как перерисовку.
+    private var widgetUpdateTask: Task<Void, Never>?
+
+    private func scheduleWidgetUpdate() {
+        widgetUpdateTask?.cancel()
+        widgetUpdateTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self, !Task.isCancelled else {
+                return
+            }
+            WidgetSnapshotWriter.update(with: conversations)
+        }
+    }
+
     /// Перечитать разговоры и перерисовать список.
-    private func reloadConversations() {
-        guard !isReloadingConversations else {
+    private func reloadConversations() {        guard !isReloadingConversations else {
             return
         }
 
@@ -748,6 +763,7 @@ final class DiscoveryViewController: UIViewController {
 
             conversations = await viewModel.getAllConversations()
             isReloadingConversations = false
+            scheduleWidgetUpdate()
 
             // Подсказка про круг зависит от способа связи: «кто рядом» через
             // сервер было бы неправдой.
