@@ -14,6 +14,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         LaunchTrace.applicationDidFinishLaunching()
         MetricsCollector.shared.start()
 
+        // Обработчики фоновых задач обязаны быть зарегистрированы до
+        // конца запуска — иначе система их проигнорирует. Сами задачи
+        // система даст, когда даст: мы только просим.
+        BackgroundTaskService.shared.registerHandlers()
+        BackgroundTaskService.shared.scheduleAll()
+
         // Фоновая сессия сама знает о живых задачах. Запуск без прерванной
         // очереди не должен платить за getTasks на каждом холодном старте.
         if BackgroundDownloadService.shared.hasPendingDownloads() {
