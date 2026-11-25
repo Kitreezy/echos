@@ -120,10 +120,13 @@ final class AppCoordinator {
         case let .conversation(address, name, focus):
             openConversation(address: address, named: name, focusing: focus)
         case .nearby:
-            navigationController.pushViewController(
-                NearbyViewController(viewModel: viewModel, coordinator: self),
-                animated: true
-            )
+            let nearby = NearbyView(viewModel: viewModel) { [weak self] peer in
+                self?.route(.conversation(address: peer.address,
+                                          name: peer.displayName,
+                                          focus: nil))
+            }
+            navigationController.pushViewController(NearbyHostingController(rootView: nearby),
+                                                    animated: true)
         case .ownWall:
             openOwnWall()
         }
