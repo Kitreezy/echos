@@ -49,7 +49,10 @@ struct CoordinatorTests {
             coordinator.navigationController.viewControllers.count == 2
         }
         #expect(pushed, "Маршрут из очереди не выполнился после markReady()")
-        #expect(coordinator.navigationController.viewControllers.last is NearbyViewController)
+        let hosted = coordinator.navigationController.viewControllers.last as? NearbyHostingController
+        #expect(hosted != nil, "Экран «кто рядом» — hosted SwiftUI")
+        #expect(hosted?.rootView.viewModel === coordinator.viewModel,
+                "Хостинг получает ту же модель — обмен состоянием без прослоек")
     }
 
     /// Маршрут, пришедший после готовности, выполняется сразу.
@@ -63,7 +66,10 @@ struct CoordinatorTests {
             coordinator.navigationController.viewControllers.count == 2
         }
         #expect(pushed)
-        #expect(coordinator.navigationController.viewControllers.last is NearbyViewController)
+        let hosted = coordinator.navigationController.viewControllers.last as? NearbyHostingController
+        #expect(hosted != nil, "Экран «кто рядом» — hosted SwiftUI")
+        #expect(hosted?.rootView.viewModel === coordinator.viewModel,
+                "Хостинг получает ту же модель — обмен состоянием без прослоек")
     }
 
     /// Стена без транспорта (модель не инициализирована) — тихий пропуск,
