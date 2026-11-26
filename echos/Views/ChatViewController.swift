@@ -264,8 +264,11 @@ final class ChatViewController: UIViewController {
 
         navigationController?.setNavigationBarHidden(false, animated: animated)
 
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
-        navigationController?.interactivePopGestureRecognizer?.delegate = nil
+        // Системный свайп-назад выключаем на чате: возврат тянет
+        // собственный жест ChatTransitionDelegate, и двое за один
+        // переход не дёргаются. Остальные экраны не тронуты — жест
+        // системный включим обратно на исчезновении.
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
 
         restoreMosaicDraft()
 
@@ -371,6 +374,10 @@ final class ChatViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         viewModel.isConversationOnScreen = false
+
+        // Возвращаем системный свайп-назад соседним экранам: чат им
+        // не пользуется, а «кто рядом» и стена — пользуются.
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
 
         Logger.lifecycle.debug("ChatViewController viewWillDisappear (isMovingFromParent: \(self.isMovingFromParent))")
         stopTypingAnimation()
@@ -791,22 +798,29 @@ final class ChatViewController: UIViewController {
 
         picker.alpha = 0
         picker.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
-        UIView.animate(withDuration: 0.2, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.5) {
+        pickerAnimator?.stopAnimation(true)
+        pickerAnimator = SpringAnimation.appear(duration: 0.35, damping: 0.8) {
             picker.alpha = 1
             picker.transform = .identity
         }
+        pickerAnimator?.startAnimation()
     }
+
+    private var pickerAnimator: UIViewPropertyAnimator?
 
     private func dismissReactionPicker() {
         guard let picker = reactionPicker else {
             return
         }
         reactionPicker = nil
-        UIView.animate(withDuration: 0.15, animations: {
+        pickerAnimator?.stopAnimation(true)
+        pickerAnimator = SpringAnimation.fadeOut(duration: 0.15) {
             picker.alpha = 0
-        }, completion: { _ in
+        }
+        pickerAnimator?.addCompletion { _ in
             picker.removeFromSuperview()
-        })
+        }
+        pickerAnimator?.startAnimation()
     }
 
     @objc

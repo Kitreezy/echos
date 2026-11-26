@@ -17,6 +17,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Граф собирает корень композиции; сцена его только хранит.
     private var coordinator: AppCoordinator?
 
+    /// Держит жест интерактивного возврата из чата.
+    private var chatTransitions: ChatTransitionDelegate?
+
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         LaunchTrace.sceneWillConnect()
         guard let windowScene = (scene as? UIWindowScene) else { return }
@@ -33,6 +36,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let root = CompositionRoot(environment: .current())
         coordinator = root.coordinator
         let navigationController = root.coordinator.navigationController
+
+        // Переход список ↔ чат — кастомный и интерактивный (см.
+        // ChatTransitionDelegate): жест возврата идёт через него, а не
+        // через системный свайп, иначе двое тянут один переход.
+        let chatTransitions = ChatTransitionDelegate()
+        chatTransitions.attach(to: navigationController)
+        self.chatTransitions = chatTransitions
 
 //        navigationController.setNavigationBarHidden(true, animated: false)
 

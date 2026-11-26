@@ -31,6 +31,13 @@ final class NoticeBanner: UIView {
 
     private let onTap: () -> Void
     private var topConstraint: NSLayoutConstraint?
+
+    /// Пружина появления. Бегущую её же можно развернуть назад (isReversed
+    /// + startAnimation) — уйдёт по траектории, какой приехала. Аниматор
+    /// после завершения отпускаем: держать его на паузе (pausesOnCompletion)
+    /// нельзя — XCUI и системные механизмы считают такое приложение
+    /// «неуспокоившимся» бесконечно.
+    private var presentAnimator: UIViewPropertyAnimator?
     private var hideTask: Task<Void, Never>?
 
     private init(notice: IncomingNotice, onTap: @escaping () -> Void) {
@@ -107,10 +114,11 @@ final class NoticeBanner: UIView {
         window.layoutIfNeeded()
 
         top.constant = Space.tight
-        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.85,
-                       initialSpringVelocity: 0.6) {
+        let animator = SpringAnimation.appear(duration: 0.45, damping: 0.85, velocity: 0.6) {
             window.layoutIfNeeded()
         }
+        presentAnimator = animator
+        animator.startAnimation()
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
 
         hideTask = Task { [weak self] in
@@ -129,16 +137,39 @@ final class NoticeBanner: UIView {
         guard superview != nil else {
             return
         }
+
+        // Ещё едет — разворачиваем ту же пружину: уйдёт по траектории,
+        // какой приехала, а не дернётся со второго старта. Доехала раньше —
+        // её уже развернуть нельзя (аниматор завершён), и она отпущена:
+        // ниже честный уход с самого места.
+        if let animator = presentAnimator, animator.isRunning {
+            presentAnimator = nil
+            animator.isReversed = true
+            animator.startAnimation()
+            animator.addCompletion { [weak self] _ in
+                guard let self else { return }
+                self.removeFromSuperview()
+                if Self.current === self {
+                    Self.current = nil
+                }
+            }
+            return
+        }
+        presentAnimator = nil
+
         topConstraint?.constant = -120
-        UIView.animate(withDuration: 0.25, animations: {
+        let animator = SpringAnimation.fadeOut(duration: 0.25) {
             self.superview?.layoutIfNeeded()
             self.alpha = 0
-        }, completion: { _ in
+        }
+        animator.addCompletion { [weak self] _ in
+            guard let self else { return }
             self.removeFromSuperview()
             if Self.current === self {
                 Self.current = nil
             }
-        })
+        }
+        animator.startAnimation()
     }
 
     @objc
