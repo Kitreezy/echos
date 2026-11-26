@@ -588,10 +588,33 @@ final class DiscoveryViewController: UIViewController {
     }
 
     private func setupTableView() {
-        tableView.dataSource = self
         tableView.delegate = self
         tableView.register(ConversationCell.self,
                            forCellReuseIdentifier: ConversationCell.reuseIdentifier)
+        tableView.dataSource = conversationsDataSource
+    }
+
+    /// Diffable: анимированные вставки/удаления вместо reloadData, а
+    /// изменившаяся строка перерисовывается на месте — идентичность
+    /// у ConversationSummary адресная.
+    private lazy var conversationsDataSource =
+        UITableViewDiffableDataSource<Int, ConversationSummary>(tableView: tableView) { tableView, indexPath, conversation in
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: ConversationCell.reuseIdentifier,
+            for: indexPath) as? ConversationCell else {
+            return UITableViewCell()
+        }
+        cell.configure(with: conversation)
+        return cell
+    }
+
+    /// Снапшот = текущее состояние списка. Пересобирается целиком на
+    /// каждое обновление: data source сам вычисляет дельту.
+    private func applyConversations() {
+        var snapshot = NSDiffableDataSourceSnapshot<Int, ConversationSummary>()
+        snapshot.appendSections([0])
+        snapshot.appendItems(conversations)
+        conversationsDataSource.apply(snapshot, animatingDifferences: true)
     }
 
     @objc
@@ -771,7 +794,7 @@ final class DiscoveryViewController: UIViewController {
                 ? String(localized: "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто на связи.")
                 : String(localized: "Разговоров пока нет.\nНажмите на круг, чтобы посмотреть, кто рядом.")
             noConversationsLabel.isHidden = !conversations.isEmpty
-            tableView.reloadData()
+            applyConversations()
         }
     }
 
@@ -783,33 +806,15 @@ final class DiscoveryViewController: UIViewController {
 
 // MARK: - TableView
 
-extension DiscoveryViewController: UITableViewDataSource, UITableViewDelegate {
-
-    func tableView(_ tableView: UITableView,
-                   numberOfRowsInSection section: Int) -> Int {
-        conversations.count
-    }
-
-    func tableView(_ tableView: UITableView,
-                   cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(
-            withIdentifier: ConversationCell.reuseIdentifier,
-            for: indexPath) as? ConversationCell else {
-            return UITableViewCell()
-        }
-
-        cell.configure(with: conversations[indexPath.row])
-        return cell
-    }
+extension DiscoveryViewController: UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
-        guard indexPath.row < conversations.count else {
+        // Строку берём у data source: список мог обновиться после касания.
+        guard let conversation = conversationsDataSource.itemIdentifier(for: indexPath) else {
             return
         }
-
-        let conversation = conversations[indexPath.row]
 
         coordinator?.route(
             .conversation(address: conversation.peerAddress,
