@@ -16,7 +16,7 @@
 
 import Foundation
 
-struct Mosaic: Codable, Equatable, Sendable {
+struct Mosaic: Codable, Equatable, Hashable, Sendable {
 
     /// Сторона сетки — от одной до восьми клеток. Восемь — потолок: на
     /// экране телефона клетки меньше уже не разглядеть.

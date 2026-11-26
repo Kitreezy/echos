@@ -134,19 +134,63 @@ final class MosaicPaletteView: UIView {
     }()
 
     private lazy var items: UICollectionView = {
-        let layout = UICollectionViewFlowLayout()
-        layout.minimumInteritemSpacing = Space.hair
-        layout.minimumLineSpacing = Space.hair
-        let collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        let collection = UICollectionView(frame: .zero, collectionViewLayout: makeLayout())
         collection.backgroundColor = .clear
         collection.alwaysBounceVertical = true
         collection.register(EmojiCell.self, forCellWithReuseIdentifier: EmojiCell.reuseID)
         collection.register(TemplateCell.self, forCellWithReuseIdentifier: TemplateCell.reuseID)
-        collection.dataSource = self
         collection.delegate = self
         collection.translatesAutoresizingMaskIntoConstraints = false
         return collection
     }()
+
+    /// Элементы сетки — через diffable data source: появление вкладки
+    /// «недавние» или сохранённой мозаики анимируется, а не перерисовывает
+    /// сетку молча. Обязанности — в основном теле класса: extensions не
+    /// держат stored properties.
+    private lazy var itemsDataSource =
+        UICollectionViewDiffableDataSource<Section, PaletteItem>(collectionView: items) { [weak self] collectionView, indexPath, item in
+            guard let self else {
+                return UICollectionViewCell()
+            }
+            switch item {
+            case .template(let mosaic):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: TemplateCell.reuseID, for: indexPath)
+                (cell as? TemplateCell)?.show(mosaic)
+                return cell
+            case .emoji(let emoji):
+                let cell = collectionView.dequeueReusableCell(withReuseIdentifier: EmojiCell.reuseID, for: indexPath)
+                (cell as? EmojiCell)?.show(emoji, selected: emoji == self.brush)
+                return cell
+            }
+        }
+
+    /// Сетка собирается композиционно: сохранённые мозаики — крупно в
+    /// четыре колонки, эмодзи — восьмью. Высота группы привязана к ширине
+    /// контейнера, поэтому клетки выходят квадратными сами, без ручного
+    /// sizeForItemAt.
+    private func makeLayout() -> UICollectionViewLayout {
+        UICollectionViewCompositionalLayout { [weak self] _, _ in
+            let columns = self?.currentSection == .templates ? 4 : 8
+            let fraction = 1 / CGFloat(columns)
+            let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(fraction),
+                heightDimension: .fractionalHeight(1)
+            ))
+            let group = NSCollectionLayoutGroup.horizontal(
+                layoutSize: NSCollectionLayoutSize(
+                    widthDimension: .fractionalWidth(1),
+                    heightDimension: .fractionalWidth(fraction)
+                ),
+                repeatingSubitem: item,
+                count: columns
+            )
+            group.interItemSpacing = .fixed(Space.hair)
+            let section = NSCollectionLayoutSection(group: group)
+            section.interGroupSpacing = Space.hair
+            return section
+        }
+    }
 
     // MARK: - Init
 
@@ -159,8 +203,10 @@ final class MosaicPaletteView: UIView {
         super.init(frame: frame)
         backgroundColor = .surfaceRaised
         setupLayout()
+        items.dataSource = itemsDataSource
         sizeControl.addTarget(self, action: #selector(sizeChanged), for: .valueChanged)
         showGroups()
+        applyItems(animatingDifferences: false)
         setBrush(UserSettings.mosaicBrushes.first ?? EmojiPalette.groups[0].emojis[0])
     }
 
@@ -243,8 +289,42 @@ final class MosaicPaletteView: UIView {
             UserSettings.rememberBrush(brush)
         }
         showGroups()
-        items.reloadData()
+        applyItems(animatingDifferences: true)
+        refreshBrushSelection()
         delegate?.palette(self, didPickBrush: brush)
+    }
+
+    /// Снапшот пересобирается целиком; data source сам считает дельту и
+    /// анимирует её — появление новой вкладки «недавние» или сохранённой
+    /// мозаики больше не перерисовывает сетку молча.
+    private func applyItems(animatingDifferences: Bool) {
+        guard let section = currentSection else {
+            return
+        }
+        var snapshot = NSDiffableDataSourceSnapshot<Section, PaletteItem>()
+        snapshot.appendSections([section])
+        snapshot.appendItems(currentItems(for: section))
+        itemsDataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+    }
+
+    private func currentItems(for section: Section) -> [PaletteItem] {
+        switch section {
+        case .templates:
+            return UserSettings.mosaicTemplates.map(PaletteItem.template)
+        case .recent:
+            return UserSettings.mosaicBrushes.map(PaletteItem.emoji)
+        case .emoji(let group):
+            return group.emojis.map(PaletteItem.emoji)
+        }
+    }
+
+    /// Рамка выбранной кисти живёт вне содержимого элементов. Равные
+    /// элементы снапшот не перерисовывает, поэтому после смены кисти
+    /// ячейки обновляются отдельно — reconfigure, а не повторный apply.
+    private func refreshBrushSelection() {
+        var snapshot = itemsDataSource.snapshot()
+        snapshot.reconfigureItems(snapshot.itemIdentifiers)
+        itemsDataSource.apply(snapshot, animatingDifferences: false)
     }
 
     /// Сохранили мозаику — она появилась в палитре, и это надо показать:
@@ -252,7 +332,7 @@ final class MosaicPaletteView: UIView {
     func showTemplates() {
         selectedSectionID = "templates"
         showGroups()
-        items.reloadData()
+        applyItems(animatingDifferences: true)
         items.setContentOffset(.zero, animated: false)
         scrollGroupsToSelected()
     }
@@ -260,7 +340,7 @@ final class MosaicPaletteView: UIView {
     /// Убрали мозаику — вкладка могла исчезнуть вместе с последней.
     func reloadTemplates() {
         showGroups()
-        items.reloadData()
+        applyItems(animatingDifferences: true)
     }
 
     /// Вкладок много, и выбранная может оказаться за краем.
@@ -310,7 +390,7 @@ final class MosaicPaletteView: UIView {
 
     // MARK: - Группы
 
-    private enum Section: Equatable {
+    private enum Section: Hashable {
         case templates
         case recent
         case emoji(EmojiPalette.Group)
@@ -323,6 +403,17 @@ final class MosaicPaletteView: UIView {
             }
         }
 
+        // Вкладки сравниваются и хэшируются по имени: экземпляр группы
+        // пересоздаётся на каждый доступ, а секция в снапшоте должна
+        // оставаться той же.
+        static func == (lhs: Section, rhs: Section) -> Bool {
+            lhs.id == rhs.id
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(id)
+        }
+
         var title: String {
             switch self {
             case .templates:            return String(localized: "мозаики")
@@ -330,6 +421,14 @@ final class MosaicPaletteView: UIView {
             case .emoji(let group):     return group.title
             }
         }
+    }
+
+    /// Элемент сетки: кисть или сохранённая мозаика. Одинаковый эмодзи
+    /// дважды в одну секцию не попадает: палитра дедуплицирует его сама,
+    /// недавние кисти — тоже.
+    private enum PaletteItem: Hashable {
+        case emoji(String)
+        case template(Mosaic)
     }
 
     /// Сначала своё — сохранённые мозаики и недавние кисти, — потом палитра.
@@ -367,7 +466,7 @@ final class MosaicPaletteView: UIView {
             button.addAction(UIAction { [weak self] _ in
                 self?.selectedSectionID = section.id
                 self?.showGroups()
-                self?.items.reloadData()
+                self?.applyItems(animatingDifferences: true)
                 self?.items.setContentOffset(.zero, animated: false)
             }, for: .touchUpInside)
             groupsStack.addArrangedSubview(button)
@@ -377,62 +476,36 @@ final class MosaicPaletteView: UIView {
 
 // MARK: - Содержимое
 
-extension MosaicPaletteView: UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+extension MosaicPaletteView: UICollectionViewDelegate {
 
     private var currentSection: Section? {
         sections.first { $0.id == selectedSectionID } ?? sections.first
     }
 
-    private var currentEmojis: [String] {
-        switch currentSection {
-        case .recent:               return UserSettings.mosaicBrushes
-        case .emoji(let group):     return group.emojis
-        default:                    return []
-        }
-    }
-
-    private var currentTemplates: [Mosaic] {
-        currentSection == .templates ? UserSettings.mosaicTemplates : []
-    }
-
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        currentSection == .templates ? currentTemplates.count : currentEmojis.count
-    }
-
-    func collectionView(_ collectionView: UICollectionView,
-                        cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        if currentSection == .templates {
-            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: TemplateCell.reuseID, for: indexPath)
-            (cell as? TemplateCell)?.show(currentTemplates[indexPath.item])
-            return cell
-        }
-
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: EmojiCell.reuseID, for: indexPath)
-        let emoji = currentEmojis[indexPath.item]
-        (cell as? EmojiCell)?.show(emoji, selected: emoji == brush)
-        return cell
-    }
-
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        if currentSection == .templates {
-            delegate?.palette(self, didPickTemplate: currentTemplates[indexPath.item])
-            UISelectionFeedbackGenerator().selectionChanged()
+        // Элемент берём у data source: сетка могла обновиться после касания.
+        guard let item = itemsDataSource.itemIdentifier(for: indexPath) else {
             return
         }
 
-        // Вкладка запомнена по имени, поэтому появление «недавних» её
-        // не сдвигает.
-        setBrush(currentEmojis[indexPath.item])
+        switch item {
+        case .template(let mosaic):
+            delegate?.palette(self, didPickTemplate: mosaic)
+            UISelectionFeedbackGenerator().selectionChanged()
+        case .emoji(let emoji):
+            // Вкладка запомнена по имени, поэтому появление «недавних» её
+            // не сдвигает.
+            setBrush(emoji)
+        }
     }
 
     /// Долгое нажатие на сохранённую мозаику — убрать её.
     func collectionView(_ collectionView: UICollectionView,
                         contextMenuConfigurationForItemAt indexPath: IndexPath,
                         point: CGPoint) -> UIContextMenuConfiguration? {
-        guard currentSection == .templates else {
+        guard case .template(let mosaic) = itemsDataSource.itemIdentifier(for: indexPath) else {
             return nil
         }
-        let mosaic = currentTemplates[indexPath.item]
 
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             UIMenu(children: [
@@ -442,15 +515,6 @@ extension MosaicPaletteView: UICollectionViewDataSource, UICollectionViewDelegat
                 }
             ])
         }
-    }
-
-    func collectionView(_ collectionView: UICollectionView,
-                        layout collectionViewLayout: UICollectionViewLayout,
-                        sizeForItemAt indexPath: IndexPath) -> CGSize {
-        // Сохранённые мозаики крупнее: в клетку эмодзи рисунок не разглядеть.
-        let columns: CGFloat = currentSection == .templates ? 4 : 8
-        let side = (collectionView.bounds.width - (columns - 1) * Space.hair) / columns
-        return CGSize(width: floor(side), height: floor(side))
     }
 }
 
