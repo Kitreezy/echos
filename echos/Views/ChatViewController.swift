@@ -5,6 +5,7 @@
 //  Created by Artem Rodionov on 16.02.2026.
 //
 
+import AVFoundation
 import UIKit
 import SwiftUI
 import OSLog
@@ -158,6 +159,17 @@ final class ChatViewController: UIViewController {
         let button = UIButton(configuration: config)
         // Без подписи VoiceOver читает имя картинки: «square.grid.3x3».
         button.accessibilityLabel = String(localized: "Мозаика")
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+
+    /// Вход в запись голосового — справа от поля, рядом с отправкой.
+    private let micButton: UIButton = {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "mic")
+        config.baseForegroundColor = .inkMuted
+        let button = UIButton(configuration: config)
+        button.accessibilityLabel = String(localized: "Голосовое сообщение")
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
@@ -518,6 +530,12 @@ final class ChatViewController: UIViewController {
             inputContainer.heightAnchor.constraint(equalTo: textField.heightAnchor, constant: 24),
             inputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: 0),
 
+            // Панель записи — накрывает поле ввода, пока пишем.
+            recordingBar.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor),
+            recordingBar.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor),
+            recordingBar.topAnchor.constraint(equalTo: inputContainer.topAnchor),
+            recordingBar.bottomAnchor.constraint(equalTo: inputContainer.bottomAnchor),
+
             // Черновик мозаики — над полем ввода, справа, как своё сообщение.
             draftView.bottomAnchor.constraint(equalTo: typingLabel.topAnchor, constant: -Space.tight),
             draftView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Space.margin),
@@ -530,9 +548,15 @@ final class ChatViewController: UIViewController {
 
             // TextField
             textField.leadingAnchor.constraint(equalTo: mosaicButton.trailingAnchor, constant: 4),
-            textField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -10),
+            textField.trailingAnchor.constraint(equalTo: micButton.leadingAnchor, constant: -10),
             textField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
             textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
+
+            // Mic
+            micButton.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -4),
+            micButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
+            micButton.widthAnchor.constraint(equalToConstant: 40),
+            micButton.heightAnchor.constraint(equalToConstant: 40),
 
             // Send button
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -12),
@@ -557,13 +581,18 @@ final class ChatViewController: UIViewController {
         view.addSubview(inputContainer)
         inputContainer.addSubview(mosaicButton)
         inputContainer.addSubview(textField)
+        inputContainer.addSubview(micButton)
         inputContainer.addSubview(sendButton)
+        inputContainer.addSubview(recordingBar)
         view.addSubview(draftView)
 
         NSLayoutConstraint.activate(layoutConstraints)
 
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         mosaicButton.addTarget(self, action: #selector(composeMosaic), for: .touchUpInside)
+        micButton.addTarget(self, action: #selector(recordVoice), for: .touchUpInside)
+        recordingBar.delegate = self
+        recordingBar.isHidden = true
         textField.delegate = self
         textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
     }
@@ -807,6 +836,17 @@ final class ChatViewController: UIViewController {
     }
 
     private var pickerAnimator: UIViewPropertyAnimator?
+
+    // MARK: - Голосовые
+
+    /// Запись: одна на экран, состояние — в рекордере, панель — только лицо.
+    private let voiceRecorder = VoiceRecorder()
+    private let recordingBar = VoiceRecordingBar()
+
+    /// Проигрывание: плеер один, сообщений с голосовыми — много.
+    private var voicePlayer: AVAudioPlayer?
+    private var playingVoiceID: UUID?
+    private var playbackTimer: Timer?
 
     private func dismissReactionPicker() {
         guard let picker = reactionPicker else {
@@ -1393,6 +1433,14 @@ extension ChatViewController: UITableViewDataSource {
                 await self?.viewModel.resend(message.id)
             }
         }
+        cell.onPlayToggle = { [weak self] in
+            self?.toggleVoicePlayback(message)
+        }
+        if let voice = message.voice, playingVoiceID == message.id {
+            let playing = voicePlayer?.isPlaying == true
+            cell.setVoicePlayback(playing: playing,
+                                  progress: playing ? CGFloat((voicePlayer?.currentTime ?? 0) / voice.duration) : 0)
+        }
         return cell
     }
 }
@@ -1758,5 +1806,152 @@ extension ChatViewController: PeerConnectionApproving {
                 self.present(alert, animated: true)
             }
         }
+    }
+}
+
+// MARK: - Голосовые
+
+extension ChatViewController {
+
+    @objc
+    fileprivate func recordVoice() {
+        textField.resignFirstResponder()
+        guard voiceRecorder.state == .idle else {
+            recordingBar.isHidden = false
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.voiceRecorder.start()
+                self.recordingBar.isHidden = false
+            } catch VoiceRecorderError.permissionDenied {
+                self.showError(String(localized: "Нет доступа к микрофону. Разрешение — в Настройки → echos."))
+            } catch {
+                self.showError(String(localized: "Микрофон сейчас не записывает. Возможно, его заняло другое приложение."))
+            }
+        }
+    }
+
+    /// Завершить запись: отправить, если просили, а короткое — просто
+    /// выбросить: сообщение из случайного щелчка никому не нужно.
+    fileprivate func finishVoiceRecording(send: Bool) {
+        if send {
+            do {
+                let voice = try voiceRecorder.finish()
+                Task { await viewModel.sendVoice(voice) }
+            } catch VoiceRecorderError.tooShort {
+                // Меньше секунды — не сообщение.
+            } catch {
+                showError(String(localized: "Запись не получилась. Попробуйте ещё раз."))
+            }
+        } else {
+            voiceRecorder.cancel()
+        }
+        recordingBar.isHidden = true
+    }
+
+    /// Кнопка у голосового в ленте. Плеер один на экран: новый тап
+    /// останавливает прежнее, повторный — пауза и продолжение.
+    fileprivate func toggleVoicePlayback(_ message: Message) {
+        guard let voice = message.voice else {
+            return
+        }
+
+        if playingVoiceID == message.id {
+            if voicePlayer?.isPlaying == true {
+                voicePlayer?.pause()
+                playbackTimer?.invalidate()
+                playbackTimer = nil
+            } else {
+                voicePlayer?.play()
+                startPlaybackTicker()
+            }
+        } else {
+            voicePlayer?.stop()
+            voicePlayer = try? AVAudioPlayer(data: voice.audio)
+            voicePlayer?.delegate = self
+            playingVoiceID = message.id
+            voicePlayer?.play()
+            startPlaybackTicker()
+        }
+        updateVoicePlaybackUI()
+    }
+
+    private func startPlaybackTicker() {
+        playbackTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.updateVoicePlaybackUI()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        playbackTimer = timer
+    }
+
+    /// Прогресс — только у видимой ячейки: ленту не перегружаем ради
+    /// перекраски полоски.
+    private func updateVoicePlaybackUI() {
+        guard let playingVoiceID,
+              let player = voicePlayer,
+              let index = viewModel.messages.firstIndex(where: { $0.id == playingVoiceID }),
+              let voice = viewModel.messages[index].voice,
+              let cell = tableView.cellForRow(at: IndexPath(row: index, section: 0)) as? MessageCell else {
+            return
+        }
+        let finished = !player.isPlaying && player.currentTime >= player.duration
+        if finished {
+            playbackTimer?.invalidate()
+            playbackTimer = nil
+        }
+        cell.setVoicePlayback(playing: player.isPlaying,
+                              progress: finished ? 0 : CGFloat(player.currentTime / voice.duration))
+    }
+
+    private func stopVoicePlayback() {
+        voicePlayer?.stop()
+        voicePlayer = nil
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        playingVoiceID = nil
+        updateVoicePlaybackUI()
+    }
+}
+
+extension ChatViewController: VoiceRecordingBarDelegate {
+
+    func recordingBarDidAskToSend(_ bar: VoiceRecordingBar) {
+        finishVoiceRecording(send: true)
+    }
+
+    func recordingBarDidAskToCancel(_ bar: VoiceRecordingBar) {
+        finishVoiceRecording(send: false)
+    }
+
+    func recordingBarDidTogglePause(_ bar: VoiceRecordingBar) {
+        if voiceRecorder.state == .recording {
+            voiceRecorder.pause()
+        } else if voiceRecorder.state == .paused {
+            voiceRecorder.resume()
+        }
+    }
+
+    func recordingBarElapsedTime(_ bar: VoiceRecordingBar) -> TimeInterval {
+        voiceRecorder.elapsed
+    }
+
+    func recordingBarLevel(_ bar: VoiceRecordingBar) -> Float {
+        voiceRecorder.level()
+    }
+
+    func recordingBarIsRecording(_ bar: VoiceRecordingBar) -> Bool {
+        voiceRecorder.state == .recording
+    }
+}
+
+extension ChatViewController: AVAudioPlayerDelegate {
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        stopVoicePlayback()
     }
 }

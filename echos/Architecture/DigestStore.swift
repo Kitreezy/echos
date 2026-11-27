@@ -378,7 +378,7 @@ private extension Effect where Action == DigestAction {
 private extension Message {
     /// То же сообщение с другим текстом — переведённым.
     func withText(_ text: String) -> Message {
-        Message(id: id, text: text, mosaic: mosaic, senderName: senderName, peerAddress: peerAddress,
+        Message(id: id, text: text, mosaic: mosaic, voice: voice, senderName: senderName, peerAddress: peerAddress,
                 isFromMe: isFromMe, timestamp: timestamp, status: status, isRead: isRead)
     }
 }

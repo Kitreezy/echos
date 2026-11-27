@@ -1033,6 +1033,18 @@ final class ChatViewModel {
                            replyTo: original.map(MessageReply.init(quoting:))))
     }
 
+    /// Отправка голосового. Текст — подпись длительностью: списки,
+    /// поиск и старые сборки получают её, звук и волна едут рядом.
+    func sendVoice(_ voice: VoiceAttachment, replyingTo original: Message? = nil) async {
+        await send(Message(text: String(localized: "🎤 Голосовое · \(VoiceAttachment.format(duration: voice.duration))"),
+                           voice: voice,
+                           senderName: nil,
+                           peerAddress: currentConversationPeer,
+                           isFromMe: true,
+                           status: .sending,
+                           replyTo: original.map(MessageReply.init(quoting:))))
+    }
+
     // MARK: - Ответы
 
     /// Цитата над ответом: чей оригинал и что в нём.

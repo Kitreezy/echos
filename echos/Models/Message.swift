@@ -16,10 +16,13 @@ enum MessageStatus: Int, Codable {
 struct Message: Identifiable, Equatable {
     let id: UUID
     /// Текст — для обычного сообщения он и есть содержимое, для мозаики —
-    /// её текстовая форма: превью, старые сборки, копирование наружу.
+    /// её текстовая форма: превью, старые сборки, копирование наружу. Для
+    /// голосового — подпись длительностью: старая сборка получит её текстом.
     let text: String
     /// Точная форма, если это мозаика. Рисуется сеткой, а не текстом.
     let mosaic: Mosaic?
+    /// Голосовое сообщение, если это оно. Звук и волна; текст — подпись.
+    let voice: VoiceAttachment?
     /// Имя отправителя — для показа в бабблах. Заполняет его сам отправитель,
     /// поэтому раскладывать по нему переписку нельзя: для этого есть адрес.
     let senderName: String?
@@ -43,6 +46,7 @@ struct Message: Identifiable, Equatable {
     init(id: UUID = UUID(),
          text: String,
          mosaic: Mosaic? = nil,
+         voice: VoiceAttachment? = nil,
          senderName: String? = nil,
          peerAddress: String? = nil,
          isFromMe: Bool,
@@ -56,6 +60,7 @@ struct Message: Identifiable, Equatable {
         self.id = id
         self.text = text
         self.mosaic = mosaic
+        self.voice = voice
         self.senderName = senderName
         self.peerAddress = peerAddress
         self.isFromMe = isFromMe
@@ -76,6 +81,7 @@ struct Message: Identifiable, Equatable {
         Message(id: id,
                 text: text,
                 mosaic: mosaic,
+                voice: voice,
                 senderName: senderName,
                 peerAddress: address,
                 isFromMe: isFromMe,
@@ -142,6 +148,9 @@ struct MessagePayload: Codable {
     /// Мозаика, если это она. Необязательна: у обычного сообщения её нет,
     /// а старая сборка, не знающая о мозаике, увидит текстовую форму.
     let mosaic: Mosaic?
+    /// Голосовое, если это оно: звук едет base64, волна — готовыми
+    /// сэмплами. Старая сборка поле не знает: текст-подпись увидит.
+    let voice: VoicePayload?
     /// Реакция, если это она. Едет тем же конвертом, что и сообщение, —
     /// ни транспорту, ни релею новый род не нужен. Старая сборка увидит
     /// эмодзи текстом; текст для этого и заполняется.
@@ -156,6 +165,7 @@ struct MessagePayload: Codable {
         self.senderName = senderName
         self.timestamp = message.timestamp.timeIntervalSince1970
         self.mosaic = message.mosaic
+        self.voice = message.voice.map(VoicePayload.init(from:))
         self.reaction = nil
         self.reply = message.replyTo.map {
             ReplyPayload(id: $0.id.uuidString, preview: $0.preview, isFromSender: $0.isFromMe)
@@ -169,6 +179,7 @@ struct MessagePayload: Codable {
         self.senderName = senderName
         self.timestamp = Date().timeIntervalSince1970
         self.mosaic = nil
+        self.voice = nil
         self.reaction = reaction
         self.reply = nil
     }
@@ -191,6 +202,7 @@ struct MessagePayload: Codable {
             id: UUID(uuidString: id) ?? UUID(),
             text: text,
             mosaic: mosaic,
+            voice: voice?.attachment,
             senderName: senderName,
             peerAddress: sender,
             isFromMe: false,

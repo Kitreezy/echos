@@ -577,6 +577,7 @@
 				INFOPLIST_FILE = echos/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "echos использует Bluetooth для поиска устройств рядом.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "echos использует локальную сеть для обмена сообщениями.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Голосовые сообщения записываются только по нажатию кнопки.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Чтобы сохранять мозаики из эмодзи в фотоплёнку.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
@@ -610,6 +611,7 @@
 				INFOPLIST_FILE = echos/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "echos использует Bluetooth для поиска устройств рядом.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "echos использует локальную сеть для обмена сообщениями.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Голосовые сообщения записываются только по нажатию кнопки.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Чтобы сохранять мозаики из эмодзи в фотоплёнку.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
