@@ -45,12 +45,15 @@ final class CoreDataMigrationIntegrationTests {
         let reopened = PersistenceController(storeDirectory: directory, cloudSync: false)
         let saved = try reopened.container.viewContext.fetch(request)
         #expect(saved.compactMap(\.deliveryReceiptAt).count == 1)
+        // Цепочка миграций длиннее второй версии: старый файл доезжает
+        // до текущей, колонка голосового создана и пуста.
+        #expect(saved.allSatisfy { $0.voice == nil })
     }
 
-    @Test func currentModel_isSecondVersionWithReceiptField() {
+    @Test func currentModel_isThirdVersionWithVoiceField() {
         let message = PersistenceController.managedObjectModel.entitiesByName["MessageEntity"]
 
-        #expect(message?.attributesByName["deliveryReceiptAt"]?.attributeType == .dateAttributeType)
+        #expect(message?.attributesByName["voice"]?.attributeType == .binaryDataAttributeType)
     }
 
     private func createStoreWithFirstModelVersion() throws {

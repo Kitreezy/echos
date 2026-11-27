@@ -34,6 +34,8 @@ final class MessageStore {
             entity.mosaic = try message.mosaic.map { try JSONEncoder().encode($0) }
             // Ответ — так же: JSON рядом с текстом.
             entity.reply = try message.replyTo.map { try JSONEncoder().encode($0) }
+            // Голосовое — по тому же договору: волна и звук одним JSON.
+            entity.voice = try message.voice.map { try JSONEncoder().encode($0) }
             entity.senderName = message.senderName
             entity.peerAddress = message.peerAddress
             entity.isFromMe = message.isFromMe
@@ -129,6 +131,7 @@ final class MessageStore {
         Message(id: entity.id ?? UUID(),
                 text: entity.text ?? "",
                 mosaic: entity.mosaic.flatMap { try? JSONDecoder().decode(Mosaic.self, from: $0) },
+                voice: entity.voice.flatMap { try? JSONDecoder().decode(VoiceAttachment.self, from: $0) },
                 senderName: entity.senderName,
                 peerAddress: entity.peerAddress,
                 isFromMe: entity.isFromMe,

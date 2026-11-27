@@ -95,6 +95,17 @@ final class MessageCell: UITableViewCell {
         return stack
     }()
 
+    /// Голосовое: волна и кнопка. Проигрыванием владеет контроллер.
+    private let voiceView = VoiceMessageView()
+
+    /// Нажали кнопку у голосового — контроллер решает, играть или стоять.
+    var onPlayToggle: (() -> Void)?
+
+    /// Состояние проигрывания приезжает с контроллера: у ячейки нет плеера.
+    func setVoicePlayback(playing: Bool, progress: CGFloat) {
+        voiceView.setPlaying(playing, progress: progress)
+    }
+
     private let footnoteLabel: UILabel = {
         let label = UILabel()
         label.font = Typography.micro
@@ -159,6 +170,10 @@ final class MessageCell: UITableViewCell {
         body.setCustomSpacing(Space.tight, after: quoteView)
         body.addArrangedSubview(messageLabel)
         body.addArrangedSubview(mosaicImageView)
+        body.addArrangedSubview(voiceView)
+        voiceView.onPlayToggle = { [weak self] in
+            self?.onPlayToggle?()
+        }
         quoteView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(quoteTapped)))
 
         columnLeading = column.leadingAnchor.constraint(equalTo: contentView.leadingAnchor,
@@ -202,7 +217,14 @@ final class MessageCell: UITableViewCell {
             quoteView.isHidden = true
         }
 
-        if let mosaic = message.mosaic {
+        if let voice = message.voice {
+            voiceView.show(duration: voice.duration, samples: voice.samples)
+            voiceView.isHidden = false
+            messageLabel.isHidden = true
+            mosaicImageView.isHidden = true
+            mosaicImageView.image = nil
+        } else if let mosaic = message.mosaic {
+            voiceView.isHidden = true
             // Prefetch обычно успевает первым. Если нет — рисуем один раз
             // синхронно, и следующая показанная копия возьмёт картинку из
             // кэша.
@@ -224,6 +246,7 @@ final class MessageCell: UITableViewCell {
             messageLabel.isHidden = false
             mosaicImageView.isHidden = true
             mosaicImageView.image = nil
+            voiceView.isHidden = true
         }
 
         let time = Self.timeFormatter.string(from: message.timestamp)
